@@ -1,0 +1,86 @@
+name: Backend Deployment (STAGING)
+
+on:
+  push:
+    branches:
+      - staging
+  workflow_dispatch:
+
+permissions:
+  id-token: write # Required for OIDC
+  contents: read
+
+env:
+  AWS_REGION: us-east-1 # Adjust as needed
+  STAGE: staging
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  deploy:
+    name: Test, Lint and Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: 🛒 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: 📦 Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff pytest
+
+      - name: 🔍 Linting (Ruff)
+        run: ruff check .
+
+      - name: 🧪 Run Tests (Pytest)
+        run: pytest
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          QLDB_LEDGER_NAME: ${{ secrets.QLDB_LEDGER_NAME }}
+          TWILIO_SECRET: ${{ secrets.TWILIO_SECRET }}
+
+      - name: 🚀 Setup Node.js (for Serverless)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: ⚡ Install Serverless Framework
+        run: npm install -g serverless
+
+      - name: 🔐 Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/kapuletu-ci-cd-role-staging
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 📦 Validate Package
+        run: serverless package --stage ${{ env.STAGE }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          QLDB_LEDGER_NAME: ${{ secrets.QLDB_LEDGER_NAME }}
+          TWILIO_SECRET: ${{ secrets.TWILIO_SECRET }}
+
+      - name: 🚢 Deploy to AWS Lambda
+        run: serverless deploy --stage ${{ env.STAGE }} --verbose
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          QLDB_LEDGER_NAME: ${{ secrets.QLDB_LEDGER_NAME }}
+          TWILIO_SECRET: ${{ secrets.TWILIO_SECRET }}
+
+      - name: ✨ Deployment Summary
+        run: |
+          echo "### ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "- **Stage:** ${{ env.STAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY

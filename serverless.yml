@@ -1,0 +1,168 @@
+service: kapuletu-backend
+
+provider:
+  name: aws
+  runtime: python3.11
+  region: us-east-1
+  environment:
+    STAGE: ${opt:stage, 'dev'}
+    DATABASE_URL: ${env:DATABASE_URL}
+    SECRET_KEY: ${env:SECRET_KEY}
+    QLDB_LEDGER_NAME: ${env:QLDB_LEDGER_NAME}
+    TWILIO_SECRET: ${env:TWILIO_SECRET}
+    # Brought in from kapuletu-infra (Terraform outputs)
+    COGNITO_USER_POOL_ARN: ${env:COGNITO_USER_POOL_ARN}
+    COGNITO_CLIENT_ID: ${env:COGNITO_CLIENT_ID}
+    # Welcome Message Configs
+    DASHBOARD_URL: ${env:DASHBOARD_URL, 'https://app.kapuletu.com'}
+    TWILIO_ACCOUNT_SID: ${env:TWILIO_ACCOUNT_SID}
+    TWILIO_AUTH_TOKEN: ${env:TWILIO_AUTH_TOKEN}
+    SENDER_EMAIL: ${env:SENDER_EMAIL, 'welcome@kapuletu.com'}
+    SUPPORT_EMAIL: ${env:SUPPORT_EMAIL, 'support@kapuletu.com'}
+    SUPPORT_PHONE: ${env:SUPPORT_PHONE, '+254700000000'}
+
+functions:
+  ingestion:
+    handler: services/ingestion/handler.handler
+    events:
+      - http:
+          path: ingestion
+          method: post
+          # No Cognito Authorizer here: Twilio uses its own webhook secret to authenticate
+  
+  approval:
+    handler: services/approval/handler.handler
+    events:
+      - http:
+          path: approval
+          method: post
+          cors: true
+          authorizer:
+            name: KapuLetuAuthorizer
+            type: COGNITO_USER_POOLS
+            arn: ${env:COGNITO_USER_POOL_ARN}
+
+  reporting:
+    handler: services/reporting/handler.handler
+    events:
+      - http:
+          path: reporting
+          method: post
+          cors: true
+          authorizer:
+            name: KapuLetuAuthorizer
+            type: COGNITO_USER_POOLS
+            arn: ${env:COGNITO_USER_POOL_ARN}
+
+  members:
+    handler: services/members/handler.handler
+    events:
+      - http:
+          path: members
+          method: any
+          cors: true
+          authorizer:
+            name: KapuLetuAuthorizer
+            type: COGNITO_USER_POOLS
+            arn: ${env:COGNITO_USER_POOL_ARN}
+
+  campaigns:
+    handler: services/campaigns/handler.handler
+    events:
+      - http:
+          path: campaigns
+          method: any
+          cors: true
+          authorizer:
+            name: KapuLetuAuthorizer
+            type: COGNITO_USER_POOLS
+            arn: ${env:COGNITO_USER_POOL_ARN}
+
+  auth_api:
+    handler: services/auth/api_handler.handler
+    events:
+      - http:
+          path: auth/register
+          method: post
+          cors: true
+      - http:
+          path: auth/login
+          method: post
+          cors: true
+      - http:
+          path: auth/verify
+          method: post
+          cors: true
+      - http:
+          path: auth/refresh
+          method: post
+          cors: true
+      - http:
+          path: auth/forgot-password
+          method: post
+          cors: true
+      - http:
+          path: auth/reset-password
+          method: post
+          cors: true
+      - http:
+          path: auth/logout
+          method: post
+          cors: true
+          authorizer:
+            name: KapuLetuAuthorizer
+            type: COGNITO_USER_POOLS
+            arn: ${env:COGNITO_USER_POOL_ARN}
+      - http:
+          path: auth/change-password
+          method: post
+          cors: true
+          authorizer:
+            name: KapuLetuAuthorizer
+            type: COGNITO_USER_POOLS
+            arn: ${env:COGNITO_USER_POOL_ARN}
+      - http:
+          path: auth/me
+          method: get
+          cors: true
+          authorizer:
+            name: KapuLetuAuthorizer
+            type: COGNITO_USER_POOLS
+            arn: ${env:COGNITO_USER_POOL_ARN}
+      - http:
+          path: auth/me
+          method: patch
+          cors: true
+          authorizer:
+            name: KapuLetuAuthorizer
+            type: COGNITO_USER_POOLS
+            arn: ${env:COGNITO_USER_POOL_ARN}
+
+  auth_post_confirmation:
+    handler: services/auth/handler.post_confirmation
+    events:
+      - cognitoUserPool:
+          pool: kapuletu-${opt:stage, 'dev'}-user-pool
+          trigger: PostConfirmation
+          existing: true
+
+  auth_custom_sms_sender:
+    handler: services/auth/custom_sender.handler
+    events:
+      - cognitoUserPool:
+          pool: kapuletu-${opt:stage, 'dev'}-user-pool
+          trigger: CustomSMSSender
+          existing: true
+
+resources:
+  Resources:
+    # Standard API Gateway HTTP response configuration for CORS
+    GatewayResponseDefault4XX:
+      Type: 'AWS::ApiGateway::GatewayResponse'
+      Properties:
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+        ResponseType: DEFAULT_4XX
+        RestApiId:
+          Ref: 'ApiGatewayRestApi'

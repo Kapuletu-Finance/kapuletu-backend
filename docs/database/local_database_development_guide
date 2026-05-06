@@ -1,0 +1,68 @@
+# Local Development Setup Guide
+
+This guide provides the full steps to set up and run the KapuLetu Backend on your local machine for testing and development.
+
+## 🚀 Quick Start (Automated)
+
+We have provided a PowerShell script to automate the entire setup process (Docker, Virtual Environment, Migrations, and Seeding).
+
+1.  Open PowerShell in the project root.
+2.  Run the setup script:
+    ```powershell
+    .\scripts\setup_local.ps1
+    ```
+
+---
+
+## 🛠️ Manual Implementation Steps
+
+If you prefer to set up manually or need to troubleshoot, follow these steps:
+
+### 1. Infrastructure (PostgreSQL)
+We use Docker to run a local PostgreSQL instance.
+- **File**: `docker-compose.yml`
+- **Command**: `docker-compose up -d`
+- **Port**: `5433` (Used to avoid conflicts with existing local Postgres installations on 5432).
+
+### 2. Environment Variables
+Ensure your `.env` file contains the following:
+```env
+DATABASE_URL=postgresql://postgres:password@127.0.0.1:5433/kapuletu
+APP_ENV=development
+SECRET_KEY=supersecret
+QLDB_LEDGER_NAME=kapuletu-ledger
+```
+
+### 3. Database Migrations (Alembic)
+We use Alembic to manage the database schema based on SQLAlchemy models.
+- **Initialize**: `alembic init alembic` (Already done)
+- **Run Migrations**: 
+  ```powershell
+  .\venv\Scripts\python scripts\migrate.py
+  ```
+
+### 4. Seeding Initial Data
+Populate the database with default plans (Basic, Pro) and a system admin.
+- **Command**:
+  ```powershell
+  $env:PYTHONPATH="."
+  .\venv\Scripts\python scripts\seed_data.py
+  ```
+
+---
+
+## 🏗️ Architecture Improvements Made
+
+During the setup, several architectural fixes were applied to ensure the system works locally:
+
+- **Centralized Base**: Created `models/base.py` to prevent circular imports and ensure all models share the same metadata.
+- **Model Fixes**: Added missing ForeignKeys and relationships in `Campaign`, `Group`, and `ReviewAllocation` models.
+- **SSL Bypass**: Updated `common/database.py` to allow non-SSL connections for `127.0.0.1` and `localhost`.
+- **Port Mapping**: Moved the local database to port `5433` to prevent "Authentication Failed" errors caused by host-level Postgres conflicts.
+
+## 🧪 Verification
+To verify the setup, you can run the test connection script:
+```powershell
+.\venv\Scripts\python .gemini\antigravity\brain\88254ad1-3583-4aa4-ad34-38a13323cf6a\scratch\test_conn.py
+```
+*(Note: Path may vary depending on your environment)*
