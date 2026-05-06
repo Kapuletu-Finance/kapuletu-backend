@@ -1,10 +1,10 @@
 name: Backend Deployment (PROD)
 
-on:
-  push:
-    branches:
-      - production
-  workflow_dispatch:
+# on:
+#   push:
+#     branches:
+#       - production
+#   workflow_dispatch:
 
 permissions:
   id-token: write # Required for OIDC
