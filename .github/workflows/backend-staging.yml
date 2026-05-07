@@ -7,7 +7,7 @@ name: Backend Deployment (STAGING)
 #   pull_request:
 #     branches:
 #       - staging
-  workflow_dispatch:
+  # workflow_dispatch:
 
 permissions:
   id-token: write
