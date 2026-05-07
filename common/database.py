@@ -1,6 +1,6 @@
-import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import sessionmaker
+
 from common.config import get_config
 
 # Database Configuration & Session Management

@@ -1,8 +1,8 @@
-import os
 import json
 import logging
+import os
 import re
-from typing import Dict, Any
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,6 @@ def log_for_active_learning(raw_text: str, finalized_data: Dict[str, Any]):
         os.makedirs(os.path.dirname(ACTIVE_LEARNING_PATH), exist_ok=True)
         with open(ACTIVE_LEARNING_PATH, "w", encoding="utf-8") as f:
             json.dump(pool, f, indent=2)
-        logger.info(f"Active Learning: Logged 1 new highly-valuable ground-truth sample.")
+        logger.info("Active Learning: Logged 1 new highly-valuable ground-truth sample.")
     except Exception as e:
         logger.error(f"Active Learning: Failed to write to pool: {e}")

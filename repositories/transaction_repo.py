@@ -1,9 +1,12 @@
-from sqlalchemy.orm import Session
+from typing import List, Optional
+from uuid import UUID
+
 from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from models.pending_transaction import PendingTransaction
 from models.users import User
-from uuid import UUID
-from typing import List, Optional
+
 
 class TransactionRepository:
     """
@@ -34,20 +37,34 @@ class TransactionRepository:
 
     def check_duplicate_transaction_code(self, transaction_code: str) -> bool:
         """
-        Checks if a transaction code (or idempotency hash) already exists.
-        Used to prevent duplicate processing of the same message.
+        Checks if a transaction code (or idempotency hash) already exists in 
+        EITHER the pending queue or the finalized ledger.
         
         Args:
             transaction_code (str): The unique code to check.
             
         Returns:
-            bool: True if a match is found, False otherwise.
+            bool: True if a match is found in either table, False otherwise.
         """
         if not transaction_code:
             return False
-        stmt = select(PendingTransaction).where(PendingTransaction.transaction_code == transaction_code)
-        result = self.db.execute(stmt).scalars().first()
-        return result is not None
+            
+        # 1. Check Pending Transactions
+        from models.transaction import Transaction
+        
+        pending_exists = self.db.query(PendingTransaction).filter(
+            PendingTransaction.transaction_code == transaction_code
+        ).first() is not None
+        
+        if pending_exists:
+            return True
+            
+        # 2. Check Finalized Transactions
+        finalized_exists = self.db.query(Transaction).filter(
+            Transaction.transaction_code == transaction_code
+        ).first() is not None
+        
+        return finalized_exists
 
     def resolve_owner_by_phone(self, phone_number: str) -> Optional[User]:
         """

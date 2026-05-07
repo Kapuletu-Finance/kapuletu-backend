@@ -1,15 +1,17 @@
-from fastapi import FastAPI, Request, Response, APIRouter
+import json
+from typing import List, Optional
+
+from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-import json
+
+from services.approval.handler import handler as approval_handler
+from services.campaigns.handler import handler as campaigns_handler
 
 # Import Handlers
 from services.ingestion.handler import handler as ingestion_handler
-from services.approval.handler import handler as approval_handler
-from services.reporting.handler import handler as reporting_handler
 from services.members.handler import handler as members_handler
-from services.campaigns.handler import handler as campaigns_handler
+from services.reporting.handler import handler as reporting_handler
 
 app = FastAPI(
     title="KapuLetu Treasury API — Full Specification",
@@ -238,8 +240,10 @@ app.include_router(notifications)
 app.include_router(health)
 
 # Serve static assets (Logo, Favicons, etc.)
-from fastapi.staticfiles import StaticFiles
 import os
+
+from fastapi.staticfiles import StaticFiles
+
 if os.path.exists("assets"):
     app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 

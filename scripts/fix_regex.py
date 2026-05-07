@@ -1,4 +1,3 @@
-import re
 
 with open("auto_annotate.py", "r") as f:
     content = f.read()

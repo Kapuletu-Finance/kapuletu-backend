@@ -1,8 +1,9 @@
 import json
 import logging
+from urllib.parse import parse_qs
+
 from common.database import SessionLocal
 from services.ingestion.service import IngestionService
-from urllib.parse import parse_qs
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

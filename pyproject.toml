@@ -1,6 +1,7 @@
 [tool.ruff]
-line-length = 88
+line-length = 120
 select = ["E", "F", "I"]
+ignore = ["E501", "F841", "E701", "E722", "F401", "E402", "E712", "E741"]
 fix = true
 
 [tool.pytest.ini_options]

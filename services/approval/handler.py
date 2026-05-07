@@ -1,7 +1,9 @@
 import json
-from common.decorators import with_auth, with_subscription_check
+
 from common.database import SessionLocal
+from common.decorators import with_auth, with_subscription_check
 from services.approval.service import ApprovalService
+
 
 @with_auth(role_required="treasurer")
 @with_subscription_check(required_feature="approvals")

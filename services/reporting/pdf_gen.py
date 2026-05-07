@@ -1,4 +1,3 @@
-from reportlab.pdfgen import canvas
 
 def generate_pdf(data):
     # logic to generate PDF

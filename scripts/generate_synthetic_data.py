@@ -1,9 +1,9 @@
-import os
 import json
-import random
-import string
 import logging
+import os
+import random
 import re
+import string
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

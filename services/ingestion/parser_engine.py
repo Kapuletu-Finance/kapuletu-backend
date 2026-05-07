@@ -1,8 +1,9 @@
+import logging
 import os
 import re
+from typing import Any, Dict
+
 import spacy
-import logging
-from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 

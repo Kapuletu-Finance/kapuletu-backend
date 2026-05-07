@@ -1,10 +1,12 @@
-import logging
 import hashlib
+import logging
+from typing import Any, Dict
+
 from sqlalchemy.orm import Session
-from services.ingestion.parser_engine import parse_message
-from repositories.transaction_repo import TransactionRepository
+
 from models.pending_transaction import PendingTransaction
-from typing import Dict, Any, Optional
+from repositories.transaction_repo import TransactionRepository
+from services.ingestion.parser_engine import parse_message
 
 logger = logging.getLogger(__name__)
 

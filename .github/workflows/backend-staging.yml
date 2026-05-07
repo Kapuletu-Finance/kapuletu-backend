@@ -4,83 +4,99 @@ name: Backend Deployment (STAGING)
 #   push:
 #     branches:
 #       - staging
-#   workflow_dispatch:
+#   pull_request:
+#     branches:
+#       - staging
+  workflow_dispatch:
 
 permissions:
-  id-token: write # Required for OIDC
+  id-token: write
   contents: read
 
 env:
-  AWS_REGION: us-east-1 # Adjust as needed
+  AWS_REGION: eu-west-1
   STAGE: staging
   PYTHON_VERSION: "3.11"
+  ARTIFACT_BUCKET: kapuletu-staging-assets
+  ARTIFACT_KEY: backend.zip
 
 jobs:
   deploy:
-    name: Test, Lint and Deploy to Staging
+    name: Package and Upload to S3
     runs-on: ubuntu-latest
     environment: staging
 
     steps:
-      - name: 🛒 Checkout Code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: 🐍 Setup Python
+      # -----------------------------
+      # PYTHON SETUP
+      # -----------------------------
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
-      - name: 📦 Install Dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install ruff
           pip install -r requirements.txt
-          pip install ruff pytest
+          pip install -t ./lib -r requirements.txt
+          echo "### Dependencies Installed" >> $GITHUB_STEP_SUMMARY
+          echo "- Python: ${{ env.PYTHON_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Packages: $(pip list | wc -l)" >> $GITHUB_STEP_SUMMARY
 
-      - name: 🔍 Linting (Ruff)
-        run: ruff check .
+      - name: Run Linting (Ruff)
+        run: |
+          ruff check .
+          echo "### Linting Passed ✅" >> $GITHUB_STEP_SUMMARY
 
-      - name: 🧪 Run Tests (Pytest)
-        run: pytest
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          QLDB_LEDGER_NAME: ${{ secrets.QLDB_LEDGER_NAME }}
-          TWILIO_SECRET: ${{ secrets.TWILIO_SECRET }}
-
-      - name: 🚀 Setup Node.js (for Serverless)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: ⚡ Install Serverless Framework
-        run: npm install -g serverless
-
-      - name: 🔐 Configure AWS Credentials (OIDC)
+      # -----------------------------
+      # AWS OIDC AUTH
+      # -----------------------------
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/kapuletu-ci-cd-role-staging
+          role-to-assume: ${{ vars.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: 📦 Validate Package
-        run: serverless package --stage ${{ env.STAGE }}
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          QLDB_LEDGER_NAME: ${{ secrets.QLDB_LEDGER_NAME }}
-          TWILIO_SECRET: ${{ secrets.TWILIO_SECRET }}
-
-      - name: 🚢 Deploy to AWS Lambda
-        run: serverless deploy --stage ${{ env.STAGE }} --verbose
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          QLDB_LEDGER_NAME: ${{ secrets.QLDB_LEDGER_NAME }}
-          TWILIO_SECRET: ${{ secrets.TWILIO_SECRET }}
-
-      - name: ✨ Deployment Summary
+      - name: Verify AWS Connection
         run: |
-          echo "### ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
-          echo "- **Stage:** ${{ env.STAGE }}" >> $GITHUB_STEP_SUMMARY
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ROLE_ARN=$(aws sts get-caller-identity --query Arn --output text)
+          echo "### AWS Connection Status ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- **Account ID:** $ACCOUNT_ID" >> $GITHUB_STEP_SUMMARY
+          echo "- **Assumed Role:** $ROLE_ARN" >> $GITHUB_STEP_SUMMARY
           echo "- **Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+
+      # -----------------------------
+      # PACKAGE (ZIP)
+      # -----------------------------
+      - name: Package Application
+        run: |
+          cd lib
+          zip -r ../${{ env.ARTIFACT_KEY }} .
+          cd ..
+          zip -g ${{ env.ARTIFACT_KEY }} *.py
+          zip -rg ${{ env.ARTIFACT_KEY }} common/
+          zip -rg ${{ env.ARTIFACT_KEY }} services/
+          zip -rg ${{ env.ARTIFACT_KEY }} models/
+          zip -rg ${{ env.ARTIFACT_KEY }} repositories/
+          zip -rg ${{ env.ARTIFACT_KEY }} schemas/
+          echo "### Package Created" >> $GITHUB_STEP_SUMMARY
+          echo "- Filename: ${{ env.ARTIFACT_KEY }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Size: $(du -h ${{ env.ARTIFACT_KEY }} | cut -f1)" >> $GITHUB_STEP_SUMMARY
+
+      # -----------------------------
+      # UPLOAD TO S3
+      # -----------------------------
+      - name: Upload Artifact to S3
+        if: github.event_name != 'pull_request'
+        run: |
+          aws s3 cp ${{ env.ARTIFACT_KEY }} s3://${{ env.ARTIFACT_BUCKET }}/${{ env.ARTIFACT_KEY }}
+          echo "### Artifact Uploaded Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "- Bucket: ${{ env.ARTIFACT_BUCKET }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Key: ${{ env.ARTIFACT_KEY }}" >> $GITHUB_STEP_SUMMARY

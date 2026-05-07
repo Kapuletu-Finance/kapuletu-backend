@@ -1,8 +1,9 @@
 from sqlalchemy.orm import Session
-from models.transaction import Transaction
-from models.pending_transaction import PendingTransaction
-from common.qldb import get_qldb_driver
+
 from common.logger import get_logger
+from common.qldb import get_qldb_driver
+from models.pending_transaction import PendingTransaction
+from models.transaction import Transaction
 from services.ingestion.active_learner import log_for_active_learning
 
 logger = get_logger(__name__)
@@ -97,7 +98,28 @@ class ApprovalService:
         Internal helper to format and commit data to Amazon QLDB.
         QLDB ensures that the financial history is tamper-proof and cryptographically verifiable.
         """
-        # Note: In a production scenario, we convert the SQLAlchemy model to Ion/JSON
-        # for insertion into the QLDB 'Transactions' table.
-        # Example: self.qldb.execute_statement("INSERT INTO LedgerTransactions VALUE ?", txn_data)
-        pass
+        # 1. Prepare the data for the ledger
+        # We convert UUIDs and Decimals to strings/floats for compatibility with Ion
+        txn_data = {
+            "transaction_id": str(txn.transaction_id),
+            "owner_id": str(txn.owner_id),
+            "group_id": str(txn.group_id),
+            "campaign_id": str(txn.campaign_id) if txn.campaign_id else None,
+            "transaction_code": txn.transaction_code,
+            "amount": float(txn.amount),
+            "sender_phone": txn.sender_phone,
+            "status": txn.status,
+            "created_at": txn.created_at.isoformat()
+        }
+
+        # 2. Execute the insertion within a QLDB session
+        def insert_into_ledger(executor):
+            # Check if table exists or just insert (assuming table is pre-created in AWS)
+            executor.execute_statement("INSERT INTO LedgerTransactions VALUE ?", txn_data)
+
+        try:
+            self.qldb.execute_lambda(insert_into_ledger)
+            logger.info(f"Ledger Entry Created: Transaction {txn.transaction_id} is now immutable.")
+        except Exception as e:
+            logger.error(f"QLDB Write Error: {str(e)}")
+            raise e

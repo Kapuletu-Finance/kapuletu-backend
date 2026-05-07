@@ -1,6 +1,5 @@
-import re
 import json
-import os
+import re
 
 INPUT_FILE = r"c:\Users\josep\kapuletu-backend\data\merged_training_data.txt"
 OUTPUT_FILE = r"c:\Users\josep\kapuletu-backend\data\merged_annotated_dataset.json"

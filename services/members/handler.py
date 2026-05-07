@@ -1,5 +1,7 @@
 import json
+
 from services.members.service import create_member, list_members
+
 
 def handler(event, context):
     """

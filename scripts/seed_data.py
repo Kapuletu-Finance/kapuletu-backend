@@ -1,7 +1,9 @@
-import uuid
-from common.database import SessionLocal
-from models import User, Plan, Subscription
 import datetime
+import uuid
+
+from common.database import SessionLocal
+from models import Plan, Subscription, User
+
 
 def seed():
     """

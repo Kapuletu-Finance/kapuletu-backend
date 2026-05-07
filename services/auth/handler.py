@@ -1,4 +1,3 @@
-import json
 import os
 
 # Imagine we import our database connection here
@@ -42,9 +41,9 @@ def post_confirmation(event, context):
         
         # --- Send WhatsApp Welcome via Twilio ---
         try:
-            import urllib.request
-            import urllib.parse
             import base64
+            import urllib.parse
+            import urllib.request
             
             twilio_sid = os.environ.get('TWILIO_ACCOUNT_SID')
             twilio_token = os.environ.get('TWILIO_AUTH_TOKEN')

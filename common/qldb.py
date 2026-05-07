@@ -1,5 +1,5 @@
-import boto3
-from common.config import get_config
+import os
+from pyqldb.driver.qldb_driver import QldbDriver
 
 def get_qldb_driver():
     """
@@ -9,6 +9,6 @@ def get_qldb_driver():
     for all finalized financial transactions. Every approval is logged here 
     to ensure a tamper-proof audit trail.
     """
-    # Note: In a production environment, this would initialize the pyqldb driver.
-    # return QldbDriver(ledger_name=get_config().QLDB_LEDGER_NAME)
-    pass
+    ledger_name = os.environ.get('QLDB_LEDGER_NAME', 'kapuletu-ledger')
+    # The driver handles connection pooling and retries automatically
+    return QldbDriver(ledger_name=ledger_name)

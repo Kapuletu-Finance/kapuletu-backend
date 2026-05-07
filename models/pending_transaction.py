@@ -1,12 +1,10 @@
-from sqlalchemy import Column, String, UUID, Boolean, DateTime, Numeric, Text
 import datetime
 import uuid
+
+from sqlalchemy import UUID, Boolean, Column, DateTime, Float, Numeric, String, Text
+
 from .base import Base
 
-from sqlalchemy import Column, String, UUID, Numeric, Text, Boolean, DateTime, Float
-from .users import Base
-import datetime
-import uuid
 
 class PendingTransaction(Base):
     """

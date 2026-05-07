@@ -1,7 +1,9 @@
-import jwt
 import datetime
 import os
+
+import jwt
 from passlib.context import CryptContext
+
 from common.config import get_config
 
 config = get_config()

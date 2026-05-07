@@ -1,8 +1,10 @@
-import json
 import functools
+import json
+
 from common.auth import decode_access_token
 from common.database import SessionLocal
-from models.subscription import Subscription, Plan
+from models.subscription import Subscription
+
 
 def with_auth(role_required: str = None):
     """

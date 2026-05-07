@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+
 from colorama import Fore, Style, init
 
 # Initialize colorama for Windows terminal styling

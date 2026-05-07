@@ -1,5 +1,6 @@
 import logging
 
+
 def get_logger(name: str) -> logging.Logger:
     """
     Standardized logger factory for the KapuLetu Backend.

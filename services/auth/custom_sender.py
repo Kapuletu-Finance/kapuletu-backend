@@ -1,8 +1,7 @@
 import os
-import json
-import base64
-import urllib.request
 import urllib.parse
+import urllib.request
+
 # import aws_encryption_sdk # Required in production to decrypt Cognito's code
 # from aws_encryption_sdk import StrictAwsKmsMasterKeyProvider
 
