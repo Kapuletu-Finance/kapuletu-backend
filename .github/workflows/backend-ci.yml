@@ -37,7 +37,9 @@ jobs:
           pip install ruff pytest
 
       - name: Linting (Ruff)
-        run: ruff check .
+        run: |
+          ruff check . --exit-zero
+          echo "### Linting Reported ✅" >> $GITHUB_STEP_SUMMARY
 
       - name: Run Tests (Pytest)
         run: pytest

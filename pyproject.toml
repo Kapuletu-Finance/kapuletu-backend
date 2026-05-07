@@ -1,5 +1,6 @@
 [tool.ruff]
 line-length = 120
+exclude = ["lib", "venv", ".git", "__pycache__", "build", "dist"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

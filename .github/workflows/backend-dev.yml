@@ -43,17 +43,28 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install ruff
-          pip install -r requirements.txt
-          # We install dependencies into a local folder for packaging
+          # Install dependencies into a local folder
           pip install -t ./lib -r requirements.txt
-          echo "### Dependencies Installed" >> $GITHUB_STEP_SUMMARY
-          echo "- Python: ${{ env.PYTHON_VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Packages: $(pip list | wc -l)" >> $GITHUB_STEP_SUMMARY
+          
+          # ---------------------------------------------------------
+          # AGGRESSIVE CLEANUP TO STAY UNDER 250MB LIMIT
+          # ---------------------------------------------------------
+          cd lib
+          # Remove boto3 and botocore (they are in the Lambda runtime)
+          rm -rf boto3* botocore* jmespath* s3transfer*
+          # Remove metadata and info folders
+          rm -rf *.dist-info *.egg-info
+          # Remove cache and tests
+          find . -type d -name "__pycache__" -exec rm -rf {} +
+          find . -type d -name "tests" -exec rm -rf {} +
+          # Remove documentation and other bloat
+          find . -type d -name "doc" -exec rm -rf {} +
+          find . -type d -name "docs" -exec rm -rf {} +
+          cd ..
 
       - name: Run Linting (Ruff)
         run: |
           ruff check . --exit-zero
-          echo "### Linting Reported ✅" >> $GITHUB_STEP_SUMMARY
 
       # -----------------------------
       # AWS OIDC AUTH
@@ -64,33 +75,24 @@ jobs:
           role-to-assume: ${{ vars.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Verify AWS Connection
-        run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          ROLE_ARN=$(aws sts get-caller-identity --query Arn --output text)
-          echo "### AWS Connection Status ✅" >> $GITHUB_STEP_SUMMARY
-          echo "- **Account ID:** $ACCOUNT_ID" >> $GITHUB_STEP_SUMMARY
-          echo "- **Assumed Role:** $ROLE_ARN" >> $GITHUB_STEP_SUMMARY
-          echo "- **Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
-
       # -----------------------------
       # PACKAGE (ZIP)
       # -----------------------------
       - name: Package Application
         run: |
-          # Create a deployment package including dependencies and source code
           cd lib
           zip -r ../${{ env.ARTIFACT_KEY }} .
           cd ..
+          # Add source code (only the essentials)
           zip -g ${{ env.ARTIFACT_KEY }} *.py
           zip -rg ${{ env.ARTIFACT_KEY }} common/
           zip -rg ${{ env.ARTIFACT_KEY }} services/
           zip -rg ${{ env.ARTIFACT_KEY }} models/
           zip -rg ${{ env.ARTIFACT_KEY }} repositories/
           zip -rg ${{ env.ARTIFACT_KEY }} schemas/
-          echo "### Package Created" >> $GITHUB_STEP_SUMMARY
-          echo "- Filename: ${{ env.ARTIFACT_KEY }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Size: $(du -h ${{ env.ARTIFACT_KEY }} | cut -f1)" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### Package Size Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Final Zip Size: $(du -h ${{ env.ARTIFACT_KEY }} | cut -f1)" >> $GITHUB_STEP_SUMMARY
 
       # -----------------------------
       # UPLOAD TO S3
@@ -99,6 +101,4 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           aws s3 cp ${{ env.ARTIFACT_KEY }} s3://${{ env.ARTIFACT_BUCKET }}/${{ env.ARTIFACT_KEY }}
-          echo "### Artifact Uploaded Successfully" >> $GITHUB_STEP_SUMMARY
-          echo "- Bucket: ${{ env.ARTIFACT_BUCKET }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Key: ${{ env.ARTIFACT_KEY }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifact Uploaded Successfully ✅" >> $GITHUB_STEP_SUMMARY
