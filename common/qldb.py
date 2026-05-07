@@ -1,5 +1,7 @@
 import os
+
 from pyqldb.driver.qldb_driver import QldbDriver
+
 
 def get_qldb_driver():
     """

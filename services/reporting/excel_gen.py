@@ -1,6 +1,8 @@
-import pandas as pd
-import io
 import base64
+import io
+
+import pandas as pd
+
 
 def generate_excel_report(transactions_data: list):
     """

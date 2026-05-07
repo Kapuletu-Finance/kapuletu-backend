@@ -1,7 +1,9 @@
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from models.transaction import Transaction
+
 from models.campaign import Campaign
+from models.transaction import Transaction
+
 
 def generate_summary(db: Session, owner_id: str):
     """

@@ -1,5 +1,6 @@
 import json
 import logging
+
 from common.database import SessionLocal
 from services.reporting.daily_summary import generate_summary
 
