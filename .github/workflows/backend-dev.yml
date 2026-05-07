@@ -16,55 +16,18 @@ permissions:
 env:
   AWS_REGION: eu-west-1
   STAGE: dev
-  PYTHON_VERSION: "3.11"
-  ARTIFACT_BUCKET: kapuletu-dev-assets
-  ARTIFACT_KEY: backend.zip
+  ECR_REPOSITORY: kapuletu-dev-backend
+  IMAGE_TAG: latest
 
 jobs:
   deploy:
-    name: Package and Upload to S3
+    name: Build and Push to ECR
     runs-on: ubuntu-latest
     environment: dev
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      # -----------------------------
-      # PYTHON SETUP
-      # -----------------------------
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff
-          # Install dependencies into a local folder
-          pip install -t ./lib -r requirements.txt
-          
-          # ---------------------------------------------------------
-          # AGGRESSIVE CLEANUP TO STAY UNDER 250MB LIMIT
-          # ---------------------------------------------------------
-          cd lib
-          # Remove boto3 and botocore (they are in the Lambda runtime)
-          rm -rf boto3* botocore* jmespath* s3transfer*
-          # Remove metadata and info folders
-          rm -rf *.dist-info *.egg-info
-          # Remove cache and tests
-          find . -type d -name "__pycache__" -exec rm -rf {} +
-          find . -type d -name "tests" -exec rm -rf {} +
-          # Remove documentation and other bloat
-          find . -type d -name "doc" -exec rm -rf {} +
-          find . -type d -name "docs" -exec rm -rf {} +
-          cd ..
-
-      - name: Run Linting (Ruff)
-        run: |
-          ruff check . --exit-zero
 
       # -----------------------------
       # AWS OIDC AUTH
@@ -76,29 +39,32 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       # -----------------------------
-      # PACKAGE (ZIP)
+      # ECR LOGIN
       # -----------------------------
-      - name: Package Application
-        run: |
-          cd lib
-          zip -r ../${{ env.ARTIFACT_KEY }} .
-          cd ..
-          # Add source code (only the essentials)
-          zip -g ${{ env.ARTIFACT_KEY }} *.py
-          zip -rg ${{ env.ARTIFACT_KEY }} common/
-          zip -rg ${{ env.ARTIFACT_KEY }} services/
-          zip -rg ${{ env.ARTIFACT_KEY }} models/
-          zip -rg ${{ env.ARTIFACT_KEY }} repositories/
-          zip -rg ${{ env.ARTIFACT_KEY }} schemas/
-          
-          echo "### Package Size Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- Final Zip Size: $(du -h ${{ env.ARTIFACT_KEY }} | cut -f1)" >> $GITHUB_STEP_SUMMARY
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       # -----------------------------
-      # UPLOAD TO S3
+      # BUILD AND PUSH
       # -----------------------------
-      - name: Upload Artifact to S3
-        if: github.event_name != 'pull_request'
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.registry }}
         run: |
-          aws s3 cp ${{ env.ARTIFACT_KEY }} s3://${{ env.ARTIFACT_BUCKET }}/${{ env.ARTIFACT_KEY }}
-          echo "### Artifact Uploaded Successfully ✅" >> $GITHUB_STEP_SUMMARY
+          docker build -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} .
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          
+          echo "### Container Image Deployed ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Registry: $ECR_REGISTRY" >> $GITHUB_STEP_SUMMARY
+          echo "- Repository: ${{ env.ECR_REPOSITORY }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Tag: ${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
+
+      # -----------------------------
+      # UPDATE LAMBDA
+      # -----------------------------
+      - name: Update Lambda to use new image
+        run: |
+          aws lambda update-function-code \
+            --function-name kapuletu-${{ env.STAGE }}-backend \
+            --image-uri ${{ steps.login-ecr.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
