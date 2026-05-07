@@ -7,7 +7,7 @@ fastapi
 python-dotenv
 psycopg2-binary
 pydantic
-pandas
+# core dependencies pinned below
 openpyxl
 reportlab
 pyqldb
@@ -41,10 +41,10 @@ markdown-it-py==4.0.0
 MarkupSafe==3.0.3
 mdurl==0.1.2
 murmurhash==1.0.15
-numpy==2.4.4
+numpy<2.0.0
 openpyxl==3.1.5
 packaging==26.1
-pandas==3.0.2
+pandas<3.0.0
 pillow==12.2.0
 preshed==3.0.13
 psycopg2-binary==2.9.12
