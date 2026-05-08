@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from services.approval.handler import handler as approval_handler
+from services.auth.api_handler import handler as auth_handler
 from services.campaigns.handler import handler as campaigns_handler
 from services.groups.handler import handler as groups_handler
 
@@ -51,6 +52,69 @@ class ManualEntryIn(BaseModel):
     purpose: Optional[str] = Field(None, json_schema_extra={"example": "January Contribution"})
     transaction_code: Optional[str] = Field(None, json_schema_extra={"example": "MANUAL-12345"})
 
+# --- Authentication Schemas ---
+
+class RegisterIn(BaseModel):
+    email: str = Field(..., json_schema_extra={"example": "treasurer@example.com"})
+    password: str = Field(..., json_schema_extra={"example": "SecurePass123!"})
+    first_name: str = Field(..., json_schema_extra={"example": "Joseph"})
+    last_name: str = Field(..., json_schema_extra={"example": "Amuyunzu"})
+    phone_number: str = Field(..., json_schema_extra={"example": "+254700123456"})
+
+class LoginIn(BaseModel):
+    email: str = Field(..., json_schema_extra={"example": "treasurer@example.com"})
+    password: str = Field(..., json_schema_extra={"example": "SecurePass123!"})
+
+class VerifyIn(BaseModel):
+    email: str = Field(..., json_schema_extra={"example": "treasurer@example.com"})
+    code: str = Field(..., json_schema_extra={"example": "123456"})
+
+class RefreshIn(BaseModel):
+    refresh_token: str = Field(..., json_schema_extra={"example": "eyJhbG..."})
+
+class ForgotPasswordIn(BaseModel):
+    email: str = Field(..., json_schema_extra={"example": "treasurer@example.com"})
+
+class ResetPasswordIn(BaseModel):
+    email: str = Field(..., json_schema_extra={"example": "treasurer@example.com"})
+    code: str = Field(..., json_schema_extra={"example": "123456"})
+    new_password: str = Field(..., json_schema_extra={"example": "NewSecurePass456!"})
+
+class ChangePasswordIn(BaseModel):
+    old_password: str = Field(..., json_schema_extra={"example": "SecurePass123!"})
+    new_password: str = Field(..., json_schema_extra={"example": "NewSecurePass456!"})
+
+class UpdateProfileIn(BaseModel):
+    first_name: Optional[str] = Field(None, json_schema_extra={"example": "Joseph"})
+    last_name: Optional[str] = Field(None, json_schema_extra={"example": "Amuyunzu"})
+    phone_number: Optional[str] = Field(None, json_schema_extra={"example": "+254700123456"})
+
+# --- Approval & Review Schemas ---
+
+class TransactionActionIn(BaseModel):
+    internal_note: Optional[str] = Field(None, json_schema_extra={"example": "Matched with paper receipt #123"})
+
+class TransactionEditIn(BaseModel):
+    extracted_amount: Optional[float] = Field(None, json_schema_extra={"example": 1500.0})
+    extracted_sender_name: Optional[str] = Field(None, json_schema_extra={"example": "Joseph Amuyunzu"})
+    extracted_code: Optional[str] = Field(None, json_schema_extra={"example": "ABC123XYZ"})
+    extracted_date: Optional[str] = Field(None, json_schema_extra={"example": "2026-05-08"})
+
+class BulkActionIn(BaseModel):
+    pending_ids: List[str] = Field(..., json_schema_extra={"example": ["uuid-1", "uuid-2"]})
+    internal_note: Optional[str] = Field(None, json_schema_extra={"example": "Bulk approval for Sunday collection"})
+
+# --- Members & Notifications ---
+
+class MemberIn(BaseModel):
+    member_name: str = Field(..., json_schema_extra={"example": "John Wainaina"})
+    member_phone: Optional[str] = Field(None, json_schema_extra={"example": "+254700000000"})
+    group_id: str = Field(..., json_schema_extra={"example": "group-uuid"})
+
+class NotificationIn(BaseModel):
+    pending_id: str = Field(..., json_schema_extra={"example": "pending-uuid"})
+    message_type: str = Field("confirmation", json_schema_extra={"example": "confirmation"})
+
 # --- Lambda Adapter Logic ---
 
 async def lambda_adapter(request: Request, handler):
@@ -93,25 +157,25 @@ async def placeholder(request: Request):
 # 2. Authentication
 auth = APIRouter(prefix="/auth", tags=["2. Authentication"])
 @auth.post("/register", summary="Register Treasurer")
-async def register(request: Request): return await placeholder(request)
+async def register(request: Request, payload: RegisterIn): return await lambda_adapter(request, auth_handler)
 @auth.post("/login", summary="Login")
-async def login(request: Request): return await placeholder(request)
+async def login(request: Request, payload: LoginIn): return await lambda_adapter(request, auth_handler)
 @auth.post("/refresh", summary="Refresh Token")
-async def refresh(request: Request): return await placeholder(request)
+async def refresh(request: Request, payload: RefreshIn): return await lambda_adapter(request, auth_handler)
 @auth.post("/logout", summary="Logout")
-async def logout(request: Request): return await placeholder(request)
+async def logout(request: Request): return await lambda_adapter(request, auth_handler)
 @auth.get("/me", summary="Get Current User")
-async def get_me(request: Request): return await placeholder(request)
+async def get_me(request: Request): return await lambda_adapter(request, auth_handler)
 @auth.patch("/me", summary="Update Profile")
-async def update_profile(request: Request): return await placeholder(request)
+async def update_profile(request: Request, payload: UpdateProfileIn): return await lambda_adapter(request, auth_handler)
 @auth.post("/change-password", summary="Change Password")
-async def change_password(request: Request): return await placeholder(request)
+async def change_password(request: Request, payload: ChangePasswordIn): return await lambda_adapter(request, auth_handler)
 @auth.post("/forgot-password", summary="Request Password Reset")
-async def forgot_password(request: Request): return await placeholder(request)
+async def forgot_password(request: Request, payload: ForgotPasswordIn): return await lambda_adapter(request, auth_handler)
 @auth.post("/reset-password", summary="Reset Password")
-async def reset_password(request: Request): return await placeholder(request)
+async def reset_password(request: Request, payload: ResetPasswordIn): return await lambda_adapter(request, auth_handler)
 @auth.post("/verify", summary="Verify Phone / Email")
-async def verify(request: Request): return await placeholder(request)
+async def verify(request: Request, payload: VerifyIn): return await lambda_adapter(request, auth_handler)
 
 # 3. Groups Management
 groups = APIRouter(prefix="/groups", tags=["3. Groups Management"])
@@ -120,11 +184,11 @@ async def create_group(request: Request, payload: GroupIn): return await lambda_
 @groups.get("", summary="Get All My Groups")
 async def list_groups(request: Request): return await lambda_adapter(request, groups_handler)
 @groups.get("/{group_id}", summary="Get Single Group")
-async def get_group(group_id: str): return await lambda_adapter(None, groups_handler)
+async def get_group(request: Request, group_id: str): return await lambda_adapter(request, groups_handler)
 @groups.patch("/{group_id}", summary="Update Group")
-async def update_group(group_id: str): return await lambda_adapter(None, groups_handler)
+async def update_group(request: Request, group_id: str): return await lambda_adapter(request, groups_handler)
 @groups.delete("/{group_id}", summary="Archive Group")
-async def archive_group(group_id: str): return await lambda_adapter(None, groups_handler)
+async def archive_group(request: Request, group_id: str): return await lambda_adapter(request, groups_handler)
 
 # 4. Campaigns Management
 campaigns = APIRouter(tags=["4. Campaigns Management"])
@@ -133,11 +197,11 @@ async def create_campaign(request: Request, group_id: str, payload: CampaignIn):
 @campaigns.get("/groups/{group_id}/campaigns", summary="List Campaigns")
 async def list_group_campaigns(request: Request, group_id: str): return await lambda_adapter(request, campaigns_handler)
 @campaigns.get("/campaigns/{campaign_id}", summary="Get Campaign")
-async def get_campaign(campaign_id: str): return await lambda_adapter(None, campaigns_handler)
+async def get_campaign(request: Request, campaign_id: str): return await lambda_adapter(request, campaigns_handler)
 @campaigns.patch("/campaigns/{campaign_id}", summary="Update Campaign")
-async def update_campaign(campaign_id: str): return await lambda_adapter(None, campaigns_handler)
+async def update_campaign(request: Request, campaign_id: str): return await lambda_adapter(request, campaigns_handler)
 @campaigns.post("/campaigns/{campaign_id}/status", summary="Change Campaign Status")
-async def campaign_status(campaign_id: str): return await lambda_adapter(None, campaigns_handler)
+async def campaign_status(request: Request, campaign_id: str): return await lambda_adapter(request, campaigns_handler)
 
 # 5. Transaction Ingestion
 ingestion = APIRouter(tags=["5. Transaction Ingestion"])
@@ -153,31 +217,31 @@ async def manual_entry(request: Request, payload: ManualEntryIn): return await l
 @ingestion.get("/transactions/pending", summary="Get Pending Transactions (Inbox)")
 async def get_pending(request: Request): return await lambda_adapter(request, approval_handler)
 @ingestion.get("/transactions/pending/{pending_id}", summary="Get Single Pending")
-async def get_pending_single(pending_id: str): return await lambda_adapter(None, approval_handler)
+async def get_pending_single(request: Request, pending_id: str): return await lambda_adapter(request, approval_handler)
 
 # 6. Parsing & Validation
 parsing = APIRouter(prefix="/transactions", tags=["6. Parsing & Validation"])
 @parsing.post("/{pending_id}/reparse", summary="Re-parse Message")
-async def reparse(pending_id: str): return await lambda_adapter(None, approval_handler)
+async def reparse(request: Request, pending_id: str): return await lambda_adapter(request, approval_handler)
 @parsing.post("/{pending_id}/validate", summary="Validate Transaction")
-async def validate_tx(pending_id: str): return await lambda_adapter(None, approval_handler)
+async def validate_tx(request: Request, pending_id: str): return await lambda_adapter(request, approval_handler)
 
 # 7. Review & Approval
 review = APIRouter(prefix="/transactions", tags=["7. Review & Approval Workflow"])
 @review.post("/{pending_id}/approve", summary="Approve Transaction")
-async def approve(request: Request, pending_id: str): return await lambda_adapter(request, approval_handler)
+async def approve(request: Request, pending_id: str, payload: Optional[TransactionActionIn] = None): return await lambda_adapter(request, approval_handler)
 @review.post("/{pending_id}/reject", summary="Reject Transaction")
-async def reject(request: Request, pending_id: str): return await lambda_adapter(request, approval_handler)
+async def reject(request: Request, pending_id: str, payload: Optional[TransactionActionIn] = None): return await lambda_adapter(request, approval_handler)
 @review.patch("/{pending_id}", summary="Edit Transaction")
-async def edit_tx(request: Request, pending_id: str): return await lambda_adapter(request, approval_handler)
+async def edit_tx(request: Request, pending_id: str, payload: TransactionEditIn): return await lambda_adapter(request, approval_handler)
 @review.post("/{pending_id}/note", summary="Add Note")
-async def add_note(pending_id: str): return await lambda_adapter(None, approval_handler)
+async def add_note(request: Request, pending_id: str, payload: TransactionActionIn): return await lambda_adapter(request, approval_handler)
 @review.post("/{pending_id}/split", summary="Split Transaction")
 async def split_tx(request: Request, payload: TransactionSplit, pending_id: str): return await lambda_adapter(request, approval_handler)
 @review.post("/bulk/approve", summary="Bulk Approval")
-async def bulk_approve(request: Request): return await placeholder(request)
+async def bulk_approve(request: Request, payload: BulkActionIn): return await lambda_adapter(request, approval_handler)
 @review.post("/bulk/reject", summary="Bulk Reject")
-async def bulk_reject(request: Request): return await placeholder(request)
+async def bulk_reject(request: Request, payload: BulkActionIn): return await lambda_adapter(request, approval_handler)
 
 # 8. Ledger
 ledger = APIRouter(prefix="/ledger", tags=["8. Ledger (Immutable)"])
@@ -191,20 +255,20 @@ async def get_ledger_entry(ledger_id: str): return await placeholder(None)
 # 9. Members
 members = APIRouter(tags=["9. Members Management"])
 @members.get("/members/suggestions", summary="Auto-Suggest Members")
-async def suggest_members(request: Request): return await placeholder(request)
+async def suggest_members(request: Request): return await lambda_adapter(request, members_handler)
 @members.post("/members", summary="Create Member (Optional)")
-async def create_member(request: Request): return await lambda_adapter(request, members_handler)
+async def create_member(request: Request, payload: MemberIn): return await lambda_adapter(request, members_handler)
 @members.get("/groups/{group_id}/members", summary="Get Members")
-async def group_members(group_id: str): return await lambda_adapter(None, members_handler)
+async def group_members(request: Request, group_id: str): return await lambda_adapter(request, members_handler)
 
 # 10. Reporting
 reporting = APIRouter(prefix="/reports", tags=["10. Reporting Service"])
 @reporting.get("/daily", summary="Daily Summary")
 async def daily_report(request: Request): return await lambda_adapter(request, reporting_handler)
 @reporting.get("/campaign/{campaign_id}", summary="Campaign Progress")
-async def campaign_report(campaign_id: str): return await lambda_adapter(None, reporting_handler)
+async def campaign_report(request: Request, campaign_id: str): return await lambda_adapter(request, reporting_handler)
 @reporting.get("/contributors/{campaign_id}", summary="Contributor List")
-async def contributors_report(campaign_id: str): return await placeholder(None)
+async def contributors_report(request: Request, campaign_id: str): return await lambda_adapter(request, reporting_handler)
 @reporting.get("/export/excel", summary="Export Excel")
 async def export_excel(request: Request): return await lambda_adapter(request, reporting_handler)
 @reporting.get("/export/pdf", summary="Export PDF")
@@ -229,7 +293,7 @@ async def get_logs_by_entity(entity_type: str, entity_id: str): return await pla
 # 13. Notifications
 notifications = APIRouter(prefix="/notifications", tags=["13. Notifications"])
 @notifications.post("/send", summary="Send Confirmation (After Approval)")
-async def send_notification(request: Request): return await placeholder(request)
+async def send_notification(request: Request, payload: NotificationIn): return await placeholder(request)
 
 # 14. System Health
 health = APIRouter(tags=["14. System Health & Admin"])

@@ -4,7 +4,7 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 
-cognito = boto3.client('cognito-idp', region_name=os.environ.get('AWS_REGION', 'us-east-1'))
+cognito = boto3.client('cognito-idp', region_name=os.environ.get('AWS_REGION', 'eu-west-1'))
 CLIENT_ID = os.environ.get('COGNITO_CLIENT_ID')
 
 def respond(status_code, body):
