@@ -4,6 +4,7 @@ bcrypt
 boto3
 spacy
 fastapi
+mangum
 python-dotenv
 psycopg2-binary
 pydantic
