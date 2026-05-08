@@ -29,7 +29,8 @@ class Campaign(Base):
     group_id = Column(UUID(as_uuid=True), ForeignKey("groups.group_id"), nullable=False)
     # Descriptive title of the goal
     title = Column(String)
-    # The financial target to be reached
-    target_amount = Column(Numeric)
+    description = Column(String, nullable=True)
+    target_amount = Column(Numeric, default=0.0)
+    payment_instructions = Column(String, nullable=True)
 
     group = relationship("Group", back_populates="campaigns")

@@ -93,6 +93,67 @@ class ApprovalService:
         logger.info(f"Transaction {new_txn.transaction_id} successfully finalized and ledger-locked.")
         return new_txn
 
+    def split_transaction(self, pending_txn_id, treasurer_id, group_id, allocations, campaign_id=None):
+        """
+        Splits a single pending transaction into multiple member allocations.
+        
+        Args:
+            pending_txn_id (UUID): The record to split.
+            treasurer_id (UUID): The authorizing treasurer.
+            group_id (UUID): The target group.
+            allocations (List[dict]): List of { "name": str, "amount": float }
+            campaign_id (UUID, optional): Default campaign.
+            
+        Returns:
+            Transaction: The parent transaction record.
+        """
+        from models.review_allocation import ReviewAllocation
+        import uuid
+
+        # 1. Fetch record
+        pending = self.db.query(PendingTransaction).filter(PendingTransaction.pending_id == pending_txn_id).first()
+        if not pending:
+            raise Exception("Pending transaction not found")
+
+        # 2. Math Validation: Ensure total matches
+        total_split = sum(float(a["amount"]) for a in allocations)
+        if abs(total_split - float(pending.amount)) > 0.01:
+            raise Exception(f"Math Error: Total split ({total_split}) does not match payment amount ({pending.amount})")
+
+        # 3. Create Parent Transaction
+        new_txn = Transaction(
+            owner_id=treasurer_id,
+            group_id=group_id,
+            campaign_id=campaign_id,
+            transaction_code=pending.transaction_code,
+            amount=pending.amount,
+            sender_phone=pending.sender_phone,
+            status="approved"
+        )
+        self.db.add(new_txn)
+        self.db.flush()
+
+        # 4. Create Individual Allocations
+        for alloc in allocations:
+            item = ReviewAllocation(
+                allocation_id=uuid.uuid4(),
+                transaction_id=new_txn.transaction_id,
+                pending_id=pending.pending_id,
+                member_name=alloc["name"],
+                allocated_amount=alloc["amount"]
+            )
+            self.db.add(item)
+
+        # 5. Ledger Commitment
+        self._write_to_ledger(new_txn)
+
+        # 6. Mark Processed
+        pending.is_processed = True
+        pending.workflow_status = "split_approved"
+        
+        self.db.commit()
+        return new_txn
+
     def _write_to_ledger(self, txn: Transaction):
         """
         Internal helper to format and commit data to Amazon QLDB.

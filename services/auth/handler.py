@@ -3,6 +3,9 @@ import os
 # Imagine we import our database connection here
 # from repositories.user_repository import create_user_and_organization
 
+from common.database import SessionLocal
+from models.users import User
+
 def post_confirmation(event, context):
     """
     AWS Cognito Post-Confirmation Trigger.
@@ -24,18 +27,27 @@ def post_confirmation(event, context):
     
     print(f"Auth Hook Triggered: New User Confirmed. Email: {email}, ID: {cognito_user_id}")
     
+    db = SessionLocal()
     try:
         # 2. Logic to insert user into PostgreSQL
-        # (Pseudo-code for the repository logic that would happen here)
-        # 
-        # db = get_db_connection()
-        # organization_id = db.execute("INSERT INTO organizations (name, tier) VALUES (%s, 'Free') RETURNING id", [f"{first_name} {last_name} Org"])
-        # db.execute("INSERT INTO users (id, email, first_name, last_name, phone_number, organization_id) VALUES (%s, %s, %s, %s, %s, %s)", 
-        #            [cognito_user_id, email, first_name, last_name, phone_number, organization_id])
-        # db.commit()
+        # Check if user already exists to prevent duplicate key errors
+        existing_user = db.query(User).filter(User.email == email).first()
         
-        print(f"Successfully synced user {email} to PostgreSQL database.")
-        
+        if not existing_user:
+            new_user = User(
+                user_id=cognito_user_id,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                phone_number=phone_number,
+                role="treasurer"
+            )
+            db.add(new_user)
+            db.commit()
+            print(f"Successfully created user {email} in PostgreSQL database.")
+        else:
+            print(f"User {email} already exists in database. Skipping creation.")
+
         # 3. Send Professional Welcome Messages
         dashboard_url = os.environ.get('DASHBOARD_URL', 'https://app.kapuletu.com')
         
@@ -52,14 +64,15 @@ def post_confirmation(event, context):
             support_email = os.environ.get('SUPPORT_EMAIL', 'support@kapuletu.com')
             
             whatsapp_body = (
-                f"*Welcome to KapuLetu, {first_name}!*\n\n"
-                f"Your account is verified and ready to go.\n\n"
-                f"*Here’s what to do next:*\n"
-                f"1. Log in to your dashboard: {dashboard_url}\n"
-                f"2. Set up your organization profile and invite your team.\n"
-                f"3. Start automating your group's finances.\n\n"
-                f"We built KapuLetu to make managing community funds as simple, transparent and trustworthy.\n\n"
-                f"If you need any help, please don't reply here. Instead, email us at {support_email} or call/WhatsApp us at {support_phone}."
+                f"WELCOME TO KAPULETU, {first_name.upper()}\n\n"
+                f"Your account has been successfully verified and is now active.\n\n"
+                f"Next Steps:\n"
+                f"1. Access your dashboard: {dashboard_url}\n"
+                f"2. Complete your organization profile.\n"
+                f"3. Invite your team and start managing your finances.\n\n"
+                f"KapuLetu is designed to provide structured, transparent, and trustworthy "
+                f"financial management for your community treasury.\n\n"
+                f"For assistance, please email {support_email} or contact our support team at {support_phone}."
             )
             
             if twilio_sid and twilio_token and phone_number:
@@ -151,6 +164,8 @@ def post_confirmation(event, context):
         print(f"Failed to sync user {email} to database: {str(e)}")
         # If we fail to sync, we should ideally raise an exception so Cognito knows it failed
         raise e
+    finally:
+        db.close()
 
     # 4. Return the event to Cognito so it can finalize the signup process
     return event

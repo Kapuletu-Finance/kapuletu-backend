@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from services.approval.handler import handler as approval_handler
 from services.campaigns.handler import handler as campaigns_handler
+from services.groups.handler import handler as groups_handler
 
 # Import Handlers
 from services.ingestion.handler import handler as ingestion_handler
@@ -28,10 +29,13 @@ class TransactionIn(BaseModel):
 
 class GroupIn(BaseModel):
     name: str = Field(..., json_schema_extra={"example": "St. Peters Welfare"})
+    description: Optional[str] = Field(None, json_schema_extra={"example": "Main community welfare and social fund."})
 
 class CampaignIn(BaseModel):
-    title: str = Field(..., json_schema_extra={"example": "Hospital Fund"})
+    title: str = Field(..., json_schema_extra={"example": "Medical Fund - Jane Doe"})
+    description: Optional[str] = Field(None, json_schema_extra={"example": "Fundraising for hospital expenses."})
     target_amount: float = Field(..., json_schema_extra={"example": 50000.0})
+    payment_instructions: Optional[str] = Field(None, json_schema_extra={"example": "Paybill 123456, Account: JANE"})
 
 class SplitAllocation(BaseModel):
     name: str = Field(..., json_schema_extra={"example": "John Doe"})
@@ -39,6 +43,13 @@ class SplitAllocation(BaseModel):
 
 class TransactionSplit(BaseModel):
     allocations: List[SplitAllocation]
+
+class ManualEntryIn(BaseModel):
+    amount: float = Field(..., json_schema_extra={"example": 1500.0})
+    sender_name: str = Field(..., json_schema_extra={"example": "Joseph Njoroge"})
+    sender_phone: str = Field(..., json_schema_extra={"example": "+254700000000"})
+    purpose: Optional[str] = Field(None, json_schema_extra={"example": "January Contribution"})
+    transaction_code: Optional[str] = Field(None, json_schema_extra={"example": "MANUAL-12345"})
 
 # --- Lambda Adapter Logic ---
 
@@ -105,15 +116,15 @@ async def verify(request: Request): return await placeholder(request)
 # 3. Groups Management
 groups = APIRouter(prefix="/groups", tags=["3. Groups Management"])
 @groups.post("", summary="Create Group")
-async def create_group(payload: GroupIn): return await placeholder(None)
+async def create_group(request: Request, payload: GroupIn): return await lambda_adapter(request, groups_handler)
 @groups.get("", summary="Get All My Groups")
-async def list_groups(request: Request): return await placeholder(request)
+async def list_groups(request: Request): return await lambda_adapter(request, groups_handler)
 @groups.get("/{group_id}", summary="Get Single Group")
-async def get_group(group_id: str): return await placeholder(None)
+async def get_group(group_id: str): return await lambda_adapter(None, groups_handler)
 @groups.patch("/{group_id}", summary="Update Group")
-async def update_group(group_id: str): return await placeholder(None)
+async def update_group(group_id: str): return await lambda_adapter(None, groups_handler)
 @groups.delete("/{group_id}", summary="Archive Group")
-async def archive_group(group_id: str): return await placeholder(None)
+async def archive_group(group_id: str): return await lambda_adapter(None, groups_handler)
 
 # 4. Campaigns Management
 campaigns = APIRouter(tags=["4. Campaigns Management"])
@@ -134,8 +145,11 @@ ingestion = APIRouter(tags=["5. Transaction Ingestion"])
 async def ingestion_webhook_schema(payload: TransactionIn): return Response(status_code=200)
 @app.post("/ingestion/webhook", include_in_schema=False)
 async def ingestion_webhook_impl(request: Request): return await lambda_adapter(request, ingestion_handler)
+
+from services.ingestion.manual_handler import handler as manual_handler
 @ingestion.post("/transactions/manual", summary="Manual Entry")
-async def manual_entry(request: Request): return await placeholder(request)
+async def manual_entry(request: Request, payload: ManualEntryIn): return await lambda_adapter(request, manual_handler)
+
 @ingestion.get("/transactions/pending", summary="Get Pending Transactions (Inbox)")
 async def get_pending(request: Request): return await lambda_adapter(request, approval_handler)
 @ingestion.get("/transactions/pending/{pending_id}", summary="Get Single Pending")
@@ -144,9 +158,9 @@ async def get_pending_single(pending_id: str): return await lambda_adapter(None,
 # 6. Parsing & Validation
 parsing = APIRouter(prefix="/transactions", tags=["6. Parsing & Validation"])
 @parsing.post("/{pending_id}/reparse", summary="Re-parse Message")
-async def reparse(pending_id: str): return await placeholder(None)
+async def reparse(pending_id: str): return await lambda_adapter(None, approval_handler)
 @parsing.post("/{pending_id}/validate", summary="Validate Transaction")
-async def validate_tx(pending_id: str): return await placeholder(None)
+async def validate_tx(pending_id: str): return await lambda_adapter(None, approval_handler)
 
 # 7. Review & Approval
 review = APIRouter(prefix="/transactions", tags=["7. Review & Approval Workflow"])
@@ -157,9 +171,9 @@ async def reject(request: Request, pending_id: str): return await lambda_adapter
 @review.patch("/{pending_id}", summary="Edit Transaction")
 async def edit_tx(request: Request, pending_id: str): return await lambda_adapter(request, approval_handler)
 @review.post("/{pending_id}/note", summary="Add Note")
-async def add_note(pending_id: str): return await placeholder(None)
+async def add_note(pending_id: str): return await lambda_adapter(None, approval_handler)
 @review.post("/{pending_id}/split", summary="Split Transaction")
-async def split_tx(payload: TransactionSplit, pending_id: str): return await placeholder(None)
+async def split_tx(request: Request, payload: TransactionSplit, pending_id: str): return await lambda_adapter(request, approval_handler)
 @review.post("/bulk/approve", summary="Bulk Approval")
 async def bulk_approve(request: Request): return await placeholder(request)
 @review.post("/bulk/reject", summary="Bulk Reject")
@@ -196,7 +210,7 @@ async def export_excel(request: Request): return await lambda_adapter(request, r
 @reporting.get("/export/pdf", summary="Export PDF")
 async def export_pdf(request: Request): return await lambda_adapter(request, reporting_handler)
 @reporting.get("/whatsapp-summary", summary="WhatsApp Summary Format")
-async def whatsapp_summary(request: Request): return await placeholder(request)
+async def whatsapp_summary(request: Request): return await lambda_adapter(request, reporting_handler)
 
 # 11. Evidence
 evidence = APIRouter(prefix="/transactions", tags=["11. Evidence Management"])

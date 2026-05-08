@@ -1,17 +1,16 @@
 import uuid
-
 from sqlalchemy.orm import Session
-
 from models.campaign import Campaign
 
-
-def create_campaign(db: Session, group_id: str, title: str, target_amount: float = 0.0):
-    """Creates a new campaign for a specific group."""
+def create_campaign(db: Session, group_id: str, title: str, description: str = None, target_amount: float = 0.0, payment_instructions: str = None):
+    """Creates a new campaign for a specific group with full reporting metadata."""
     new_campaign = Campaign(
         campaign_id=uuid.uuid4(),
         group_id=group_id,
         title=title,
-        target_amount=target_amount
+        description=description,
+        target_amount=target_amount,
+        payment_instructions=payment_instructions
     )
     db.add(new_campaign)
     db.commit()
