@@ -38,7 +38,7 @@ def handler(event, context):
                 "statusCode": 200, 
                 "body": json.dumps([{
                     "id": str(g.group_id),
-                    "name": g.name,
+                    "name": g.group_name,
                     "description": g.description
                 } for g in groups])
             }

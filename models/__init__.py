@@ -10,6 +10,6 @@ from .pending_transaction import PendingTransaction
 from .review_action import ReviewAction
 from .review_allocation import ReviewAllocation
 from .subscription import Plan, Subscription, UsageTracking
-from .tenant import Group
+from .group import Group
 from .transaction import Transaction
 from .users import User

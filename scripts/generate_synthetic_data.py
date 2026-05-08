@@ -84,6 +84,8 @@ def generate_synthetic_data(num_samples=10000):
         
         # 5. Direct Receipt
         "[CODE] Confirmed.You have received [AMOUNT_STR] from [SENDER] 0712345678 on [DATE_1] at [TIME].",
+        "[CODE] Confirmed.You have received [AMOUNT_STR] from [SENDER] 5439452 on [DATE_1] at [TIME].",
+        "[CODE] Confirmed.You have received [AMOUNT_STR] from [SENDER] 350051 on [DATE_1] at [TIME].",
         "[CODE] Confirmed. You have received [AMOUNT_STR] from [SENDER] on [DATE_1] at [TIME].",
         
         # 6. Pochi La Biashara
