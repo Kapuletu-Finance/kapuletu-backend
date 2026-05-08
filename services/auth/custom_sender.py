@@ -27,10 +27,10 @@ def handler(event, context):
         
         if twilio_sid and twilio_token and phone_number:
             whatsapp_body = (
-                f"KAPULETU SECURITY NOTIFICATION\n\n"
-                f"Hello {first_name}, your one-time security verification code is: {code}\n\n"
-                f"Please enter this code in the application to proceed. If you did not "
-                f"initiate this request, please contact our support team immediately."
+                f" *KapuLetu Security*\n\n"
+                f"Hello {first_name}! Your one-time verification code is: *{code}*\n\n"
+                f"Please enter this in the app to continue. If you didn't request this, "
+                f"please ignore this message."
             )
             
             try:

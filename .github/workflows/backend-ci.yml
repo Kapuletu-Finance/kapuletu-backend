@@ -48,3 +48,5 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           QLDB_LEDGER_NAME: ${{ secrets.QLDB_LEDGER_NAME }}
           TWILIO_SECRET: ${{ secrets.TWILIO_SECRET }}
+          COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
+          COGNITO_USER_POOL_ARN: ${{ secrets.COGNITO_USER_POOL_ARN }}
