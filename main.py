@@ -1,15 +1,41 @@
+import json
 import os
-from mangum import Mangum
-from local_server import app
+import logging
+import traceback
 
-# This is the entry point for AWS Lambda (Proxy Integration)
-# Mangum takes the FastAPI 'app' and makes it work with AWS events
-handler = Mangum(app, lifespan="off")
+# Setup logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
-# We can also add environment-specific logic here if needed
+try:
+    from mangum import Mangum
+    from local_server import app
+    
+    # This is the entry point for AWS Lambda
+    handler = Mangum(app, lifespan="off")
+    logger.info("Successfully initialized Mangum and FastAPI app")
+
+except Exception as e:
+    # If the app fails to even START (e.g. missing dependency), 
+    # we catch it here so it doesn't just show "Internal Server Error"
+    error_trace = traceback.format_exc()
+    logger.error(f"FAILED TO INITIALIZE APP: {error_trace}")
+    
+    def handler(event, context):
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({
+                "error": "initialization_failed",
+                "message": str(e),
+                "traceback": error_trace
+            })
+        }
+
+# --- Environment Info for the Landing Page ---
 if os.environ.get("ENV") == "dev":
     app.title = "KapuLetu Treasury API (Development)"
 elif os.environ.get("ENV") == "prod":
     app.title = "KapuLetu Treasury API (Production)"
-    app.docs_url = None # Disable Swagger UI in production for security
+    app.docs_url = None
     app.redoc_url = None
