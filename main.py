@@ -13,10 +13,7 @@ def handler(event, context):
     Handles API Gateway Proxy, Cognito Triggers, and Error Reporting.
     """
     try:
-        from mangum import Mangum
-        from local_server import app
-        
-        # 1. Detect AWS Cognito Triggers
+        # 1. Detect AWS Cognito Triggers (Lightweight)
         if "triggerSource" in event:
             trigger = event["triggerSource"]
             logger.info(f"Cognito Trigger: {trigger}")
@@ -31,7 +28,10 @@ def handler(event, context):
                 
             return event # Return event unchanged if no specific handler
 
-        # 2. API Gateway Routing (FastAPI)
+        # 2. API is a  Gateway Routing (FastAPI - Deferred)
+        from mangum import Mangum
+        from local_server import app
+        
         # Apply environment-specific titles/security
         env = os.environ.get("ENV", "dev")
         app.title = f"KapuLetu Treasury API ({env.capitalize()})"

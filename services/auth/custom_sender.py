@@ -26,6 +26,7 @@ def handler(event, context):
         twilio_number = os.environ.get('TWILIO_WHATSAPP_NUMBER')
         
         if twilio_sid and twilio_token and phone_number:
+            logger.info(f"Attempting WhatsApp send to {phone_number} using SID {twilio_sid[:5]}...")
             whatsapp_body = (
                 f" *KapuLetu Security*\n\n"
                 f"Hello {first_name}! Your one-time verification code is: *{code}*\n\n"
@@ -45,9 +46,11 @@ def handler(event, context):
                 auth_str = base64.b64encode(f"{twilio_sid}:{twilio_token}".encode()).decode()
                 req.add_header('Authorization', f"Basic {auth_str}")
                 urllib.request.urlopen(req)
-                logger.info(f"WhatsApp code sent to {phone_number}")
+                logger.info(f"SUCCESS: WhatsApp code sent to {phone_number}")
             except Exception as e:
-                logger.error(f"WhatsApp delivery failed: {str(e)}")
+                logger.error(f"ERROR: WhatsApp delivery failed: {str(e)}")
+        else:
+            logger.warning(f"SKIPPING WhatsApp: Missing Twilio Credentials (SID: {bool(twilio_sid)}, Token: {bool(twilio_token)})")
 
     # 2. Designer HTML Email Template
     if trigger == 'CustomMessage_SignUp':
