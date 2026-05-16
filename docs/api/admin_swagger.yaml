@@ -1,0 +1,265 @@
+openapi: 3.0.0
+info:
+  title: KapuLetu Admin Governance API
+  description: Professional administrative suite for platform-level oversight, user support, and AI management.
+  version: 1.0.0
+servers:
+  - url: https://api.kapuletu.com/admin/v1
+    description: Production Admin API
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []
+
+paths:
+  /users/treasurers:
+    get:
+      summary: List all Treasurers
+      tags:
+        - User Governance
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, suspended]
+      responses:
+        '200':
+          description: List of treasurers retrieved successfully.
+
+  /users/treasurers/{user_id}:
+    get:
+      summary: Get Treasurer Details
+      tags:
+        - User Governance
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Detailed treasurer profile.
+    patch:
+      summary: Escalated Profile Update
+      tags:
+        - User Governance
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                phone_number:
+                  type: string
+                is_verified:
+                  type: boolean
+      responses:
+        '200':
+          description: Profile updated.
+
+  /users/treasurers/{user_id}/groups:
+    get:
+      summary: View User Groups
+      tags:
+        - User Governance
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of groups owned by the treasurer.
+
+  /users/treasurers/{user_id}/payments:
+    get:
+      summary: View User Payment History
+      tags:
+        - User Governance
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment history for the specific user.
+
+  /users/treasurers/{user_id}/status:
+    post:
+      summary: Update Account Status
+      tags:
+        - User Governance
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [active, suspended]
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Account status updated.
+
+  /ai/parser/train:
+    post:
+      summary: Trigger AI Model Training
+      tags:
+        - AI Governance
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                epochs:
+                  type: integer
+                dropout:
+                  type: number
+      responses:
+        '202':
+          description: Training job accepted.
+
+  /ai/parser/config:
+    get:
+      summary: Get AI Training Configuration
+      tags:
+        - AI Governance
+      responses:
+        '200':
+          description: Returns current training mode (Continuous/Periodic).
+    post:
+      summary: Update AI Training Configuration
+      tags:
+        - AI Governance
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                training_mode:
+                  type: string
+                  enum: [continuous, periodic]
+                continuous_threshold:
+                  type: integer
+      responses:
+        '200':
+          description: Configuration updated.
+
+  /finance/plans:
+    post:
+      summary: Create Subscription Plan
+      tags:
+        - Subscription Management
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                price:
+                  type: number
+                period:
+                  type: string
+                features:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: Subscription plan created.
+    get:
+      summary: List All Subscription Plans
+      tags:
+        - Subscription Management
+      responses:
+        '200':
+          description: List of available plans.
+
+  /finance/payments:
+    get:
+      summary: Global Payment Records
+      tags:
+        - Subscription Management
+      responses:
+        '200':
+          description: All subscription payment records across the platform.
+
+  /crm/broadcast:
+    post:
+      summary: Platform-Wide Broadcast
+      tags:
+        - CRM & Engagement
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                channel:
+                  type: string
+      responses:
+        '200':
+          description: Broadcast sent.
+
+  /audit/logs:
+    get:
+      summary: Search Forensic Audit Trail
+      tags:
+        - Audit & Forensics
+      parameters:
+        - name: actor_id
+          in: query
+          schema:
+            type: string
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Forensic logs matching the search criteria.

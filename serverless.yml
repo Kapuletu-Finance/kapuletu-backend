@@ -8,7 +8,6 @@ provider:
     STAGE: ${opt:stage, 'dev'}
     DATABASE_URL: ${env:DATABASE_URL}
     SECRET_KEY: ${env:SECRET_KEY}
-    QLDB_LEDGER_NAME: ${env:QLDB_LEDGER_NAME}
     TWILIO_SECRET: ${env:TWILIO_SECRET}
     # Brought in from kapuletu-infra (Terraform outputs)
     COGNITO_USER_POOL_ARN: ${env:COGNITO_USER_POOL_ARN}
@@ -20,8 +19,44 @@ provider:
     SENDER_EMAIL: ${env:SENDER_EMAIL, 'welcome@kapuletu.com'}
     SUPPORT_EMAIL: ${env:SUPPORT_EMAIL, 'support@kapuletu.com'}
     SUPPORT_PHONE: ${env:SUPPORT_PHONE, '+254700000000'}
+    # Finance Gateway Configs
+    MPESA_CONSUMER_KEY: ${env:MPESA_CONSUMER_KEY}
+    MPESA_CONSUMER_SECRET: ${env:MPESA_CONSUMER_SECRET}
+    MPESA_SHORTCODE: ${env:MPESA_SHORTCODE}
+    MPESA_PASSKEY: ${env:MPESA_PASSKEY}
+    MPESA_CALLBACK_URL: ${env:MPESA_CALLBACK_URL}
+    FLW_SECRET_KEY: ${env:FLW_SECRET_KEY}
+    FLW_PUBLIC_KEY: ${env:FLW_PUBLIC_KEY}
+    FLW_SECRET_HASH: ${env:FLW_SECRET_HASH}
+    FLW_CURRENCY: ${env:FLW_CURRENCY, 'KES'}
+    FLW_REDIRECT_URL: ${env:FLW_REDIRECT_URL, 'https://app.kapuletu.com/payment/success'}
 
 functions:
+  finance_api:
+    handler: services/finance/handler.handler
+    events:
+      - http:
+          path: finance/checkout
+          method: post
+          cors: true
+          authorizer:
+            name: KapuLetuAuthorizer
+            type: COGNITO_USER_POOLS
+            arn: ${env:COGNITO_USER_POOL_ARN}
+      - http:
+          path: finance/available-plans
+          method: get
+          cors: true
+      - http:
+          path: finance/status/{id}
+          method: get
+          cors: true
+      - http:
+          path: finance/webhooks/{provider}
+          method: post
+          cors: true
+          # Publicly accessible, but verified internally via signature
+  
   ingestion:
     handler: services/ingestion/handler.handler
     events:
@@ -132,6 +167,18 @@ functions:
       - http:
           path: auth/me
           method: patch
+          cors: true
+          authorizer:
+            name: KapuLetuAuthorizer
+            type: COGNITO_USER_POOLS
+            arn: ${env:COGNITO_USER_POOL_ARN}
+
+  admin_api:
+    handler: services/admin/handler.handler
+    events:
+      - http:
+          path: admin/v1/{proxy+}
+          method: any
           cors: true
           authorizer:
             name: KapuLetuAuthorizer

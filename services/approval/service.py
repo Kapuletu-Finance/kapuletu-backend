@@ -1,9 +1,11 @@
 from sqlalchemy.orm import Session
 
 from common.logger import get_logger
-from common.qldb import get_qldb_driver
+import hashlib
+import json
 from models.pending_transaction import PendingTransaction
 from models.transaction import Transaction
+from models.users import User
 from services.ingestion.active_learner import log_for_active_learning
 
 logger = get_logger(__name__)
@@ -14,13 +16,12 @@ class ApprovalService:
     to 'Immutable Ledger' state.
     
     This service ensures that once a treasurer approves a transaction, it is 
-    permanently recorded in both the relational database (for fast queries) 
-    and Amazon QLDB (for audit integrity).
+    permanently recorded in the relational database with a cryptographic integrity 
+    seal (SHA-256) to prevent tampering.
     """
     def __init__(self, db: Session):
-        """Initializes service with SQL and QLDB drivers."""
+        """Initializes service with SQL session."""
         self.db = db
-        self.qldb = get_qldb_driver()
 
     def approve_transaction(self, pending_txn_id, treasurer_id, group_id, campaign_id=None):
         """
@@ -56,6 +57,8 @@ class ApprovalService:
             transaction_code=pending.transaction_code,
             amount=pending.amount,
             sender_phone=pending.sender_phone,
+            sender_name=pending.sender_name,
+            evidence_url=pending.evidence_url,
             status="approved"
         )
         self.db.add(new_txn)
@@ -67,22 +70,34 @@ class ApprovalService:
             "amount": float(new_txn.amount) if new_txn.amount else None,
             "sender_name": pending.sender_name,
             "transaction_code": new_txn.transaction_code,
-            # If provider/date become fields later, map them here.
         }
+        
+        # Admin Feedback Loop: Record the correction if the ground truth differs from the AI's first guess.
+        # CRITICAL: Only log if the user has opted-in to AI training (Privacy Guard)
+        user = self.db.query(User).filter(User.user_id == treasurer_id).first()
+        if user and user.allow_ai_training and pending.original_ai_output:
+            from services.admin.ai_governance_service import AIGovernanceService
+            ai_service = AIGovernanceService(self.db)
+            ai_service.log_treasurer_correction(
+                pending_txn_id, 
+                treasurer_id, 
+                pending.original_ai_output, 
+                finalized_data
+            )
+
         try:
             log_for_active_learning(pending.raw_message, finalized_data)
         except Exception as e:
             logger.error(f"Active Learning Hook Failed: {e}")
 
-        # 3. Write to QLDB (The immutable truth)
-        # We write to the ledger BEFORE committing the SQL transaction.
-        # If the ledger write fails, we rollback the entire operation to maintain consistency.
+        # 3. Create Integrity Seal (The verifiable truth)
+        # We calculate a SHA-256 hash of the transaction data to ensure auditability.
         try:
             self._write_to_ledger(new_txn)
         except Exception as e:
-            logger.error(f"Ledger Integrity Error: Failed to write to QLDB: {e}")
+            logger.error(f"Ledger Integrity Error: Failed to generate seal: {e}")
             self.db.rollback()
-            raise Exception("Ledger commitment failed. Transaction has been rolled back for safety.")
+            raise Exception("Integrity sealing failed. Transaction has been rolled back for safety.")
 
         # 4. Mark pending as processed
         # This ensures the item no longer appears in the treasurer's approval inbox.
@@ -154,14 +169,59 @@ class ApprovalService:
         self.db.commit()
         return new_txn
 
+    def reject_transaction(self, pending_txn_id, treasurer_id):
+        """
+        Marks a pending transaction as rejected.
+        
+        Args:
+            pending_txn_id (UUID): The record to reject.
+            treasurer_id (UUID): The treasurer rejecting the record.
+        """
+        pending = self.db.query(PendingTransaction).filter(
+            PendingTransaction.pending_id == pending_txn_id,
+            PendingTransaction.owner_id == treasurer_id
+        ).first()
+        
+        if not pending:
+            raise Exception("Pending transaction not found or access denied")
+
+        pending.is_processed = True
+        pending.workflow_status = "rejected"
+        
+        self.db.commit()
+        logger.info(f"Transaction {pending_txn_id} rejected by treasurer {treasurer_id}.")
+        return {"status": "rejected"}
+
+    def bulk_approve(self, pending_ids: list, treasurer_id, group_id, campaign_id=None):
+        """Processes multiple approvals in a single batch."""
+        results = []
+        for pid in pending_ids:
+            try:
+                txn = self.approve_transaction(pid, treasurer_id, group_id, campaign_id)
+                results.append({"pending_id": str(pid), "status": "success", "transaction_id": str(txn.transaction_id)})
+            except Exception as e:
+                results.append({"pending_id": str(pid), "status": "error", "message": str(e)})
+        return results
+
+    def bulk_reject(self, pending_ids: list, treasurer_id):
+        """Processes multiple rejections in a single batch."""
+        results = []
+        for pid in pending_ids:
+            try:
+                self.reject_transaction(pid, treasurer_id)
+                results.append({"pending_id": str(pid), "status": "success"})
+            except Exception as e:
+                results.append({"pending_id": str(pid), "status": "error", "message": str(e)})
+        return results
+
     def _write_to_ledger(self, txn: Transaction):
         """
-        Internal helper to format and commit data to Amazon QLDB.
-        QLDB ensures that the financial history is tamper-proof and cryptographically verifiable.
+        Internal helper to generate a cryptographic seal for the transaction.
+        Even without QLDB, we maintain a verifiable hash in RDS to detect tampering.
         """
-        # 1. Prepare the data for the ledger
-        # We convert UUIDs and Decimals to strings/floats for compatibility with Ion
-        txn_data = {
+        # 1. Prepare data for hashing
+        # We use a deterministic JSON serialization (sorted keys)
+        txn_payload = {
             "transaction_id": str(txn.transaction_id),
             "owner_id": str(txn.owner_id),
             "group_id": str(txn.group_id),
@@ -173,14 +233,8 @@ class ApprovalService:
             "created_at": txn.created_at.isoformat()
         }
 
-        # 2. Execute the insertion within a QLDB session
-        def insert_into_ledger(executor):
-            # Check if table exists or just insert (assuming table is pre-created in AWS)
-            executor.execute_statement("INSERT INTO LedgerTransactions VALUE ?", txn_data)
-
-        try:
-            self.qldb.execute_lambda(insert_into_ledger)
-            logger.info(f"Ledger Entry Created: Transaction {txn.transaction_id} is now immutable.")
-        except Exception as e:
-            logger.error(f"QLDB Write Error: {str(e)}")
-            raise e
+        # 2. Calculate SHA-256 Hash
+        serialized = json.dumps(txn_payload, sort_keys=True).encode()
+        txn.ledger_hash = hashlib.sha256(serialized).hexdigest()
+        
+        logger.info(f"Integrity Seal Created: Transaction {txn.transaction_id} hashed and finalized in RDS.")

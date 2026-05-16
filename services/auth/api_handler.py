@@ -135,6 +135,42 @@ def handler(event, context):
                 )
             return respond(200, {"message": "Profile updated successfully."})
 
+        elif path == '/auth/settings' and http_method == 'GET':
+            if not access_token: return respond(401, {"error": "Missing token"})
+            from common.database import SessionLocal
+            from models.users import User
+            
+            # Extract sub from token (Cognito get_user returns it)
+            response = cognito.get_user(AccessToken=access_token)
+            sub = next(attr['Value'] for attr in response['UserAttributes'] if attr['Name'] == 'sub')
+            
+            db = SessionLocal()
+            try:
+                user = db.query(User).filter(User.user_id == sub).first()
+                return respond(200, {
+                    "allow_ai_training": user.allow_ai_training if user else True
+                })
+            finally:
+                db.close()
+
+        elif path == '/auth/settings' and http_method == 'POST':
+            if not access_token: return respond(401, {"error": "Missing token"})
+            from common.database import SessionLocal
+            from models.users import User
+            
+            response = cognito.get_user(AccessToken=access_token)
+            sub = next(attr['Value'] for attr in response['UserAttributes'] if attr['Name'] == 'sub')
+            
+            db = SessionLocal()
+            try:
+                user = db.query(User).filter(User.user_id == sub).first()
+                if user:
+                    user.allow_ai_training = body.get('allow_ai_training', True)
+                    db.commit()
+                return respond(200, {"message": "Settings updated successfully."})
+            finally:
+                db.close()
+
         else:
             return respond(404, {"error": "Endpoint not found"})
 

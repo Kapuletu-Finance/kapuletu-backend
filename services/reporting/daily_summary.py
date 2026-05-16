@@ -64,9 +64,19 @@ def generate_campaign_whatsapp_report(db: Session, campaign_id: str, manual_inst
     if not txns:
         report += f"(No approved records to display)\n"
     else:
-        for i, t in enumerate(txns, 1):
-            name = t.sender_name or f"Member {t.sender_phone[-4:]}" if t.sender_phone else "Member"
-            report += f"{i:2}. {name:18} KES {float(t.amount):>8,.0f}\n"
+        counter = 1
+        for t in txns:
+            if t.allocations:
+                # If the transaction is split, list each allocation separately
+                for alloc in t.allocations:
+                    name = alloc.member_name or "Member"
+                    report += f"{counter:2}. {name:18} KES {float(alloc.allocated_amount):>8,.0f}\n"
+                    counter += 1
+            else:
+                # Standard single-member transaction
+                name = t.sender_name or (f"Member {t.sender_phone[-4:]}" if t.sender_phone else "Member")
+                report += f"{counter:2}. {name:18} KES {float(t.amount):>8,.0f}\n"
+                counter += 1
     
     report += f"------------------------------------\n\n"
     

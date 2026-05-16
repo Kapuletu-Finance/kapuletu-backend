@@ -1,5 +1,6 @@
+from __future__ import annotations
 import json
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import HTMLResponse
@@ -104,6 +105,35 @@ class BulkActionIn(BaseModel):
     pending_ids: List[str] = Field(..., json_schema_extra={"example": ["uuid-1", "uuid-2"]})
     internal_note: Optional[str] = Field(None, json_schema_extra={"example": "Bulk approval for Sunday collection"})
 
+# --- Admin Governance Schemas ---
+
+class AdminOverviewOut(BaseModel):
+    total_treasurers: int = Field(..., json_schema_extra={"example": 1250})
+    total_revenue_kes: float = Field(..., json_schema_extra={"example": 450000.0})
+    active_subscriptions: int = Field(..., json_schema_extra={"example": 890})
+    pending_tickets: int = Field(..., json_schema_extra={"example": 12})
+    ai_accuracy_rate: float = Field(..., json_schema_extra={"example": 0.94})
+
+class TreasurerStatusIn(BaseModel):
+    status: str = Field(..., json_schema_extra={"example": "suspended"})
+    reason: str = Field(..., json_schema_extra={"example": "Suspicious login pattern detected from new IP."})
+
+class AITrainingParamsIn(BaseModel):
+    epochs: int = Field(10, json_schema_extra={"example": 15})
+    dropout: float = Field(0.2, json_schema_extra={"example": 0.1})
+    use_treasurer_feedback: bool = Field(True)
+
+class SubscriptionPlanIn(BaseModel):
+    name: str = Field(..., json_schema_extra={"example": "Pro Treasurer"})
+    price: float = Field(..., json_schema_extra={"example": 1500.0})
+    billing_period: str = Field("monthly", json_schema_extra={"example": "annual"})
+    features: List[str] = Field(..., json_schema_extra={"example": ["Unlimited Groups", "AI Parsing"]})
+
+class SystemBroadcastIn(BaseModel):
+    message: str = Field(..., json_schema_extra={"example": "Platform maintenance scheduled for 10:00 PM EAT."})
+    channel: str = Field("all", json_schema_extra={"example": "whatsapp"})
+    target_role: str = Field("treasurer")
+
 # --- Members & Notifications ---
 
 class MemberIn(BaseModel):
@@ -114,6 +144,18 @@ class MemberIn(BaseModel):
 class NotificationIn(BaseModel):
     pending_id: str = Field(..., json_schema_extra={"example": "pending-uuid"})
     message_type: str = Field("confirmation", json_schema_extra={"example": "confirmation"})
+
+# --- Finance & Subscription Schemas ---
+
+class KapuletuCheckoutIn(BaseModel):
+    plan_id: str = Field(..., json_schema_extra={"example": "pro"})
+    provider: str = Field(..., json_schema_extra={"example": "flutterwave"}) # Options: mpesa, flutterwave, stripe (legacy)
+    phone_number: Optional[str] = Field(None, json_schema_extra={"example": "+254700000000"})
+
+class KapuletuCheckoutOut(BaseModel):
+    checkout_id: str = Field(..., json_schema_extra={"example": "CH-123"})
+    status: str = Field(..., json_schema_extra={"example": "initiated"})
+    provider_response: Any = Field(None)
 
 # --- Lambda Adapter Logic ---
 
@@ -302,6 +344,97 @@ async def health_check(): return {"status": "healthy"}
 @health.get("/metrics", summary="Metrics")
 async def metrics_check(): return {"metrics": "..."}
 
+# 15. Admin Governance Suite
+admin = APIRouter(prefix="/admin/v1", tags=["15. Admin Governance Suite"])
+
+@admin.get("/overview", summary="Platform Overview Statistics", response_model=AdminOverviewOut)
+async def admin_overview():
+    return {
+        "total_treasurers": 1250,
+        "total_revenue_kes": 450000.0,
+        "active_subscriptions": 890,
+        "pending_tickets": 12,
+        "ai_accuracy_rate": 0.94
+    }
+
+@admin.get("/users/treasurers", summary="List All Treasurers")
+async def list_treasurers(request: Request): return await placeholder(request)
+
+@admin.get("/users/treasurers/{user_id}", summary="Get Treasurer Profile & Activity")
+async def get_treasurer_profile(user_id: str): return await placeholder(None)
+
+@admin.get("/users/treasurers/{user_id}/groups", summary="View Treasurer Groups")
+async def get_treasurer_groups(user_id: str): return await placeholder(None)
+
+@admin.get("/users/treasurers/{user_id}/payments", summary="View Treasurer Payment History")
+async def get_treasurer_payments(user_id: str): return await placeholder(None)
+
+@admin.patch("/users/treasurers/{user_id}", summary="Escalated Profile Update")
+async def admin_update_user(user_id: str, payload: UpdateProfileIn): return await placeholder(None)
+
+@admin.post("/users/treasurers/{user_id}/status", summary="Update Account Status (Suspend/Active)")
+async def update_user_status(user_id: str, payload: TreasurerStatusIn): return await placeholder(None)
+
+@admin.post("/ai/parser/train", summary="Trigger AI Model Training")
+async def trigger_ai_training(payload: AITrainingParamsIn): return {"status": "accepted", "job_id": "job-123"}
+
+@admin.get("/ai/parser/knowledge", summary="Review AI Knowledge Base")
+async def review_ai_knowledge(): return await placeholder(None)
+
+@admin.get("/ai/parser/feedback-queue", summary="Manage AI Feedback Loop")
+async def ai_feedback_queue(): return await placeholder(None)
+
+@admin.post("/finance/plans", summary="Create Subscription Plan")
+async def create_plan(payload: SubscriptionPlanIn): return {"status": "created", "plan_id": "plan-xyz"}
+
+@admin.get("/finance/plans", summary="List Subscription Plans")
+async def list_plans(): return await placeholder(None)
+
+@admin.get("/finance/payments", summary="Global Payment Records")
+async def global_payments(): return await placeholder(None)
+
+@admin.post("/finance/payments/override", summary="Manual Subscription Override")
+async def manual_override(): return {"status": "success", "message": "Subscription updated"}
+
+@admin.post("/crm/broadcast", summary="Platform-Wide Broadcast")
+async def system_broadcast(payload: SystemBroadcastIn): return {"status": "sent", "recipient_count": 1250}
+
+@admin.get("/audit/logs", summary="Search Forensic Audit Trail")
+async def search_audit_logs(request: Request): return await placeholder(request)
+
+# --- Section 16: Finance & Subscriptions (Treasurer Facing) ---
+finance = APIRouter(tags=["16. Finance & Subscriptions"], prefix="/finance")
+
+@finance.post("/checkout", response_model=KapuletuCheckoutOut, summary="Initiate Subscription Payment")
+async def initiate_checkout(data: KapuletuCheckoutIn):
+    return {
+        "checkout_id": "CH-SUB-12345",
+        "status": "initiated",
+        "provider_response": {"message": "STK Push Sent / Payment Intent Created"}
+    }
+
+@finance.get("/status/{checkout_id}", summary="Check Payment Fulfillment Status")
+async def get_payment_status(checkout_id: str):
+    return {"status": "success", "confirmed_at": "2024-05-14T10:00:00Z", "plan": "Professional"}
+
+@finance.get("/available-plans", summary="List Subscription Tiers")
+async def list_plans():
+    return [
+        {"id": "basic", "name": "Basic", "price": 0, "limits": {"groups": 1}},
+        {"id": "pro", "name": "Professional", "price": 1000, "limits": {"groups": 10}}
+    ]
+
+@finance.get("/my-subscription", summary="View Active Subscription & Usage")
+async def my_subscription():
+    return {
+        "active_plan": "Professional",
+        "expiry_date": "2024-06-14",
+        "usage": {
+            "groups": "3/10",
+            "campaigns": "5/50"
+        }
+    }
+
 # --- Include All Routers ---
 app.include_router(auth)
 app.include_router(groups)
@@ -316,6 +449,8 @@ app.include_router(evidence)
 app.include_router(audit)
 app.include_router(notifications)
 app.include_router(health)
+app.include_router(admin)
+app.include_router(finance)
 
 # Serve static assets (Logo, Favicons, etc.)
 import os

@@ -44,6 +44,11 @@ class PendingTransaction(Base):
     # purpose: Any notes or purpose extracted from the message (e.g. 'January Dues').
     purpose = Column(String, nullable=True)
     
+    # AI Governance: Snapshot of the original output from the NLP engine.
+    # This is used to track corrections for model retraining.
+    from sqlalchemy import JSON
+    original_ai_output = Column(JSON, nullable=True)
+    
     # Metadata & Workflow State
     # confidence_score: The AI's certainty level (0.0 to 1.0) regarding the extraction.
     confidence_score = Column(Float, default=0.0)
@@ -51,5 +56,7 @@ class PendingTransaction(Base):
     workflow_status = Column(String, default="pending") 
     # is_processed: Flag to indicate if the transaction has been finalized in the ledger.
     is_processed = Column(Boolean, default=False)
+    # evidence_url: Link to the verification screenshot.
+    evidence_url = Column(String, nullable=True)
     # created_at: Timestamp when the ingestion occurred.
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

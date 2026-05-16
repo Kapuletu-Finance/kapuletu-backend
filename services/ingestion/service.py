@@ -87,6 +87,7 @@ class IngestionService:
             transaction_code=txn_code,
             sender_phone=parsed_data.get("phone") or sender_phone,
             purpose=parsed_data.get("purpose"),
+            original_ai_output=parsed_data, # Persist the raw AI response for feedback loops
             confidence_score=parsed_data.get("confidence_score"),
             workflow_status="pending"
         )

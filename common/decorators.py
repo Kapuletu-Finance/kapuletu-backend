@@ -33,8 +33,10 @@ def with_auth(role_required: str = None):
                 return {"statusCode": 401, "body": json.dumps({"error": "Unauthorized: Invalid or expired token"})}
             
             # Role-Based Access Control check
-            if role_required and payload.get("role") != role_required:
-                return {"statusCode": 403, "body": json.dumps({"error": "Forbidden: Insufficient permissions for this operation"})}
+            if role_required:
+                allowed_roles = [role_required] if isinstance(role_required, str) else role_required
+                if payload.get("role") not in allowed_roles:
+                    return {"statusCode": 403, "body": json.dumps({"error": "Forbidden: Insufficient permissions for this operation"})}
             
             # Context Injection: Allows the handler to know who is making the request
             event["user_id"] = payload.get("sub")
@@ -76,8 +78,24 @@ def with_subscription_check(required_feature: str = None):
                         "body": json.dumps({"error": "Payment Required: No active subscription found"})
                     }
                 
-                # Logic for plan-based feature gating could be added here
-                
+                # Feature Gating & Quota Logic
+                if required_feature:
+                    from models.subscription import Plan, UsageTracking
+                    plan = db.query(Plan).filter(Plan.plan_id == subscription.plan_id).first()
+                    
+                    if required_feature == "max_groups":
+                        # Check count of existing groups
+                        from models import Group
+                        count = db.query(Group).filter(Group.owner_id == user_id).count()
+                        if count >= plan.max_groups:
+                            return {"statusCode": 403, "body": json.dumps({"error": f"Limit Reached: Your {plan.name} plan allows only {plan.max_groups} group(s)."})}
+                    
+                    if required_feature == "max_campaigns":
+                        from models import Campaign
+                        count = db.query(Campaign).filter(Campaign.owner_id == user_id).count()
+                        if count >= plan.max_campaigns:
+                            return {"statusCode": 403, "body": json.dumps({"error": f"Limit Reached: Your {plan.name} plan allows only {plan.max_campaigns} campaign(s)."})}
+
                 return handler(event, context)
             finally:
                 db.close()

@@ -8,11 +8,11 @@ mangum
 python-dotenv
 psycopg2-binary
 pydantic
+# stripe removed in favor of flutterwave
 # core dependencies pinned below
 openpyxl
 reportlab
-pyqldb
-amazon-ion
+# pyqldb and amazon-ion removed - using RDS-only architecture
 alembic==1.18.4
 annotated-doc==0.0.4
 annotated-types==0.7.0

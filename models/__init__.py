@@ -4,7 +4,6 @@
 
 from .base import Base
 from .campaign import Campaign
-from .ledger_entry import LedgerEntry
 from .parser_knowledge import ParserKnowledge
 from .pending_transaction import PendingTransaction
 from .review_action import ReviewAction
@@ -13,3 +12,4 @@ from .subscription import Plan, Subscription, UsageTracking
 from .group import Group
 from .transaction import Transaction
 from .users import User
+from .system_config import SystemConfig

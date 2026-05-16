@@ -66,3 +66,19 @@ class UsageTracking(Base):
     current_value = Column(Integer, default=0)
     # Timestamp when the counter was last zeroed (usually monthly)
     last_reset = Column(DateTime, default=datetime.datetime.utcnow)
+
+class SubscriptionPayment(Base):
+    """
+    SubscriptionPayment Model: Detailed records of individual billing transactions.
+    """
+    __tablename__ = "subscription_payments"
+
+    payment_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    subscription_id = Column(UUID(as_uuid=True), ForeignKey("subscriptions.subscription_id"), nullable=False)
+    amount = Column(Integer, nullable=False)
+    currency = Column(String, default="KES")
+    status = Column(String, default="success") # success, failed, pending
+    payment_method = Column(String) # mpesa, card, override
+    provider_reference = Column(String) # External ID from Safaricom/Payment Provider
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)

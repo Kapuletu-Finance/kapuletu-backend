@@ -22,21 +22,29 @@ def handler(event, context):
         pending_id = body.get("pending_id") or event.get("pathParameters", {}).get("pending_id")
         group_id = body.get("group_id")
         user_id = event["user_id"]
-
-        if not pending_id:
-            return {"statusCode": 400, "body": json.dumps({"error": "Missing pending_id"})}
-
-        # 2. Service Initialization
+        
         db = SessionLocal()
         service = ApprovalService(db)
-        
+
         # 3. Action Routing
         try:
-            if "/approve" in path:
+            if "/bulk/approve" in path:
+                pending_ids = body.get("pending_ids", [])
+                result = service.bulk_approve(pending_ids, user_id, group_id, body.get("campaign_id"))
+                return {"statusCode": 200, "body": json.dumps({"results": result})}
+            
+            elif "/bulk/reject" in path:
+                pending_ids = body.get("pending_ids", [])
+                result = service.bulk_reject(pending_ids, user_id)
+                return {"statusCode": 200, "body": json.dumps({"results": result})}
+
+            elif "/approve" in path:
+                if not pending_id: return {"statusCode": 400, "body": json.dumps({"error": "Missing pending_id"})}
                 txn = service.approve_transaction(pending_id, user_id, group_id, body.get("campaign_id"))
                 msg = "Transaction approved and committed to ledger."
             
             elif "/split" in path:
+                if not pending_id: return {"statusCode": 400, "body": json.dumps({"error": "Missing pending_id"})}
                 allocations = body.get("allocations", [])
                 if not allocations:
                     return {"statusCode": 400, "body": json.dumps({"error": "Missing allocations for split"})}
@@ -44,9 +52,10 @@ def handler(event, context):
                 msg = "Transaction split and committed to ledger."
             
             elif "/reject" in path:
-                # Add rejection logic if needed, or just mark as rejected
+                if not pending_id: return {"statusCode": 400, "body": json.dumps({"error": "Missing pending_id"})}
+                service.reject_transaction(pending_id, user_id)
                 msg = "Transaction rejected."
-                txn = None # Need to implement reject in service
+                txn = None
             
             else:
                 return {"statusCode": 404, "body": json.dumps({"error": "Unknown approval action"})}

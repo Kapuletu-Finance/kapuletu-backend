@@ -35,12 +35,18 @@ class Transaction(Base):
     amount = Column(Numeric(12, 2), nullable=False)
     # sender_phone: The phone number of the member who made the contribution.
     sender_phone = Column(String)
+    # sender_name: The name of the member who made the contribution (if parsed or manual).
+    sender_name = Column(String, nullable=True)
     
     # Workflow Status
     # status: Current state (approved, voided). Finalized transactions are usually 'approved'.
     status = Column(String, default="pending") 
     # created_at: The timestamp when this transaction was officially committed to the ledger.
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    # ledger_hash: A SHA-256 integrity seal that ensures the record has not been modified after approval.
+    ledger_hash = Column(String, nullable=True)
+    # evidence_url: Link to the verification screenshot (M-Pesa/Bank receipt).
+    evidence_url = Column(String, nullable=True)
 
     # Relationships
     # A single transaction can be split into multiple allocations (e.g. 50% Dues, 50% Social).
