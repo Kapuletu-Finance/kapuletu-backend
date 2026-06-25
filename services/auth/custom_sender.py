@@ -60,6 +60,10 @@ def handler(event, context):
     elif trigger == 'CustomMessage_ForgotPassword':
         event['response']['emailSubject'] = "Reset Your KapuLetu Password"
         event['response']['emailMessage'] = get_html_template(first_name, code, "reset your password")
+        
+    elif trigger == 'CustomMessage_VerifyUserAttribute':
+        event['response']['emailSubject'] = "Verify Your KapuLetu Email Address"
+        event['response']['emailMessage'] = get_html_template(first_name, code, "verify your email address")
 
     return event
 

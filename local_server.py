@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from services.approval.handler import handler as approval_handler
-from services.auth.api_handler import handler as auth_handler
+from services.auth.router import router as auth
 from services.campaigns.handler import handler as campaigns_handler
 from services.groups.handler import handler as groups_handler
 
@@ -53,42 +53,7 @@ class ManualEntryIn(BaseModel):
     purpose: Optional[str] = Field(None, json_schema_extra={"example": "January Contribution"})
     transaction_code: Optional[str] = Field(None, json_schema_extra={"example": "MANUAL-12345"})
 
-# --- Authentication Schemas ---
-
-class RegisterIn(BaseModel):
-    email: str = Field(..., json_schema_extra={"example": "treasurer@example.com"})
-    password: str = Field(..., json_schema_extra={"example": "SecurePass123!"})
-    first_name: str = Field(..., json_schema_extra={"example": "Joseph"})
-    last_name: str = Field(..., json_schema_extra={"example": "Amuyunzu"})
-    phone_number: str = Field(..., json_schema_extra={"example": "+254700123456"})
-
-class LoginIn(BaseModel):
-    email: str = Field(..., json_schema_extra={"example": "treasurer@example.com"})
-    password: str = Field(..., json_schema_extra={"example": "SecurePass123!"})
-
-class VerifyIn(BaseModel):
-    email: str = Field(..., json_schema_extra={"example": "treasurer@example.com"})
-    code: str = Field(..., json_schema_extra={"example": "123456"})
-
-class RefreshIn(BaseModel):
-    refresh_token: str = Field(..., json_schema_extra={"example": "eyJhbG..."})
-
-class ForgotPasswordIn(BaseModel):
-    email: str = Field(..., json_schema_extra={"example": "treasurer@example.com"})
-
-class ResetPasswordIn(BaseModel):
-    email: str = Field(..., json_schema_extra={"example": "treasurer@example.com"})
-    code: str = Field(..., json_schema_extra={"example": "123456"})
-    new_password: str = Field(..., json_schema_extra={"example": "NewSecurePass456!"})
-
-class ChangePasswordIn(BaseModel):
-    old_password: str = Field(..., json_schema_extra={"example": "SecurePass123!"})
-    new_password: str = Field(..., json_schema_extra={"example": "NewSecurePass456!"})
-
-class UpdateProfileIn(BaseModel):
-    first_name: Optional[str] = Field(None, json_schema_extra={"example": "Joseph"})
-    last_name: Optional[str] = Field(None, json_schema_extra={"example": "Amuyunzu"})
-    phone_number: Optional[str] = Field(None, json_schema_extra={"example": "+254700123456"})
+# --- Authentication Schemas (Moved to services/auth/schemas.py) ---
 
 # --- Approval & Review Schemas ---
 
@@ -196,28 +161,7 @@ async def placeholder(request: Request):
 
 # --- API Routers ---
 
-# 2. Authentication
-auth = APIRouter(prefix="/auth", tags=["2. Authentication"])
-@auth.post("/register", summary="Register Treasurer")
-async def register(request: Request, payload: RegisterIn): return await lambda_adapter(request, auth_handler)
-@auth.post("/login", summary="Login")
-async def login(request: Request, payload: LoginIn): return await lambda_adapter(request, auth_handler)
-@auth.post("/refresh", summary="Refresh Token")
-async def refresh(request: Request, payload: RefreshIn): return await lambda_adapter(request, auth_handler)
-@auth.post("/logout", summary="Logout")
-async def logout(request: Request): return await lambda_adapter(request, auth_handler)
-@auth.get("/me", summary="Get Current User")
-async def get_me(request: Request): return await lambda_adapter(request, auth_handler)
-@auth.patch("/me", summary="Update Profile")
-async def update_profile(request: Request, payload: UpdateProfileIn): return await lambda_adapter(request, auth_handler)
-@auth.post("/change-password", summary="Change Password")
-async def change_password(request: Request, payload: ChangePasswordIn): return await lambda_adapter(request, auth_handler)
-@auth.post("/forgot-password", summary="Request Password Reset")
-async def forgot_password(request: Request, payload: ForgotPasswordIn): return await lambda_adapter(request, auth_handler)
-@auth.post("/reset-password", summary="Reset Password")
-async def reset_password(request: Request, payload: ResetPasswordIn): return await lambda_adapter(request, auth_handler)
-@auth.post("/verify", summary="Verify Phone / Email")
-async def verify(request: Request, payload: VerifyIn): return await lambda_adapter(request, auth_handler)
+# 2. Authentication (Native FastAPI Router imported from services.auth.router)
 
 # 3. Groups Management
 groups = APIRouter(prefix="/groups", tags=["3. Groups Management"])
