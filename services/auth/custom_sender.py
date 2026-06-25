@@ -56,7 +56,7 @@ def handler(event, context):
     if trigger in ['CustomMessage_SignUp', 'CustomMessage_ResendCode']:
         event['response']['emailSubject'] = "Welcome to KapuLetu - Verify Your Account"
         event['response']['emailMessage'] = get_html_template(first_name, code, "verify your account")
-        event['response']['smsMessage'] = f"KapuLetu: Your verification code is {code}. It expires in 24 hours."
+        event['response']['smsMessage'] = f"KapuLetu: Your verification code is {code}. It expires in 10 minutes."
     
     elif trigger == 'CustomMessage_ForgotPassword':
         event['response']['emailSubject'] = "Reset Your KapuLetu Password"
@@ -87,7 +87,7 @@ def get_html_template(name, code, action_text):
                     <span style="font-family: 'Courier New', monospace; font-size: 32px; font-weight: bold; color: #0056b3; letter-spacing: 5px;">{code}</span>
                 </div>
                 
-                <p style="font-size: 14px; color: #718096;">This code will expire in 24 hours. If you did not request this, you can safely ignore this email.</p>
+                <p style="font-size: 14px; color: #718096;">This code will expire in 10 minutes. If you did not request this, you can safely ignore this email.</p>
             </div>
             <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #edf2f7; font-size: 12px; color: #a0aec0; text-align: center;">
                 <p>&copy; 2026 KapuLetu Treasury Systems. All rights reserved.</p>

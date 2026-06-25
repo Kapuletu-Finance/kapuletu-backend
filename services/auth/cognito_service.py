@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 import boto3
 from botocore.exceptions import ClientError
@@ -12,6 +13,8 @@ class CognitoService:
     def __init__(self):
         self.region = os.environ.get('AWS_REGION', 'eu-west-1')
         self.client_id = os.environ.get('COGNITO_CLIENT_ID')
+        arn = os.environ.get('COGNITO_USER_POOL_ARN', '')
+        self.user_pool_id = arn.split('/')[-1] if arn else None
         self.client = boto3.client('cognito-idp', region_name=self.region)
 
     def _handle_client_error(self, e: ClientError):
@@ -50,7 +53,8 @@ class CognitoService:
                     {'Name': 'email', 'Value': email},
                     {'Name': 'given_name', 'Value': first_name},
                     {'Name': 'family_name', 'Value': last_name},
-                    {'Name': 'phone_number', 'Value': phone_number}
+                    {'Name': 'phone_number', 'Value': phone_number},
+                    {'Name': 'custom:code_sent_at', 'Value': str(int(time.time()))}
                 ]
             )
             return response.get('UserSub')
@@ -59,6 +63,26 @@ class CognitoService:
 
     def verify_account(self, email: EmailStr, code: str):
         try:
+            # 1. Enforce Functional 10-Minute Expiration Limit
+            if self.user_pool_id:
+                try:
+                    user = self.client.admin_get_user(
+                        UserPoolId=self.user_pool_id,
+                        Username=email
+                    )
+                    code_sent_at = None
+                    for attr in user.get('UserAttributes', []):
+                        if attr['Name'] == 'custom:code_sent_at':
+                            code_sent_at = int(attr['Value'])
+                            break
+                    
+                    if code_sent_at and (int(time.time()) - code_sent_at) > 600: # 600 seconds = 10 minutes
+                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification code has expired. Please request a new one.")
+                except ClientError as e:
+                    logger.warning(f"Failed to check code expiration: {str(e)}")
+                    # Continue gracefully if admin check fails (e.g., local dev)
+
+            # 2. Confirm Sign Up
             self.client.confirm_sign_up(
                 ClientId=self.client_id,
                 Username=email,
@@ -175,6 +199,19 @@ class CognitoService:
     def resend_confirmation_code(self, email: EmailStr) -> Dict[str, Any]:
         """Resends the initial registration verification code."""
         try:
+            # Update the custom:code_sent_at timestamp
+            if self.user_pool_id:
+                try:
+                    self.client.admin_update_user_attributes(
+                        UserPoolId=self.user_pool_id,
+                        Username=email,
+                        UserAttributes=[
+                            {'Name': 'custom:code_sent_at', 'Value': str(int(time.time()))}
+                        ]
+                    )
+                except ClientError as e:
+                    logger.warning(f"Failed to update code_sent_at: {str(e)}")
+
             response = self.client.resend_confirmation_code(
                 ClientId=self.client_id,
                 Username=email
