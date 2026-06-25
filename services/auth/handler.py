@@ -175,9 +175,10 @@ def post_confirmation(event, context):
             print(f"Failed to send Email welcome message: {str(e)}")
             
     except Exception as e:
+        import traceback
         print(f"Failed to sync user {email} to database: {str(e)}")
-        # If we fail to sync, we should ideally raise an exception so Cognito knows it failed
-        raise e
+        print(traceback.format_exc())
+        # NEVER raise an exception here, otherwise Cognito fails the entire verification process with "Unrecognizable lambda output"
     finally:
         db.close()
 
