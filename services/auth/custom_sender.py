@@ -53,7 +53,7 @@ def handler(event, context):
             logger.warning(f"SKIPPING WhatsApp: Missing Twilio Credentials (SID: {bool(twilio_sid)}, Token: {bool(twilio_token)})")
 
     # 2. Designer HTML Email Template & Native SMS Fallback
-    if trigger == 'CustomMessage_SignUp':
+    if trigger in ['CustomMessage_SignUp', 'CustomMessage_ResendCode']:
         event['response']['emailSubject'] = "Welcome to KapuLetu - Verify Your Account"
         event['response']['emailMessage'] = get_html_template(first_name, code, "verify your account")
         event['response']['smsMessage'] = f"KapuLetu: Your verification code is {code}. It expires in 24 hours."

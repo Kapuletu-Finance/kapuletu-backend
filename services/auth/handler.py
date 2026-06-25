@@ -93,55 +93,69 @@ def post_confirmation(event, context):
         # --- Send Email Welcome via Amazon SES ---
         try:
             import boto3
-            ses = boto3.client('ses', region_name=os.environ.get('AWS_REGION', 'us-east-1'))
-            sender_email = os.environ.get('SENDER_EMAIL', 'welcome@kapuletu.com')
+            ses = boto3.client('ses', region_name=os.environ.get('AWS_REGION', 'eu-west-1'))
+            sender_email = os.environ.get('SENDER_EMAIL', 'no-reply@kapuletu.co.ke')
             
             html_body = f"""
+            <!DOCTYPE html>
             <html>
             <head>
+                <meta charset="UTF-8">
                 <style>
-                    body {{ font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333333; line-height: 1.6; margin: 0; padding: 0; background-color: #f9f9f9; }}
-                    .container {{ max-width: 600px; margin: 40px auto; background-color: #ffffff; padding: 40px; border-radius: 8px; border: 1px solid #e0e0e0; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }}
-                    .header {{ border-bottom: 1px solid #eee; padding-bottom: 20px; margin-bottom: 30px; }}
-                    .header h1 {{ margin: 0; color: #0a2540; font-size: 24px; font-weight: 600; }}
-                    .content h2 {{ font-size: 20px; color: #0a2540; margin-top: 0; }}
-                    .content p {{ font-size: 16px; color: #555555; margin-bottom: 20px; }}
-                    .features {{ background-color: #f4f6f8; padding: 20px; border-radius: 6px; margin: 25px 0; border-left: 4px solid #0056b3; }}
-                    .features p {{ margin: 8px 0; font-size: 15px; color: #333; }}
-                    .button-container {{ text-align: center; margin: 35px 0; }}
-                    .button {{ background-color: #0056b3; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block; }}
-                    .footer {{ margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 14px; color: #888888; text-align: center; }}
-                    .system-notice {{ margin-top: 20px; font-size: 12px; color: #aaaaaa; text-align: center; font-style: italic; }}
+                    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.6; margin: 0; padding: 0; background-color: #f1f5f9; }}
+                    .wrapper {{ padding: 40px 20px; }}
+                    .container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 48px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); }}
+                    .header {{ border-bottom: 2px solid #f1f5f9; padding-bottom: 24px; margin-bottom: 32px; text-align: center; }}
+                    .header h1 {{ margin: 0; color: #0f172a; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }}
+                    .header p {{ margin: 8px 0 0; color: #64748b; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }}
+                    .content h2 {{ font-size: 22px; color: #0f172a; margin-top: 0; font-weight: 600; }}
+                    .content p {{ font-size: 16px; color: #334155; margin-bottom: 24px; }}
+                    .value-prop {{ background: linear-gradient(145deg, #f8fafc, #f1f5f9); padding: 28px; border-radius: 8px; margin: 32px 0; border: 1px solid #e2e8f0; }}
+                    .value-prop h3 {{ margin: 0 0 16px; color: #0f172a; font-size: 16px; font-weight: 600; }}
+                    .feature-list {{ padding-left: 0; list-style: none; margin: 0; }}
+                    .feature-list li {{ margin-bottom: 12px; font-size: 15px; color: #475569; position: relative; padding-left: 24px; }}
+                    .feature-list li:before {{ content: "✓"; position: absolute; left: 0; color: #2563eb; font-weight: bold; }}
+                    .button-container {{ text-align: center; margin: 40px 0; }}
+                    .button {{ background-color: #2563eb; color: #ffffff !important; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; display: inline-block; transition: background-color 0.2s; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2); }}
+                    .button:hover {{ background-color: #1d4ed8; }}
+                    .footer {{ margin-top: 48px; padding-top: 24px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #94a3b8; text-align: center; }}
+                    .footer strong {{ color: #64748b; }}
+                    .legal {{ margin-top: 16px; font-size: 11px; color: #cbd5e1; }}
                 </style>
             </head>
             <body>
-                <div class="container">
-                    <div class="header">
-                        <h1>KapuLetu</h1>
-                    </div>
-                    <div class="content">
-                        <h2>Welcome, {first_name}!</h2>
-                        <p>Your account is officially verified. We're thrilled to have you on board.</p>
-                        
-                        <div class="features">
-                            <p><strong>With KapuLetu, you can easily:</strong></p>
-                            <p>&#8226; Track community contributions automatically</p>
-                            <p>&#8226; Generate clear financial reports</p>
-                            <p>&#8226; Keep all your transactions secure and organized</p>
+                <div class="wrapper">
+                    <div class="container">
+                        <div class="header">
+                            <h1>KapuLetu</h1>
+                            <p>Community Financial Management</p>
                         </div>
-                        
-                        <p>To get started, head over to your dashboard to set up your organization and invite your team.</p>
-                        
-                        <div class="button-container">
-                            <a href="{dashboard_url}" class="button" style="color: #ffffff;">Go to My Dashboard</a>
+                        <div class="content">
+                            <h2>Welcome to KapuLetu, {first_name}.</h2>
+                            <p>We are writing to formally confirm that your account has been successfully verified and activated. You now have full access to our comprehensive suite of treasury management tools.</p>
+                            
+                            <div class="value-prop">
+                                <h3>Your Financial Infrastructure is Ready</h3>
+                                <ul class="feature-list">
+                                    <li><strong>Transparent Tracking:</strong> Automatically log and audit every community contribution.</li>
+                                    <li><strong>Institutional Reporting:</strong> Generate clear, professional financial statements on demand.</li>
+                                    <li><strong>Secure Governance:</strong> Maintain complete administrative oversight with robust security protocols.</li>
+                                </ul>
+                            </div>
+                            
+                            <p>To begin structuring your organization's finances, please log in to your secure administrative dashboard and invite your executive team.</p>
+                            
+                            <div class="button-container">
+                                <a href="{dashboard_url}" class="button">Access Secure Dashboard</a>
+                            </div>
+                            
+                            <p>Thank you for choosing KapuLetu. We are committed to providing you with an enterprise-grade platform to manage your community's wealth with absolute transparency and integrity.</p>
                         </div>
-                        
-                        <p>We built KapuLetu to take the stress out of managing community finances, so you can focus on what really matters.</p>
-                    </div>
-                    <div class="footer">
-                        <p>Need a hand? Reach out to our support team at <strong>{support_email}</strong>.</p>
-                        <p>&copy; 2026 KapuLetu Systems.</p>
-                        <p class="system-notice">This is an automated message. Please do not reply directly to this email.</p>
+                        <div class="footer">
+                            <p>If you require administrative assistance or technical support, please reach out to our dedicated operations team at <strong>{support_email}</strong>.</p>
+                            <p>&copy; 2026 KapuLetu Systems. All rights reserved.</p>
+                            <p class="legal">This email contains secure, transactional information relating to your KapuLetu account. Please do not reply directly to this automated message.</p>
+                        </div>
                     </div>
                 </div>
             </body>
