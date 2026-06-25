@@ -7,7 +7,8 @@ fastapi
 mangum
 python-dotenv
 psycopg2-binary
-pydantic
+python-multipart
+pydantic[email]
 # stripe removed in favor of flutterwave
 # core dependencies pinned below
 openpyxl
