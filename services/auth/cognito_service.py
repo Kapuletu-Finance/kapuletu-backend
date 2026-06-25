@@ -151,6 +151,38 @@ class CognitoService:
         except ClientError as e:
             self._handle_client_error(e)
 
+    def request_phone_verification(self, access_token: str):
+        """Requests Cognito to send a verification code to the user's phone number."""
+        try:
+            self.client.get_user_attribute_verification_code(
+                AccessToken=access_token,
+                AttributeName='phone_number'
+            )
+        except ClientError as e:
+            self._handle_client_error(e)
+
+    def confirm_phone_verification(self, access_token: str, code: str):
+        """Confirms the phone verification code."""
+        try:
+            self.client.verify_user_attribute(
+                AccessToken=access_token,
+                AttributeName='phone_number',
+                Code=code
+            )
+        except ClientError as e:
+            self._handle_client_error(e)
+
+    def resend_confirmation_code(self, email: EmailStr) -> Dict[str, Any]:
+        """Resends the initial registration verification code."""
+        try:
+            response = self.client.resend_confirmation_code(
+                ClientId=self.client_id,
+                Username=email
+            )
+            return response.get('CodeDeliveryDetails', {})
+        except ClientError as e:
+            self._handle_client_error(e)
+
     def confirm_email_verification(self, access_token: str, code: str):
         """Verifies the email attribute with the provided code."""
         try:

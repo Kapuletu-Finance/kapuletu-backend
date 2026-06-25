@@ -21,6 +21,12 @@ class VerifyIn(BaseModel):
 class VerifyEmailIn(BaseModel):
     code: str = Field(..., min_length=6, max_length=6, json_schema_extra={"example": "123456"})
 
+class VerifyPhoneIn(BaseModel):
+    code: str = Field(..., min_length=6, max_length=6, json_schema_extra={"example": "123456"})
+
+class ResendCodeIn(BaseModel):
+    email: EmailStr = Field(..., json_schema_extra={"example": "treasurer@example.com"})
+
 class RefreshIn(BaseModel):
     refresh_token: str = Field(..., json_schema_extra={"example": "eyJhbG..."})
 

@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from typing import Dict, Any
 
 from services.auth.schemas import (
-    RegisterIn, RegisterOut, LoginIn, VerifyIn, VerifyEmailIn, RefreshIn,
+    RegisterIn, RegisterOut, LoginIn, VerifyIn, VerifyEmailIn, VerifyPhoneIn, ResendCodeIn, RefreshIn,
     ForgotPasswordIn, ResetPasswordIn, ChangePasswordIn, UpdateProfileIn,
     TokenOut, UserOut, MessageOut, SettingsIn, SettingsOut
 )
@@ -32,6 +32,13 @@ async def verify(payload: VerifyIn):
     cognito_service.verify_account(email=payload.email, code=payload.code)
     # The Cognito PostConfirmation hook will automatically sync the verified user to Postgres!
     return MessageOut(message="Account successfully verified. You can now log in.")
+
+@router.post("/resend-code", response_model=MessageOut, summary="Resend Verification Code")
+async def resend_code(payload: ResendCodeIn):
+    details = cognito_service.resend_confirmation_code(email=payload.email)
+    medium = details.get('DeliveryMedium', 'your contact method')
+    destination = details.get('Destination', '')
+    return MessageOut(message=f"Verification code resent successfully to {medium} ({destination}).")
 
 @router.post("/login", response_model=TokenOut, summary="Login (JSON payload)")
 async def login(payload: LoginIn):
@@ -132,6 +139,21 @@ async def confirm_email_verification(payload: VerifyEmailIn, current_user: Dict[
     """Submits the 6-digit email verification code."""
     cognito_service.confirm_email_verification(access_token=current_user['access_token'], code=payload.code)
     return MessageOut(message="Email successfully verified.")
+
+@router.post("/verify-phone/request", response_model=MessageOut, summary="Request Phone Verification Code")
+async def request_phone_verification(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Triggers Cognito to send a 6-digit verification code to the user's phone."""
+    if current_user.get('phone_number_verified') == 'true':
+        raise HTTPException(status_code=400, detail="Phone number is already verified.")
+    
+    cognito_service.request_phone_verification(access_token=current_user['access_token'])
+    return MessageOut(message="Phone verification code sent successfully.")
+
+@router.post("/verify-phone/confirm", response_model=MessageOut, summary="Confirm Phone Verification")
+async def confirm_phone_verification(payload: VerifyPhoneIn, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Submits the 6-digit phone verification code."""
+    cognito_service.confirm_phone_verification(access_token=current_user['access_token'], code=payload.code)
+    return MessageOut(message="Phone number successfully verified.")
 
 @router.get("/settings", response_model=SettingsOut, summary="Get User Settings")
 async def get_settings(current_user: Dict[str, Any] = Depends(get_current_user)):
