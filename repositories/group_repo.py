@@ -20,13 +20,22 @@ def get_group(db: Session, group_id: str):
     return db.query(Group).filter(Group.group_id == group_id).first()
 
 def get_owner_groups(db: Session, owner_id: str):
-    """Lists all groups belonging to a treasurer."""
-    return db.query(Group).filter(Group.owner_id == owner_id).all()
+    """Lists all active groups belonging to a treasurer."""
+    return db.query(Group).filter(Group.owner_id == owner_id, Group.is_active == True).all()
 
 def update_group(db: Session, group_id: str, updates: dict):
     """Updates group properties."""
     if "name" in updates:
         updates["group_name"] = updates.pop("name")
     db.query(Group).filter(Group.group_id == group_id).update(updates)
+    db.commit()
+    return get_group(db, group_id)
+
+def archive_group(db: Session, group_id: str):
+    """Soft deletes a group by archiving it."""
+    db.query(Group).filter(Group.group_id == group_id).update({
+        "status": "archived",
+        "is_active": False
+    })
     db.commit()
     return get_group(db, group_id)

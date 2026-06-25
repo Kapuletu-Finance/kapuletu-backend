@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from services.approval.handler import handler as approval_handler
 from services.auth.router import router as auth
 from services.campaigns.handler import handler as campaigns_handler
-from services.groups.handler import handler as groups_handler
+from services.groups.router import router as groups
 
 # Import Handlers
 from services.ingestion.handler import handler as ingestion_handler
@@ -29,9 +29,7 @@ class TransactionIn(BaseModel):
     From: str = Field(..., json_schema_extra={"example": "+254700000000"})
     MessageSid: Optional[str] = Field(None, json_schema_extra={"example": "SM12345"})
 
-class GroupIn(BaseModel):
-    name: str = Field(..., json_schema_extra={"example": "St. Peters Welfare"})
-    description: Optional[str] = Field(None, json_schema_extra={"example": "Main community welfare and social fund."})
+# --- Group Schemas (Moved to services/groups/schemas.py) ---
 
 class CampaignIn(BaseModel):
     title: str = Field(..., json_schema_extra={"example": "Medical Fund - Jane Doe"})
@@ -54,6 +52,7 @@ class ManualEntryIn(BaseModel):
     transaction_code: Optional[str] = Field(None, json_schema_extra={"example": "MANUAL-12345"})
 
 # --- Authentication Schemas (Moved to services/auth/schemas.py) ---
+from services.auth.schemas import UpdateProfileIn
 
 # --- Approval & Review Schemas ---
 
@@ -163,18 +162,7 @@ async def placeholder(request: Request):
 
 # 2. Authentication (Native FastAPI Router imported from services.auth.router)
 
-# 3. Groups Management
-groups = APIRouter(prefix="/groups", tags=["3. Groups Management"])
-@groups.post("", summary="Create Group")
-async def create_group(request: Request, payload: GroupIn): return await lambda_adapter(request, groups_handler)
-@groups.get("", summary="Get All My Groups")
-async def list_groups(request: Request): return await lambda_adapter(request, groups_handler)
-@groups.get("/{group_id}", summary="Get Single Group")
-async def get_group(request: Request, group_id: str): return await lambda_adapter(request, groups_handler)
-@groups.patch("/{group_id}", summary="Update Group")
-async def update_group(request: Request, group_id: str): return await lambda_adapter(request, groups_handler)
-@groups.delete("/{group_id}", summary="Archive Group")
-async def archive_group(request: Request, group_id: str): return await lambda_adapter(request, groups_handler)
+# 3. Groups Management (Native FastAPI Router imported from services.groups.router)
 
 # 4. Campaigns Management
 campaigns = APIRouter(tags=["4. Campaigns Management"])
