@@ -3,7 +3,14 @@ service: kapuletu-backend
 provider:
   name: aws
   runtime: python3.11
-  region: us-east-1
+  region: eu-west-1
+  vpc:
+    securityGroupIds:
+      - ${env:LAMBDA_SG_ID}
+    subnetIds:
+      # These must be passed in via CI/CD from Terraform outputs
+      - ${env:PRIVATE_SUBNET_1}
+      - ${env:PRIVATE_SUBNET_2}
   environment:
     STAGE: ${opt:stage, 'dev'}
     DATABASE_URL: ${env:DATABASE_URL}
