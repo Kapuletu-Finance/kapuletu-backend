@@ -400,7 +400,26 @@ async def root():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        <!-- Primary Meta Tags -->
         <title>KapuLetu Developer Portal</title>
+        <meta name="title" content="KapuLetu Developer Portal">
+        <meta name="description" content="Official API gateway for KapuLetu. Access the Treasury API core, documentation, and developer environment.">
+
+        <!-- Open Graph / Facebook -->
+        <meta property="og:type" content="website">
+        <meta property="og:url" content="https://dev-api.kapuletu.co.ke/">
+        <meta property="og:title" content="KapuLetu Developer Portal">
+        <meta property="og:description" content="Official API gateway for KapuLetu. Access the Treasury API core, documentation, and developer environment.">
+        <meta property="og:image" content="https://dev-api.kapuletu.co.ke/assets/logo.jpg">
+
+        <!-- Twitter -->
+        <meta property="twitter:card" content="summary_large_image">
+        <meta property="twitter:url" content="https://dev-api.kapuletu.co.ke/">
+        <meta property="twitter:title" content="KapuLetu Developer Portal">
+        <meta property="twitter:description" content="Official API gateway for KapuLetu. Access the Treasury API core, documentation, and developer environment.">
+        <meta property="twitter:image" content="https://dev-api.kapuletu.co.ke/assets/logo.jpg">
+
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
