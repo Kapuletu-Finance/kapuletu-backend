@@ -21,7 +21,7 @@ class Group(Base):
     # Unique identifier for the group
     group_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # The treasurer who owns/manages this group
-    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False, index=True)
     # The name of the group (e.g. 'St. Peters Welfare')
     group_name = Column(String, nullable=False)
     # Optional description of the group's purpose
