@@ -355,7 +355,7 @@ async def my_subscription():
 # --- Include All Routers ---
 app.include_router(auth)
 app.include_router(groups)
-app.include_router(campaigns)
+# campaigns router is included natively above
 app.include_router(ingestion)
 app.include_router(parsing)
 app.include_router(review)
