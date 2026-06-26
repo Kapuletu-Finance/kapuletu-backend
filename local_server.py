@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from services.approval.handler import handler as approval_handler
 from services.auth.router import router as auth
-from services.campaigns.handler import handler as campaigns_handler
+
 from services.groups.router import router as groups
 
 # Import Handlers
@@ -31,11 +31,6 @@ class TransactionIn(BaseModel):
 
 # --- Group Schemas (Moved to services/groups/schemas.py) ---
 
-class CampaignIn(BaseModel):
-    title: str = Field(..., json_schema_extra={"example": "Medical Fund - Jane Doe"})
-    description: Optional[str] = Field(None, json_schema_extra={"example": "Fundraising for hospital expenses."})
-    target_amount: float = Field(..., json_schema_extra={"example": 50000.0})
-    payment_instructions: Optional[str] = Field(None, json_schema_extra={"example": "Paybill 123456, Account: JANE"})
 
 class SplitAllocation(BaseModel):
     name: str = Field(..., json_schema_extra={"example": "John Doe"})
@@ -164,18 +159,8 @@ async def placeholder(request: Request):
 
 # 3. Groups Management (Native FastAPI Router imported from services.groups.router)
 
-# 4. Campaigns Management
-campaigns = APIRouter(tags=["4. Campaigns Management"])
-@campaigns.post("/groups/{group_id}/campaigns", summary="Create Campaign")
-async def create_campaign(request: Request, group_id: str, payload: CampaignIn): return await lambda_adapter(request, campaigns_handler)
-@campaigns.get("/groups/{group_id}/campaigns", summary="List Campaigns")
-async def list_group_campaigns(request: Request, group_id: str): return await lambda_adapter(request, campaigns_handler)
-@campaigns.get("/campaigns/{campaign_id}", summary="Get Campaign")
-async def get_campaign(request: Request, campaign_id: str): return await lambda_adapter(request, campaigns_handler)
-@campaigns.patch("/campaigns/{campaign_id}", summary="Update Campaign")
-async def update_campaign(request: Request, campaign_id: str): return await lambda_adapter(request, campaigns_handler)
-@campaigns.post("/campaigns/{campaign_id}/status", summary="Change Campaign Status")
-async def campaign_status(request: Request, campaign_id: str): return await lambda_adapter(request, campaigns_handler)
+from services.campaigns.router import router as campaigns_router
+app.include_router(campaigns_router)
 
 # 5. Transaction Ingestion
 ingestion = APIRouter(tags=["5. Transaction Ingestion"])

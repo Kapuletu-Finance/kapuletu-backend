@@ -21,12 +21,21 @@ def get_campaign(db: Session, campaign_id: str):
     """Fetches a single campaign by its ID."""
     return db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
 
-def get_group_campaigns(db: Session, group_id: str):
-    """Returns all campaigns belonging to a specific group."""
-    return db.query(Campaign).filter(Campaign.group_id == group_id).all()
+def get_group_campaigns(db: Session, group_id: str, skip: int = 0, limit: int = 100):
+    """Returns all active campaigns belonging to a specific group with pagination."""
+    return db.query(Campaign).filter(Campaign.group_id == group_id, Campaign.is_active == True).offset(skip).limit(limit).all()
 
 def update_campaign(db: Session, campaign_id: str, updates: dict):
     """Updates campaign details."""
     db.query(Campaign).filter(Campaign.campaign_id == campaign_id).update(updates)
+    db.commit()
+    return get_campaign(db, campaign_id)
+
+def archive_campaign(db: Session, campaign_id: str):
+    """Soft deletes a campaign by archiving it."""
+    db.query(Campaign).filter(Campaign.campaign_id == campaign_id).update({
+        "status": "archived",
+        "is_active": False
+    })
     db.commit()
     return get_campaign(db, campaign_id)
