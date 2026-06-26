@@ -159,8 +159,7 @@ async def placeholder(request: Request):
 
 # 3. Groups Management (Native FastAPI Router imported from services.groups.router)
 
-from services.campaigns.router import router as campaigns_router
-app.include_router(campaigns_router)
+
 
 # 5. Transaction Ingestion
 ingestion = APIRouter(tags=["5. Transaction Ingestion"])
@@ -355,7 +354,8 @@ async def my_subscription():
 # --- Include All Routers ---
 app.include_router(auth)
 app.include_router(groups)
-# campaigns router is included natively above
+from services.campaigns.router import router as campaigns_router
+app.include_router(campaigns_router)
 app.include_router(ingestion)
 app.include_router(parsing)
 app.include_router(review)
