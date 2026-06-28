@@ -68,11 +68,11 @@ functions:
     handler: services/ingestion/handler.handler
     events:
       - http:
-          path: ingestion
+          path: ingestion/webhook
           method: post
           # No Cognito Authorizer here: Meta uses its own verify token
       - http:
-          path: ingestion
+          path: ingestion/webhook
           method: get
   
   approval:
