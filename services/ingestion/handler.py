@@ -1,9 +1,11 @@
 import json
 import logging
-from urllib.parse import parse_qs
+import os
+import requests
 
 from common.database import SessionLocal
 from services.ingestion.service import IngestionService
+from common.config import get_config
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -11,105 +13,159 @@ logger = logging.getLogger(__name__)
 
 def handler(event, context):
     """
-    Primary entry point for the Twilio Webhook (AWS Lambda Handler).
-    
-    This function:
-    1. Receives raw traffic from API Gateway (Twilio webhook).
-    2. Normalizes the payload (handles Base64, JSON vs Form-Encoded).
-    3. Initializes the database session and business logic service.
-    4. Routes the payload to the IngestionService for parsing and storage.
-    
-    Args:
-        event (dict): AWS Lambda event containing the HTTP request data.
-        context (object): AWS Lambda context.
-        
-    Returns:
-        dict: API Gateway compatible response (statusCode, body).
+    Primary entry point for the Meta WhatsApp Cloud API Webhook.
     """
     logger.info("Received Ingestion Webhook request")
     
-    # 1. Payload Extraction & Normalization
-    # Twilio typically sends data as 'application/x-www-form-urlencoded'.
-    # If using a proxy or direct API call, it might be Base64 encoded.
-    body = event.get("body", "")
+    http_method = event.get("httpMethod", "POST")
+    query_params = event.get("queryStringParameters") or {}
+    
+    config = get_config()
+
+    # 1. Meta Webhook Verification Challenge (GET)
+    if http_method == "GET":
+        mode = query_params.get("hub.mode")
+        token = query_params.get("hub.verify_token")
+        challenge = query_params.get("hub.challenge")
+        
+        if mode == "subscribe" and token == config.META_VERIFY_TOKEN:
+            logger.info("Meta Webhook Verification successful.")
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "text/plain"},
+                "body": str(challenge)
+            }
+        else:
+            logger.warning("Meta Webhook Verification failed: Invalid token.")
+            return {"statusCode": 403, "body": "Verification failed"}
+
+    # 2. Payload Extraction & Normalization (POST)
+    body_str = event.get("body", "{}")
     is_base64 = event.get("isBase64Encoded", False)
     
     if is_base64:
         import base64
         try:
-            body = base64.b64decode(body).decode("utf-8")
+            body_str = base64.b64decode(body_str).decode("utf-8")
         except Exception as e:
             logger.error(f"Failed to decode base64 body: {e}")
             return {"statusCode": 400, "body": json.dumps({"error": "invalid_encoding"})}
+            
+    try:
+        payload_data = json.loads(body_str)
+    except json.JSONDecodeError:
+        return {"statusCode": 400, "body": "Invalid JSON"}
+
+    # Meta webhook payloads are deeply nested
+    # entry -> changes -> value
+    try:
+        entry = payload_data.get("entry", [])[0]
+        changes = entry.get("changes", [])[0]
+        value = changes.get("value", {})
+    except IndexError:
+        return {"statusCode": 200, "body": "OK"} # Acknowledge malformed to prevent retries
+
+    # Check if this is a status update (delivery/read receipt)
+    if "statuses" in value:
+        status_info = value["statuses"][0]
+        logger.info(f"Received status update: {status_info.get('status')} for message ID {status_info.get('id')}")
+        # We don't process these with the AI, just acknowledge
+        return {"statusCode": 200, "body": "OK"}
+
+    # Check if this is a message
+    if "messages" not in value:
+        return {"statusCode": 200, "body": "OK"} # Acknowledge other types of webhooks
         
-    # Determine the content type to parse correctly (Form-Encoded vs JSON)
-    headers = {k.lower(): v for k, v in event.get("headers", {}).items()}
-    content_type = headers.get("content-type", "")
+    message_info = value["messages"][0]
+    
+    # We only care about text messages currently
+    if message_info.get("type") != "text":
+        logger.info(f"Ignoring non-text message type: {message_info.get('type')}")
+        return {"statusCode": 200, "body": "OK"}
 
-    if "application/json" in content_type:
-        payload = json.loads(body)
-    else:
-        # Standard Twilio payload parsing
-        payload = {k: v[0] for k, v in parse_qs(body).items()}
+    # Extract required fields for IngestionService compatibility
+    sender_phone = message_info.get("from")
+    message_body = message_info.get("text", {}).get("body")
+    
+    if not message_body or not sender_phone:
+        return {"statusCode": 400, "body": "Missing message body or sender"}
 
-    # Guard clause: Every Twilio message must have a Body
-    if not payload.get("Body"):
-        logger.warning("Rejected request: Missing message Body")
-        return {
-            "statusCode": 400,
-            "body": json.dumps({"error": "Missing message body"})
-        }
+    # Normalize payload for the existing service architecture
+    normalized_payload = {
+        "From": sender_phone,
+        "Body": message_body
+    }
 
-    # WhatsApp Normalization
-    # Twilio prepends 'whatsapp:' to the 'From' and 'To' numbers if using the WhatsApp API.
-    # We strip this out so our user/treasurer matching logic works natively.
-    if payload.get("From", "").startswith("whatsapp:"):
-        payload["From"] = payload["From"].replace("whatsapp:", "")
-        
-    if payload.get("To", "").startswith("whatsapp:"):
-        payload["To"] = payload["To"].replace("whatsapp:", "")
-
-    # 2. Database Session Initialization
-    # SessionLocal is the SQLAlchemy session generator from common/database.py
+    # 3. Database Session Initialization
     db = SessionLocal()
     
     try:
-        # 3. Invoke Ingestion Service Logic
-        # The service layer handles the core business logic (parsing, owner resolution, idempotency)
+        # 4. Invoke Ingestion Service Logic
         ingestion_service = IngestionService(db)
-        result = ingestion_service.process_webhook(payload)
+        result = ingestion_service.process_webhook(normalized_payload)
         
-        # Twilio expects a 200 OK response with TwiML XML to send a reply back to the user via WhatsApp/SMS.
-        # If we return a 4xx/5xx, Twilio will record a webhook error and the user receives nothing.
-        
+        # Determine reply text
         if result["status"] == "ignored":
-            reply_text = "⚠️ You have already submitted this transaction. It is currently pending review in your KapuLetu dashboard."
+            reply_text = "Notice: You have already submitted this transaction. It is currently pending review in your KapuLetu dashboard."
         elif result["status"] == "error":
-            reply_text = "❌ Unauthorized: Your phone number is not registered as a treasurer for any KapuLetu group. Please contact an admin."
+            reply_text = "Unauthorized: Your phone number is not registered as a treasurer for any KapuLetu group. Please contact an admin or visit https://app.kapuletu.co.ke/signup to create an account."
         else:
             parsed = result.get("parsed_data", {})
             amt = f"KES {parsed.get('amount', 0.0):,.2f}" if parsed.get('amount') else "the transaction"
             name = parsed.get("sender_name") or parsed.get("provider") or "the sender"
-            reply_text = f"✅ Success! We received {amt} from {name}. It is now pending your approval in the KapuLetu dashboard."
+            reply_text = f"Success! We received {amt} from {name}. It is now pending your approval in the KapuLetu dashboard."
 
-        # Build standard TwiML XML
-        twiml_response = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{reply_text}</Message></Response>'
+        # 5. Send Reply via Meta Graph API
+        send_meta_reply(sender_phone, reply_text, config)
 
+        # Acknowledge receipt immediately to Meta
         return {
             "statusCode": 200,
-            "headers": {
-                "Content-Type": "text/xml"
-            },
-            "body": twiml_response
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"status": "OK"})
         }
         
     except Exception as e:
-        # Global error catch-all to prevent raw leakage and ensure logging
         logger.error(f"CRITICAL: Unexpected error in ingestion handler: {e}", exc_info=True)
         return {
             "statusCode": 500,
             "body": json.dumps({"error": "internal_server_error", "message": str(e)})
         }
     finally:
-        # ALWAYS close the database session to prevent connection leaks
         db.close()
+
+
+def send_meta_reply(to_phone: str, message_text: str, config):
+    """
+    Helper function to send an outgoing text message via the Meta WhatsApp Cloud API.
+    """
+    if not config.META_ACCESS_TOKEN or not config.META_PHONE_NUMBER_ID:
+        logger.warning("Skipping outgoing WhatsApp reply: META_ACCESS_TOKEN or META_PHONE_NUMBER_ID not configured.")
+        return
+
+    url = f"https://graph.facebook.com/v19.0/{config.META_PHONE_NUMBER_ID}/messages"
+    
+    headers = {
+        "Authorization": f"Bearer {config.META_ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to_phone,
+        "type": "text",
+        "text": {
+            "preview_url": False,
+            "body": message_text
+        }
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=5)
+        if response.status_code not in (200, 201):
+            logger.error(f"Failed to send Meta reply. Status: {response.status_code}, Response: {response.text}")
+        else:
+            logger.info("Successfully sent outgoing Meta reply.")
+    except Exception as e:
+        logger.error(f"Error executing outgoing Meta HTTP request: {e}")

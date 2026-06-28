@@ -17,12 +17,12 @@ class Config:
     # Amazon QLDB Ledger name for immutable records
     QLDB_LEDGER_NAME: str = os.getenv("QLDB_LEDGER_NAME", "kapuletu-ledger")
     
-    # Twilio Webhook Secret for signature validation (security layer)
-    TWILIO_AUTH_TOKEN: str = os.getenv("TWILIO_AUTH_TOKEN", os.getenv("TWILIO_SECRET", ""))
+    # Meta WhatsApp Cloud API Webhook Verification Token
+    META_VERIFY_TOKEN: str = os.getenv("META_VERIFY_TOKEN", "")
     
-    # Twilio credentials for sending WhatsApp notifications back to the Treasurer
-    TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")
-    TWILIO_WHATSAPP_NUMBER: str = os.getenv("TWILIO_WHATSAPP_NUMBER", "")
+    # Meta WhatsApp Cloud API credentials for sending messages
+    META_ACCESS_TOKEN: str = os.getenv("META_ACCESS_TOKEN", "")
+    META_PHONE_NUMBER_ID: str = os.getenv("META_PHONE_NUMBER_ID", "")
 
 def get_config() -> Config:
     """

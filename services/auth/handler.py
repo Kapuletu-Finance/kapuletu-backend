@@ -51,15 +51,13 @@ def post_confirmation(event, context):
         # 3. Send Professional Welcome Messages
         dashboard_url = os.environ.get('DASHBOARD_URL', 'https://app.kapuletu.com')
         
-        # --- Send WhatsApp Welcome via Twilio ---
+        # --- Send WhatsApp Welcome via Meta ---
         try:
-            import base64
-            import urllib.parse
+            import json
             import urllib.request
             
-            twilio_sid = os.environ.get('TWILIO_ACCOUNT_SID')
-            twilio_token = os.environ.get('TWILIO_AUTH_TOKEN')
-            twilio_whatsapp_number = os.environ.get('TWILIO_WHATSAPP_NUMBER', '+14155238886')
+            meta_token = os.environ.get('META_ACCESS_TOKEN')
+            meta_phone_id = os.environ.get('META_PHONE_NUMBER_ID')
             support_phone = os.environ.get('SUPPORT_PHONE', '+254700000000')
             support_email = os.environ.get('SUPPORT_EMAIL', 'support@kapuletu.com')
             
@@ -75,16 +73,24 @@ def post_confirmation(event, context):
                 f"For assistance, please email {support_email} or contact our support team at {support_phone}."
             )
             
-            if twilio_sid and twilio_token and phone_number:
-                url = f"https://api.twilio.com/2010-04-01/Accounts/{twilio_sid}/Messages.json"
-                data = urllib.parse.urlencode({
-                    'From': f"whatsapp:{twilio_whatsapp_number}",
-                    'To': f"whatsapp:{phone_number}",
-                    'Body': whatsapp_body
-                }).encode('utf-8')
+            if meta_token and meta_phone_id and phone_number:
+                url = f"https://graph.facebook.com/v19.0/{meta_phone_id}/messages"
+                payload = {
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    "to": phone_number.replace("+", ""),
+                    "type": "text",
+                    "text": {
+                        "preview_url": False,
+                        "body": whatsapp_body
+                    }
+                }
+                data = json.dumps(payload).encode('utf-8')
                 
                 req = urllib.request.Request(url, data=data, method='POST')
-                req.add_header('Authorization', 'Basic ' + base64.b64encode(f"{twilio_sid}:{twilio_token}".encode()).decode())
+                req.add_header('Authorization', f"Bearer {meta_token}")
+                req.add_header('Content-Type', 'application/json')
+                
                 urllib.request.urlopen(req)
                 print("WhatsApp welcome message sent.")
         except Exception as e:

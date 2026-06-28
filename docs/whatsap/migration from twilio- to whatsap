@@ -1,0 +1,79 @@
+# Migration Plan: Twilio to Meta WhatsApp Cloud API
+
+This document outlines the seamless migration strategy to replace the Twilio integration with the direct Meta WhatsApp Cloud API without disrupting the current system architecture.
+
+## User Review Required
+
+> [!WARNING]
+> **Webhook Reply Mechanism Change**
+> Twilio allows sending a reply simply by returning an XML response (TwiML) directly from the webhook. Meta's WhatsApp Cloud API requires you to immediately return an HTTP 200 OK to acknowledge receipt, and then make a separate outgoing HTTP POST request to the Facebook Graph API to send the reply message. 
+> This means our Lambda function will need to execute an outgoing HTTP request before it terminates. We will add the `requests` library (if not already present) to handle this.
+
+> [!IMPORTANT]
+> **Environment Variables**
+> You will need to create a Meta Developer App and provision the following new environment variables to replace the Twilio credentials:
+> - `META_VERIFY_TOKEN`: A custom string you create, used to verify the webhook.
+> - `META_ACCESS_TOKEN`: The permanent or system user access token for the Graph API.
+> - `META_PHONE_NUMBER_ID`: The ID of the phone number sending the messages.
+
+## Open Questions
+
+1. **Dual Support vs. Hard Cutover**: Do you want the `handler.py` to temporarily support BOTH Twilio and Meta payloads during the transition, or should we do a hard cutover and replace the Twilio logic entirely?
+2. **Library Dependency**: Can we add the `requests` or `httpx` package to `requirements.txt` to handle the outgoing Meta Graph API HTTP calls?
+
+## Proposed Changes
+
+### Configuration & Infrastructure
+
+#### [MODIFY] [common/config.py](file:///c:/Users/josep/kapuletu-backend/common/config.py)
+- **Deprecate**: `TWILIO_SECRET`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER`.
+- **Add**: `META_VERIFY_TOKEN`, `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID`.
+
+#### [MODIFY] [serverless.yml](file:///c:/Users/josep/kapuletu-backend/serverless.yml)
+- Update the environment variables passed to the Lambda functions to map the new `META_*` secrets.
+- Add a `GET` method to the webhook endpoint in API Gateway. Meta requires a `GET` request to verify the webhook upon initial setup (`hub.challenge`).
+
+### Webhook & Ingestion Layer
+
+#### [MODIFY] [local_server.py](file:///c:/Users/josep/kapuletu-backend/local_server.py)
+- Add a `GET /ingestion/webhook` route to support Meta's webhook verification challenge.
+
+#### [MODIFY] [services/ingestion/handler.py](file:///c:/Users/josep/kapuletu-backend/services/ingestion/handler.py)
+- **Implement GET Verification**: Intercept `GET` requests, check for `hub.mode == subscribe` and `hub.verify_token == META_VERIFY_TOKEN`. Return the `hub.challenge` integer as a plain text response to verify the webhook to Meta.
+- **Update Payload Parsing**: Replace the `parse_qs(body)` Twilio form-encoded logic with Meta's nested JSON payload extraction.
+  - Extract phone number from `entry[0].changes[0].value.contacts[0].wa_id`.
+  - Extract message body from `entry[0].changes[0].value.messages[0].text.body`.
+- **Update Reply Mechanism**: Remove TwiML XML generation. Instead, use an HTTP client (`requests.post`) to send the `reply_text` to `https://graph.facebook.com/v19.0/{META_PHONE_NUMBER_ID}/messages` using the `META_ACCESS_TOKEN`.
+- **Acknowledge Receipt**: Return a simple `{"statusCode": 200, "body": "OK"}` JSON response.
+
+### System Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Meta as Meta Graph API
+    participant API as API Gateway
+    participant Lambda as Ingestion Handler
+    participant DB as Database
+
+    User->>Meta: Sends WhatsApp Message
+    Meta->>API: POST Webhook (JSON)
+    API->>Lambda: Trigger Event
+    Lambda->>Lambda: Parse Meta JSON Payload
+    Lambda->>DB: Process & Save Transaction
+    Lambda->>Meta: POST /messages (Bearer Token)
+    Meta-->>User: Delivers Reply Message
+    Lambda-->>API: 200 OK
+    API-->>Meta: 200 OK
+```
+
+## Verification Plan
+
+### Automated Tests
+- If unit tests exist for `handler.py`, update them to simulate a Meta WhatsApp JSON payload instead of Twilio form-data.
+- Add a test for the `GET` webhook verification challenge.
+
+### Manual Verification
+- Deploy to the staging environment.
+- Configure the Meta Developer Portal Webhook to point to the staging API Gateway URL (this will trigger the `GET` request).
+- Send a test message from a registered WhatsApp number to the Meta test number and verify that a reply is received and the transaction appears in the database.

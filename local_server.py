@@ -163,10 +163,15 @@ async def placeholder(request: Request):
 
 # 5. Transaction Ingestion
 ingestion = APIRouter(tags=["5. Transaction Ingestion"])
-@ingestion.post("/ingestion/webhook", summary="Webhook (Twilio / External)")
+@ingestion.post("/ingestion/webhook", summary="Webhook (Meta / External)")
 async def ingestion_webhook_schema(payload: TransactionIn): return Response(status_code=200)
 @app.post("/ingestion/webhook", include_in_schema=False)
 async def ingestion_webhook_impl(request: Request): return await lambda_adapter(request, ingestion_handler)
+
+@ingestion.get("/ingestion/webhook", summary="Meta Webhook Verification")
+async def ingestion_webhook_verify_schema(request: Request): return Response(status_code=200)
+@app.get("/ingestion/webhook", include_in_schema=False)
+async def ingestion_webhook_verify_impl(request: Request): return await lambda_adapter(request, ingestion_handler)
 
 from services.ingestion.manual_handler import handler as manual_handler
 @ingestion.post("/transactions/manual", summary="Manual Entry")

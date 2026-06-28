@@ -15,14 +15,14 @@ provider:
     STAGE: ${opt:stage, 'dev'}
     DATABASE_URL: ${env:DATABASE_URL}
     SECRET_KEY: ${env:SECRET_KEY}
-    TWILIO_SECRET: ${env:TWILIO_SECRET}
+    META_VERIFY_TOKEN: ${env:META_VERIFY_TOKEN}
     # Brought in from kapuletu-infra (Terraform outputs)
     COGNITO_USER_POOL_ARN: ${env:COGNITO_USER_POOL_ARN}
     COGNITO_CLIENT_ID: ${env:COGNITO_CLIENT_ID}
     # Welcome Message Configs
     DASHBOARD_URL: ${env:DASHBOARD_URL, 'https://app.kapuletu.com'}
-    TWILIO_ACCOUNT_SID: ${env:TWILIO_ACCOUNT_SID}
-    TWILIO_AUTH_TOKEN: ${env:TWILIO_AUTH_TOKEN}
+    META_ACCESS_TOKEN: ${env:META_ACCESS_TOKEN}
+    META_PHONE_NUMBER_ID: ${env:META_PHONE_NUMBER_ID}
     SENDER_EMAIL: ${env:SENDER_EMAIL, 'welcome@kapuletu.com'}
     SUPPORT_EMAIL: ${env:SUPPORT_EMAIL, 'support@kapuletu.com'}
     SUPPORT_PHONE: ${env:SUPPORT_PHONE, '+254700000000'}
@@ -70,7 +70,10 @@ functions:
       - http:
           path: ingestion
           method: post
-          # No Cognito Authorizer here: Twilio uses its own webhook secret to authenticate
+          # No Cognito Authorizer here: Meta uses its own verify token
+      - http:
+          path: ingestion
+          method: get
   
   approval:
     handler: services/approval/handler.handler

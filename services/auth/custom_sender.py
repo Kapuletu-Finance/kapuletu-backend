@@ -19,14 +19,13 @@ def handler(event, context):
     first_name = user_attrs.get('given_name', 'there')
     code = event['request'].get('codeParameter')
     
-    # 1. Professional WhatsApp Logic (Twilio)
+    # 1. Professional WhatsApp Logic (Meta)
     if trigger in ['CustomMessage_SignUp', 'CustomMessage_ForgotPassword']:
-        twilio_sid = os.environ.get('TWILIO_ACCOUNT_SID')
-        twilio_token = os.environ.get('TWILIO_AUTH_TOKEN')
-        twilio_number = os.environ.get('TWILIO_WHATSAPP_NUMBER')
+        meta_token = os.environ.get('META_ACCESS_TOKEN')
+        meta_phone_id = os.environ.get('META_PHONE_NUMBER_ID')
         
-        if twilio_sid and twilio_token and phone_number:
-            logger.info(f"Attempting WhatsApp send to {phone_number} using SID {twilio_sid[:5]}...")
+        if meta_token and meta_phone_id and phone_number:
+            logger.info(f"Attempting WhatsApp send to {phone_number}...")
             whatsapp_body = (
                 f" *KapuLetu Security*\n\n"
                 f"Hello {first_name}! Your one-time verification code is: *{code}*\n\n"
@@ -35,22 +34,29 @@ def handler(event, context):
             )
             
             try:
-                url = f"https://api.twilio.com/2010-04-01/Accounts/{twilio_sid}/Messages.json"
-                data = urllib.parse.urlencode({
-                    'From': f"whatsapp:{twilio_number}",
-                    'To': f"whatsapp:{phone_number}",
-                    'Body': whatsapp_body
-                }).encode('utf-8')
+                url = f"https://graph.facebook.com/v19.0/{meta_phone_id}/messages"
+                payload = {
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    "to": phone_number.replace("+", ""),
+                    "type": "text",
+                    "text": {
+                        "preview_url": False,
+                        "body": whatsapp_body
+                    }
+                }
+                data = json.dumps(payload).encode('utf-8')
                 
                 req = urllib.request.Request(url, data=data, method='POST')
-                auth_str = base64.b64encode(f"{twilio_sid}:{twilio_token}".encode()).decode()
-                req.add_header('Authorization', f"Basic {auth_str}")
+                req.add_header('Authorization', f"Bearer {meta_token}")
+                req.add_header('Content-Type', 'application/json')
+                
                 urllib.request.urlopen(req)
                 logger.info(f"SUCCESS: WhatsApp code sent to {phone_number}")
             except Exception as e:
                 logger.error(f"ERROR: WhatsApp delivery failed: {str(e)}")
         else:
-            logger.warning(f"SKIPPING WhatsApp: Missing Twilio Credentials (SID: {bool(twilio_sid)}, Token: {bool(twilio_token)})")
+            logger.warning("SKIPPING WhatsApp: Missing Meta Credentials")
 
     # 2. Designer HTML Email Template & Native SMS Fallback
     if trigger in ['CustomMessage_SignUp', 'CustomMessage_ResendCode']:
