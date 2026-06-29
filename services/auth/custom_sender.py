@@ -19,7 +19,9 @@ def decrypt_code(encrypted_code):
         cognito = boto3.client('cognito-idp')
         pool_id = os.environ.get('COGNITO_USER_POOL_ID')
         pool_info = cognito.describe_user_pool(UserPoolId=pool_id)['UserPool']
-        kms_key_id = pool_info['LambdaConfig']['KmsKeyID']
+        kms_key_id = pool_info['LambdaConfig'].get('KMSKeyID')
+        if not kms_key_id:
+            raise ValueError("KMSKeyID not found in LambdaConfig")
         
         # Use StrictAwsKmsMasterKeyProvider with the exact Key ARN
         try:
