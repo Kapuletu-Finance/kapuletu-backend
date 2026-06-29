@@ -111,8 +111,9 @@ def handler(event, context):
             event['response']['smsMessage'] = f"KapuLetu: Your verification code is {code}."
             
         # Dummy Email fields (Cognito requires them if CustomMessage is triggered, but CustomEmailSender overrides actual sending)
+        # CRITICAL: We MUST include the {code} placeholder ("{####}") here, or Cognito validation will fail and abort CustomEmailSender.
         event['response']['emailSubject'] = "KapuLetu Verification"
-        event['response']['emailMessage'] = "Please check your KapuLetu verification code."
+        event['response']['emailMessage'] = f"Please check your KapuLetu verification code: {code}"
         
         return event
 
