@@ -22,25 +22,20 @@ def decrypt_code(encrypted_code):
         kms_key_id = pool_info['LambdaConfig'].get('KMSKeyID')
         if not kms_key_id:
             raise ValueError("KMSKeyID not found in LambdaConfig")
-        
-        # Use StrictAwsKmsMasterKeyProvider with the exact Key ARN
-        try:
-            from aws_encryption_sdk.key_providers.kms import StrictAwsKmsMasterKeyProvider
-        except ImportError:
-            # Fallback for different SDK versions
-            from aws_encryption_sdk import StrictAwsKmsMasterKeyProvider
             
-        provider = StrictAwsKmsMasterKeyProvider(key_ids=[kms_key_id])
-        
         client = aws_encryption_sdk.EncryptionSDKClient(
             commitment_policy=CommitmentPolicy.REQUIRE_ENCRYPT_ALLOW_DECRYPT
         )
-        
         decoded_code = base64.b64decode(encrypted_code)
+        
+        from aws_encryption_sdk import StrictAwsKmsMasterKeyProvider
+        
+        provider = StrictAwsKmsMasterKeyProvider(key_ids=[kms_key_id])
         decrypted_code, _ = client.decrypt(
             source=decoded_code,
             key_provider=provider
         )
+            
         return decrypted_code.decode('utf-8')
     except Exception as e:
         import traceback
