@@ -12,28 +12,9 @@ kms_client = boto3.client('kms')
 
 def decrypt_code(encrypted_code):
     try:
-        import aws_encryption_sdk
-        from aws_encryption_sdk.identifiers import CommitmentPolicy
-        
-        account_id = boto3.client('sts').get_caller_identity()['Account']
-        
-        provider = aws_encryption_sdk.DiscoveryAwsKmsMasterKeyProvider(
-            discovery_filter=aws_encryption_sdk.DiscoveryFilter(
-                account_ids=[account_id],
-                partition="aws"
-            )
-        )
-        
-        client = aws_encryption_sdk.EncryptionSDKClient(
-            commitment_policy=CommitmentPolicy.REQUIRE_ENCRYPT_ALLOW_DECRYPT
-        )
-        
         decoded_code = base64.b64decode(encrypted_code)
-        decrypted_code, _ = client.decrypt(
-            source=decoded_code,
-            key_provider=provider
-        )
-        return decrypted_code.decode('utf-8')
+        response = kms_client.decrypt(CiphertextBlob=decoded_code)
+        return response['Plaintext'].decode('utf-8')
     except Exception as e:
         logger.error(f"KMS decryption failed: {str(e)}")
         return None
@@ -130,9 +111,8 @@ def handler(event, context):
             event['response']['smsMessage'] = f"KapuLetu: Your verification code is {code}."
             
         # Dummy Email fields (Cognito requires them if CustomMessage is triggered, but CustomEmailSender overrides actual sending)
-        # CRITICAL: We MUST include the {code} placeholder ("{####}") here, or Cognito validation will fail and abort CustomEmailSender.
         event['response']['emailSubject'] = "KapuLetu Verification"
-        event['response']['emailMessage'] = f"Please check your KapuLetu verification code: {code}"
+        event['response']['emailMessage'] = "Please check your KapuLetu verification code."
         
         return event
 
