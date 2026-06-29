@@ -12,9 +12,28 @@ kms_client = boto3.client('kms')
 
 def decrypt_code(encrypted_code):
     try:
+        import aws_encryption_sdk
+        from aws_encryption_sdk.identifiers import CommitmentPolicy
+        
+        account_id = boto3.client('sts').get_caller_identity()['Account']
+        
+        provider = aws_encryption_sdk.DiscoveryAwsKmsMasterKeyProvider(
+            discovery_filter=aws_encryption_sdk.DiscoveryFilter(
+                account_ids=[account_id],
+                partition="aws"
+            )
+        )
+        
+        client = aws_encryption_sdk.EncryptionSDKClient(
+            commitment_policy=CommitmentPolicy.REQUIRE_ENCRYPT_ALLOW_DECRYPT
+        )
+        
         decoded_code = base64.b64decode(encrypted_code)
-        response = kms_client.decrypt(CiphertextBlob=decoded_code)
-        return response['Plaintext'].decode('utf-8')
+        decrypted_code, _ = client.decrypt(
+            source=decoded_code,
+            key_provider=provider
+        )
+        return decrypted_code.decode('utf-8')
     except Exception as e:
         logger.error(f"KMS decryption failed: {str(e)}")
         return None
