@@ -17,7 +17,12 @@ def decrypt_code(encrypted_code):
         
         # Dynamically fetch the KMS Key ARN from Cognito User Pool
         cognito = boto3.client('cognito-idp')
-        pool_id = os.environ.get('COGNITO_USER_POOL_ID')
+        arn = os.environ.get('COGNITO_USER_POOL_ARN', '')
+        pool_id = arn.split('/')[-1] if arn else None
+        
+        if not pool_id:
+            raise ValueError("Could not determine UserPoolId from COGNITO_USER_POOL_ARN")
+            
         pool_info = cognito.describe_user_pool(UserPoolId=pool_id)['UserPool']
         kms_key_id = pool_info['LambdaConfig'].get('KMSKeyID')
         if not kms_key_id:

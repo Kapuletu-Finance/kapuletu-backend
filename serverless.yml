@@ -17,6 +17,7 @@ provider:
         - Effect: "Allow"
           Action:
             - "kms:Decrypt"
+            - "cognito-idp:DescribeUserPool"
           Resource: "*"
   environment:
     RESEND_API_KEY: ${env:RESEND_API_KEY}
