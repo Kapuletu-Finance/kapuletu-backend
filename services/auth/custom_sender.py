@@ -66,10 +66,19 @@ def send_resend_email(to_email, subject, html_body):
         req = urllib.request.Request(url, data=data, method='POST')
         req.add_header('Authorization', f"Bearer {resend_api_key}")
         req.add_header('Content-Type', 'application/json')
-        urllib.request.urlopen(req)
-        logger.info(f"SUCCESS: Resend email sent to {to_email}")
+        logger.info(f"Attempting to send email to {to_email} via Resend API...")
+        
+        with urllib.request.urlopen(req) as response:
+            status_code = response.getcode()
+            response_body = response.read().decode('utf-8')
+            logger.info(f"SUCCESS: Resend API responded with {status_code}. Body: {response_body}")
+            
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8') if e.fp else ""
+        logger.error(f"ERROR: Resend API HTTPError {e.code}: {e.reason}. Body: {error_body}")
     except Exception as e:
-        logger.error(f"ERROR: Resend email delivery failed: {str(e)}")
+        import traceback
+        logger.error(f"ERROR: Resend email delivery failed with unexpected exception: {str(e)}\n{traceback.format_exc()}")
 
 def handler(event, context):
     """
