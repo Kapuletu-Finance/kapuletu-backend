@@ -11,7 +11,15 @@ provider:
       # These must be passed in via CI/CD from Terraform outputs
       - ${env:PRIVATE_SUBNET_1}
       - ${env:PRIVATE_SUBNET_2}
+  iam:
+    role:
+      statements:
+        - Effect: "Allow"
+          Action:
+            - "kms:Decrypt"
+          Resource: "*"
   environment:
+    RESEND_API_KEY: ${env:RESEND_API_KEY}
     STAGE: ${opt:stage, 'dev'}
     DATABASE_URL: ${env:DATABASE_URL}
     SECRET_KEY: ${env:SECRET_KEY}

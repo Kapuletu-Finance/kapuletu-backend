@@ -4,99 +4,150 @@ import logging
 import base64
 import urllib.parse
 import urllib.request
+import boto3
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+kms_client = boto3.client('kms')
+
+def decrypt_code(encrypted_code):
+    try:
+        decoded_code = base64.b64decode(encrypted_code)
+        response = kms_client.decrypt(CiphertextBlob=decoded_code)
+        return response['Plaintext'].decode('utf-8')
+    except Exception as e:
+        logger.error(f"KMS decryption failed: {str(e)}")
+        return None
+
+def send_resend_email(to_email, subject, html_body):
+    resend_api_key = os.environ.get('RESEND_API_KEY')
+    if not resend_api_key:
+        logger.error("Missing RESEND_API_KEY")
+        return
+
+    url = "https://api.resend.com/emails"
+    payload = {
+        "from": "KapuLetu <no-reply@kapuletu.co.ke>",
+        "to": [to_email],
+        "subject": subject,
+        "html": html_body
+    }
+    data = json.dumps(payload).encode('utf-8')
+    
+    try:
+        req = urllib.request.Request(url, data=data, method='POST')
+        req.add_header('Authorization', f"Bearer {resend_api_key}")
+        req.add_header('Content-Type', 'application/json')
+        urllib.request.urlopen(req)
+        logger.info(f"SUCCESS: Resend email sent to {to_email}")
+    except Exception as e:
+        logger.error(f"ERROR: Resend email delivery failed: {str(e)}")
 
 def handler(event, context):
     """
-    AWS Cognito Custom Message Trigger.
-    Returns professional HTML email templates and sends WhatsApp verification codes.
+    AWS Cognito Custom Trigger.
+    Handles CustomMessage (WhatsApp/SMS) and CustomEmailSender (Resend API).
     """
     trigger = event.get('triggerSource')
     user_attrs = event['request'].get('userAttributes', {})
     phone_number = user_attrs.get('phone_number')
+    email = user_attrs.get('email')
     first_name = user_attrs.get('given_name', 'there')
-    code = event['request'].get('codeParameter')
     
-    # 1. Professional WhatsApp Logic (Meta)
-    if trigger in ['CustomMessage_SignUp', 'CustomMessage_ForgotPassword']:
-        meta_token = os.environ.get('META_ACCESS_TOKEN')
-        meta_phone_id = os.environ.get('META_PHONE_NUMBER_ID')
+    # ---------------------------------------------------------
+    # 1. CustomMessage Logic (WhatsApp & Cognito Native SMS)
+    # ---------------------------------------------------------
+    if trigger.startswith('CustomMessage_'):
+        code = event['request'].get('codeParameter')
         
-        if meta_token and meta_phone_id and phone_number:
-            logger.info(f"Attempting WhatsApp send to {phone_number}...")
-            whatsapp_body = (
-                f" *KapuLetu Security*\n\n"
-                f"Hello {first_name}! Your one-time verification code is: *{code}*\n\n"
-                f"Please enter this in the app to continue. If you didn't request this, "
-                f"please ignore this message."
-            )
+        # WhatsApp Delivery
+        if trigger in ['CustomMessage_SignUp', 'CustomMessage_ForgotPassword']:
+            meta_token = os.environ.get('META_ACCESS_TOKEN')
+            meta_phone_id = os.environ.get('META_PHONE_NUMBER_ID')
             
-            try:
-                url = f"https://graph.facebook.com/v19.0/{meta_phone_id}/messages"
-                payload = {
-                    "messaging_product": "whatsapp",
-                    "recipient_type": "individual",
-                    "to": phone_number.replace("+", ""),
-                    "type": "template",
-                    "template": {
-                        "name": "kapuletu_auth_otp",
-                        "language": {
-                            "code": "en_US"
-                        },
-                        "components": [
-                            {
-                                "type": "body",
-                                "parameters": [
-                                    {
-                                        "type": "text",
-                                        "text": str(code)
-                                    }
-                                ]
-                            },
-                            {
-                                "type": "button",
-                                "sub_type": "url",
-                                "index": "0",
-                                "parameters": [
-                                    {
-                                        "type": "text",
-                                        "text": str(code)
-                                    }
-                                ]
-                            }
-                        ]
+            if meta_token and meta_phone_id and phone_number:
+                logger.info(f"Attempting WhatsApp send to {phone_number}...")
+                try:
+                    url = f"https://graph.facebook.com/v19.0/{meta_phone_id}/messages"
+                    payload = {
+                        "messaging_product": "whatsapp",
+                        "recipient_type": "individual",
+                        "to": phone_number.replace("+", ""),
+                        "type": "template",
+                        "template": {
+                            "name": "kapuletu_auth_otp",
+                            "language": {"code": "en_US"},
+                            "components": [
+                                {
+                                    "type": "body",
+                                    "parameters": [{"type": "text", "text": str(code)}]
+                                },
+                                {
+                                    "type": "button",
+                                    "sub_type": "url",
+                                    "index": "0",
+                                    "parameters": [{"type": "text", "text": str(code)}]
+                                }
+                            ]
+                        }
                     }
-                }
-                data = json.dumps(payload).encode('utf-8')
-                
-                req = urllib.request.Request(url, data=data, method='POST')
-                req.add_header('Authorization', f"Bearer {meta_token}")
-                req.add_header('Content-Type', 'application/json')
-                
-                urllib.request.urlopen(req)
-                logger.info(f"SUCCESS: WhatsApp code sent to {phone_number}")
-            except Exception as e:
-                logger.error(f"ERROR: WhatsApp delivery failed: {str(e)}")
-        else:
-            logger.warning("SKIPPING WhatsApp: Missing Meta Credentials")
+                    data = json.dumps(payload).encode('utf-8')
+                    req = urllib.request.Request(url, data=data, method='POST')
+                    req.add_header('Authorization', f"Bearer {meta_token}")
+                    req.add_header('Content-Type', 'application/json')
+                    urllib.request.urlopen(req)
+                    logger.info(f"SUCCESS: WhatsApp code sent to {phone_number}")
+                except Exception as e:
+                    logger.error(f"ERROR: WhatsApp delivery failed: {str(e)}")
+            else:
+                logger.warning("SKIPPING WhatsApp: Missing Meta Credentials")
 
-    # 2. Designer HTML Email Template & Native SMS Fallback
-    if trigger in ['CustomMessage_SignUp', 'CustomMessage_ResendCode']:
-        event['response']['emailSubject'] = "Welcome to KapuLetu - Verify Your Account"
-        event['response']['emailMessage'] = get_html_template(first_name, code, "verify your account")
-        event['response']['smsMessage'] = f"KapuLetu: Your verification code is {code}. It expires in 10 minutes."
-    
-    elif trigger == 'CustomMessage_ForgotPassword':
-        event['response']['emailSubject'] = "Reset Your KapuLetu Password"
-        event['response']['emailMessage'] = get_html_template(first_name, code, "reset your password")
-        event['response']['smsMessage'] = f"KapuLetu: Your password reset code is {code}."
+        # SMS Fallback (Required by Cognito)
+        if trigger in ['CustomMessage_SignUp', 'CustomMessage_ResendCode']:
+            event['response']['smsMessage'] = f"KapuLetu: Your verification code is {code}. It expires in 10 minutes."
+        elif trigger == 'CustomMessage_ForgotPassword':
+            event['response']['smsMessage'] = f"KapuLetu: Your password reset code is {code}."
+        elif trigger == 'CustomMessage_VerifyUserAttribute':
+            event['response']['smsMessage'] = f"KapuLetu: Your verification code is {code}."
+            
+        # Dummy Email fields (Cognito requires them if CustomMessage is triggered, but CustomEmailSender overrides actual sending)
+        event['response']['emailSubject'] = "KapuLetu Verification"
+        event['response']['emailMessage'] = "Please check your KapuLetu verification code."
         
-    elif trigger == 'CustomMessage_VerifyUserAttribute':
-        event['response']['emailSubject'] = "Verify Your KapuLetu Contact Details"
-        event['response']['emailMessage'] = get_html_template(first_name, code, "verify your email address")
-        event['response']['smsMessage'] = f"KapuLetu: Your verification code is {code}."
+        return event
+
+    # ---------------------------------------------------------
+    # 2. CustomEmailSender Logic (Resend API)
+    # ---------------------------------------------------------
+    elif trigger.startswith('CustomEmailSender_'):
+        encrypted_code = event['request'].get('code')
+        if not encrypted_code:
+            logger.error("No encrypted code found in event.")
+            return event
+            
+        code = decrypt_code(encrypted_code)
+        if not code:
+            return event
+            
+        subject = "KapuLetu Verification"
+        action_text = "verify your account"
+        
+        if trigger in ['CustomEmailSender_SignUp', 'CustomEmailSender_ResendCode']:
+            subject = "Welcome to KapuLetu - Verify Your Account"
+            action_text = "verify your account"
+        elif trigger == 'CustomEmailSender_ForgotPassword':
+            subject = "Reset Your KapuLetu Password"
+            action_text = "reset your password"
+        elif trigger == 'CustomEmailSender_VerifyUserAttribute':
+            subject = "Verify Your KapuLetu Contact Details"
+            action_text = "verify your email address"
+            
+        html_body = get_html_template(first_name, code, action_text)
+        
+        if email:
+            send_resend_email(email, subject, html_body)
+            
+        return event
 
     return event
 
