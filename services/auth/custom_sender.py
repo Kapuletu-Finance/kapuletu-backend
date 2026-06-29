@@ -77,6 +77,10 @@ def handler(event, context):
     Handles CustomMessage (WhatsApp/SMS) and CustomEmailSender (Resend API).
     """
     trigger = event.get('triggerSource')
+    logger.info(f"==== NEW COGNITO INVOCATION ====")
+    logger.info(f"Trigger: {trigger}")
+    logger.info(f"Full Event: {json.dumps(event)}")
+    
     user_attrs = event['request'].get('userAttributes', {})
     phone_number = user_attrs.get('phone_number')
     email = user_attrs.get('email')
@@ -142,12 +146,14 @@ def handler(event, context):
         event['response']['emailSubject'] = "KapuLetu Verification"
         event['response']['emailMessage'] = f"Please check your KapuLetu verification code: {code}"
         
+        logger.info(f"CustomMessage returning modified event: {json.dumps(event)}")
         return event
 
     # ---------------------------------------------------------
     # 2. CustomEmailSender Logic (Resend API)
     # ---------------------------------------------------------
     elif trigger.startswith('CustomEmailSender_'):
+        logger.info(f"==== CustomEmailSender Invoked for {trigger} ====")
         encrypted_code = event['request'].get('code')
         if not encrypted_code:
             logger.error("No encrypted code found in event.")
@@ -155,6 +161,7 @@ def handler(event, context):
             
         code = decrypt_code(encrypted_code)
         if not code:
+            logger.error("Failed to decrypt code in CustomEmailSender")
             return event
             
         subject = "KapuLetu Verification"
@@ -173,7 +180,10 @@ def handler(event, context):
         html_body = get_html_template(first_name, code, action_text)
         
         if email:
+            logger.info(f"Sending email to {email} via Resend")
             send_resend_email(email, subject, html_body)
+        else:
+            logger.error("No email address found in userAttributes to send to.")
             
         return event
 
