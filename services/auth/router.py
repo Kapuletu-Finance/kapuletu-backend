@@ -125,26 +125,14 @@ async def update_profile(payload: UpdateProfileIn, current_user: Dict[str, Any] 
     
     return MessageOut(message="Profile updated successfully.")
 
-@router.post("/verify-email/request", summary="Request Email Verification Code")
-async def request_email_verification(current_user: dict = Depends(get_current_user)):
-    try:
-        import boto3
-        import os
-        client = boto3.client('cognito-idp')
-        pool_id = os.environ.get('COGNITO_USER_POOL_ID')
-        
-        # Diagnostic check to see if CustomEmailSender is actually attached!
-        pool_info = client.describe_user_pool(UserPoolId=pool_id)['UserPool']
-        lambda_config = pool_info.get('LambdaConfig', {})
-        
-        cognito_service.request_email_verification(access_token=current_user['access_token'])
-        
-        return {
-            "message": "Email verification code sent successfully.",
-            "diagnostic_lambda_config": lambda_config
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+@router.post("/verify-email/request", response_model=MessageOut, summary="Request Email Verification Code")
+async def request_email_verification(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Triggers Cognito to send a 6-digit verification code to the user's email."""
+    if current_user.get('email_verified') == 'true':
+        raise HTTPException(status_code=400, detail="Email is already verified.")
+    
+    cognito_service.request_email_verification(access_token=current_user['access_token'])
+    return MessageOut(message="Email verification code sent successfully.")
 
 @router.post("/verify-email/confirm", response_model=MessageOut, summary="Confirm Email Verification")
 async def confirm_email_verification(payload: VerifyEmailIn, current_user: Dict[str, Any] = Depends(get_current_user)):
