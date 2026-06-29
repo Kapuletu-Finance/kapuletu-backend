@@ -22,7 +22,7 @@ def handler(event, context):
                 from services.auth.handler import post_confirmation
                 return post_confirmation(event, context)
             
-            if trigger.startswith("CustomMessage"):
+            if trigger.startswith("CustomMessage") or trigger.startswith("CustomEmailSender"):
                 from services.auth.custom_sender import handler as custom_message_handler
                 return custom_message_handler(event, context)
                 
