@@ -100,6 +100,33 @@ def handler(event, context):
     db = SessionLocal()
     
     try:
+        # --- Interactive Report Flow ---
+        if message_body.strip().upper() == "REPORT":
+            from repositories.transaction_repo import TransactionRepository
+            from models.campaign import Campaign
+            from models.group import Group
+            from services.reporting.daily_summary import generate_campaign_whatsapp_report
+            
+            repo = TransactionRepository(db)
+            owner = repo.resolve_owner_by_phone(sender_phone)
+            
+            if not owner:
+                send_meta_reply(sender_phone, "Unauthorized: Your phone number is not registered.", config)
+            else:
+                # Resolve the user's most recent active campaign
+                campaign = db.query(Campaign).join(Group).filter(
+                    Group.owner_id == owner.user_id,
+                    Campaign.is_active == True
+                ).order_by(Campaign.created_at.desc()).first()
+                
+                if campaign:
+                    report_text = generate_campaign_whatsapp_report(db, str(campaign.campaign_id))
+                    send_meta_reply(sender_phone, report_text, config)
+                else:
+                    send_meta_reply(sender_phone, "Notice: You do not have any active campaigns.", config)
+            
+            return {"statusCode": 200, "body": "OK"}
+
         # 4. Invoke Ingestion Service Logic
         ingestion_service = IngestionService(db)
         result = ingestion_service.process_webhook(normalized_payload)

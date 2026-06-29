@@ -79,10 +79,23 @@ def post_confirmation(event, context):
                     "messaging_product": "whatsapp",
                     "recipient_type": "individual",
                     "to": phone_number.replace("+", ""),
-                    "type": "text",
-                    "text": {
-                        "preview_url": False,
-                        "body": whatsapp_body
+                    "type": "template",
+                    "template": {
+                        "name": "kapuletu_welcome",
+                        "language": {
+                            "code": "en_US"
+                        },
+                        "components": [
+                            {
+                                "type": "body",
+                                "parameters": [
+                                    {
+                                        "type": "text",
+                                        "text": first_name
+                                    }
+                                ]
+                            }
+                        ]
                     }
                 }
                 data = json.dumps(payload).encode('utf-8')

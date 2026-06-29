@@ -39,10 +39,34 @@ def handler(event, context):
                     "messaging_product": "whatsapp",
                     "recipient_type": "individual",
                     "to": phone_number.replace("+", ""),
-                    "type": "text",
-                    "text": {
-                        "preview_url": False,
-                        "body": whatsapp_body
+                    "type": "template",
+                    "template": {
+                        "name": "kapuletu_auth_otp",
+                        "language": {
+                            "code": "en_US"
+                        },
+                        "components": [
+                            {
+                                "type": "body",
+                                "parameters": [
+                                    {
+                                        "type": "text",
+                                        "text": str(code)
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "button",
+                                "sub_type": "url",
+                                "index": "0",
+                                "parameters": [
+                                    {
+                                        "type": "text",
+                                        "text": str(code)
+                                    }
+                                ]
+                            }
+                        ]
                     }
                 }
                 data = json.dumps(payload).encode('utf-8')
