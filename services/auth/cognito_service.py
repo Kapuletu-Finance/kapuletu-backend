@@ -53,8 +53,7 @@ class CognitoService:
                     {'Name': 'email', 'Value': email},
                     {'Name': 'given_name', 'Value': first_name},
                     {'Name': 'family_name', 'Value': last_name},
-                    {'Name': 'phone_number', 'Value': phone_number},
-                    {'Name': 'custom:code_sent_at', 'Value': str(int(time.time()))}
+                    {'Name': 'phone_number', 'Value': phone_number}
                 ]
             )
             return response.get('UserSub')
@@ -70,14 +69,15 @@ class CognitoService:
                         UserPoolId=self.user_pool_id,
                         Username=email
                     )
-                    code_sent_at = None
-                    for attr in user.get('UserAttributes', []):
-                        if attr['Name'] == 'custom:code_sent_at':
-                            code_sent_at = int(attr['Value'])
-                            break
                     
-                    if code_sent_at and (int(time.time()) - code_sent_at) > 600: # 600 seconds = 10 minutes
-                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification code has expired. Please request a new one.")
+                    # Fallback to UserCreateDate (which boto3 returns as a datetime object)
+                    created_at = user.get('UserCreateDate')
+                    
+                    if created_at:
+                        # Convert to naive UTC timestamp for comparison
+                        created_ts = created_at.timestamp()
+                        if (time.time() - created_ts) > 600: # 600 seconds = 10 minutes
+                            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification code has expired. Please request a new one.")
                 except ClientError as e:
                     logger.warning(f"Failed to check code expiration: {str(e)}")
                     # Continue gracefully if admin check fails (e.g., local dev)
