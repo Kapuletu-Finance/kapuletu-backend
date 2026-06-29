@@ -15,14 +15,20 @@ def decrypt_code(encrypted_code):
         import aws_encryption_sdk
         from aws_encryption_sdk.identifiers import CommitmentPolicy
         
-        account_id = boto3.client('sts').get_caller_identity()['Account']
+        # Dynamically fetch the KMS Key ARN from Cognito User Pool
+        cognito = boto3.client('cognito-idp')
+        pool_id = os.environ.get('COGNITO_USER_POOL_ID')
+        pool_info = cognito.describe_user_pool(UserPoolId=pool_id)['UserPool']
+        kms_key_id = pool_info['LambdaConfig']['KmsKeyID']
         
-        provider = aws_encryption_sdk.DiscoveryAwsKmsMasterKeyProvider(
-            discovery_filter=aws_encryption_sdk.DiscoveryFilter(
-                account_ids=[account_id],
-                partition="aws"
-            )
-        )
+        # Use StrictAwsKmsMasterKeyProvider with the exact Key ARN
+        try:
+            from aws_encryption_sdk.key_providers.kms import StrictAwsKmsMasterKeyProvider
+        except ImportError:
+            # Fallback for different SDK versions
+            from aws_encryption_sdk import StrictAwsKmsMasterKeyProvider
+            
+        provider = StrictAwsKmsMasterKeyProvider(key_ids=[kms_key_id])
         
         client = aws_encryption_sdk.EncryptionSDKClient(
             commitment_policy=CommitmentPolicy.REQUIRE_ENCRYPT_ALLOW_DECRYPT
@@ -35,7 +41,8 @@ def decrypt_code(encrypted_code):
         )
         return decrypted_code.decode('utf-8')
     except Exception as e:
-        logger.error(f"KMS decryption failed: {str(e)}")
+        import traceback
+        logger.error(f"KMS decryption failed: {str(e)} - {traceback.format_exc()}")
         return None
 
 def send_resend_email(to_email, subject, html_body):
