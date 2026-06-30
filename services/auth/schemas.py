@@ -1,7 +1,21 @@
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 # --- INPUT SCHEMAS ---
+
+class IdentifierBase(BaseModel):
+    email: Optional[EmailStr] = Field(None, json_schema_extra={"example": "treasurer@example.com"})
+    phone_number: Optional[str] = Field(None, json_schema_extra={"example": "+254700123456"})
+
+    @model_validator(mode='after')
+    def check_identifier(self):
+        if not self.email and not self.phone_number:
+            raise ValueError('Either email or phone_number must be provided')
+        return self
+        
+    @property
+    def identifier(self) -> str:
+        return self.email or self.phone_number
 
 class RegisterIn(BaseModel):
     email: EmailStr = Field(..., json_schema_extra={"example": "treasurer@example.com"})
@@ -10,12 +24,10 @@ class RegisterIn(BaseModel):
     last_name: str = Field(..., min_length=1, json_schema_extra={"example": "Amuyunzu"})
     phone_number: str = Field(..., json_schema_extra={"example": "+254700123456"})
 
-class LoginIn(BaseModel):
-    email: EmailStr = Field(..., json_schema_extra={"example": "treasurer@example.com"})
+class LoginIn(IdentifierBase):
     password: str = Field(..., json_schema_extra={"example": "SecurePass123!"})
 
-class VerifyIn(BaseModel):
-    email: EmailStr = Field(..., json_schema_extra={"example": "treasurer@example.com"})
+class VerifyIn(IdentifierBase):
     code: str = Field(..., min_length=6, max_length=6, json_schema_extra={"example": "123456"})
 
 class VerifyEmailIn(BaseModel):
@@ -24,17 +36,16 @@ class VerifyEmailIn(BaseModel):
 class VerifyPhoneIn(BaseModel):
     code: str = Field(..., min_length=6, max_length=6, json_schema_extra={"example": "123456"})
 
-class ResendCodeIn(BaseModel):
-    email: EmailStr = Field(..., json_schema_extra={"example": "treasurer@example.com"})
+class ResendCodeIn(IdentifierBase):
+    pass
 
 class RefreshIn(BaseModel):
     refresh_token: str = Field(..., json_schema_extra={"example": "eyJhbG..."})
 
-class ForgotPasswordIn(BaseModel):
-    email: EmailStr = Field(..., json_schema_extra={"example": "treasurer@example.com"})
+class ForgotPasswordIn(IdentifierBase):
+    pass
 
-class ResetPasswordIn(BaseModel):
-    email: EmailStr = Field(..., json_schema_extra={"example": "treasurer@example.com"})
+class ResetPasswordIn(IdentifierBase):
     code: str = Field(..., min_length=6, max_length=6, json_schema_extra={"example": "123456"})
     new_password: str = Field(..., min_length=8, json_schema_extra={"example": "NewSecurePass456!"})
 

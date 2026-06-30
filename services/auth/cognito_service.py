@@ -60,14 +60,14 @@ class CognitoService:
         except ClientError as e:
             self._handle_client_error(e)
 
-    def verify_account(self, email: EmailStr, code: str):
+    def verify_account(self, username: str, code: str):
         try:
             # 1. Enforce Functional 10-Minute Expiration Limit
             if self.user_pool_id:
                 try:
                     user = self.client.admin_get_user(
                         UserPoolId=self.user_pool_id,
-                        Username=email
+                        Username=username
                     )
                     
                     # Fallback to UserCreateDate (which boto3 returns as a datetime object)
@@ -85,20 +85,20 @@ class CognitoService:
             # 2. Confirm Sign Up
             self.client.confirm_sign_up(
                 ClientId=self.client_id,
-                Username=email,
+                Username=username,
                 ConfirmationCode=code
             )
         except ClientError as e:
             self._handle_client_error(e)
 
-    def login(self, email: EmailStr, password: str) -> Dict[str, Any]:
+    def login(self, username: str, password: str) -> Dict[str, Any]:
         """Returns the AuthenticationResult containing tokens."""
         try:
             response = self.client.initiate_auth(
                 ClientId=self.client_id,
                 AuthFlow='USER_PASSWORD_AUTH',
                 AuthParameters={
-                    'USERNAME': email,
+                    'USERNAME': username,
                     'PASSWORD': password
                 }
             )
@@ -125,20 +125,20 @@ class CognitoService:
         except ClientError as e:
             self._handle_client_error(e)
 
-    def forgot_password(self, email: EmailStr):
+    def forgot_password(self, username: str):
         try:
             self.client.forgot_password(
                 ClientId=self.client_id,
-                Username=email
+                Username=username
             )
         except ClientError as e:
             self._handle_client_error(e)
 
-    def reset_password(self, email: EmailStr, code: str, new_password: str):
+    def reset_password(self, username: str, code: str, new_password: str):
         try:
             self.client.confirm_forgot_password(
                 ClientId=self.client_id,
-                Username=email,
+                Username=username,
                 ConfirmationCode=code,
                 Password=new_password
             )
@@ -196,7 +196,7 @@ class CognitoService:
         except ClientError as e:
             self._handle_client_error(e)
 
-    def resend_confirmation_code(self, email: EmailStr) -> Dict[str, Any]:
+    def resend_confirmation_code(self, username: str) -> Dict[str, Any]:
         """Resends the initial registration verification code."""
         try:
             # Update the custom:code_sent_at timestamp
@@ -204,7 +204,7 @@ class CognitoService:
                 try:
                     self.client.admin_update_user_attributes(
                         UserPoolId=self.user_pool_id,
-                        Username=email,
+                        Username=username,
                         UserAttributes=[
                             {'Name': 'custom:code_sent_at', 'Value': str(int(time.time()))}
                         ]
@@ -214,7 +214,7 @@ class CognitoService:
 
             response = self.client.resend_confirmation_code(
                 ClientId=self.client_id,
-                Username=email
+                Username=username
             )
             return response.get('CodeDeliveryDetails', {})
         except ClientError as e:

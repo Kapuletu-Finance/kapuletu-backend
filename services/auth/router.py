@@ -29,13 +29,13 @@ async def register(payload: RegisterIn):
 
 @router.post("/verify", response_model=MessageOut, summary="Verify Phone / Email")
 async def verify(payload: VerifyIn):
-    cognito_service.verify_account(email=payload.email, code=payload.code)
+    cognito_service.verify_account(username=payload.identifier, code=payload.code)
     # The Cognito PostConfirmation hook will automatically sync the verified user to Postgres!
     return MessageOut(message="Account successfully verified. You can now log in.")
 
 @router.post("/resend-code", response_model=MessageOut, summary="Resend Verification Code")
 async def resend_code(payload: ResendCodeIn):
-    details = cognito_service.resend_confirmation_code(email=payload.email)
+    details = cognito_service.resend_confirmation_code(username=payload.identifier)
     medium = details.get('DeliveryMedium', 'your contact method')
     destination = details.get('Destination', '')
     return MessageOut(message=f"Verification code resent successfully to {medium} ({destination}).")
@@ -43,7 +43,7 @@ async def resend_code(payload: ResendCodeIn):
 @router.post("/login", response_model=TokenOut, summary="Login (JSON payload)")
 async def login(payload: LoginIn):
     """Standard JSON login endpoint for frontend convenience."""
-    auth_result = cognito_service.login(email=payload.email, password=payload.password)
+    auth_result = cognito_service.login(username=payload.identifier, password=payload.password)
     return TokenOut(
         access_token=auth_result.get('AccessToken'),
         refresh_token=auth_result.get('RefreshToken'),
@@ -54,7 +54,7 @@ async def login(payload: LoginIn):
 @router.post("/token", response_model=TokenOut, include_in_schema=False)
 async def login_for_swagger(form_data: OAuth2PasswordRequestForm = Depends()):
     """Hidden endpoint exclusively for Swagger UI Authorize button (expects form-data)."""
-    auth_result = cognito_service.login(email=form_data.username, password=form_data.password)
+    auth_result = cognito_service.login(username=form_data.username, password=form_data.password)
     return TokenOut(
         access_token=auth_result.get('AccessToken'),
         refresh_token=auth_result.get('RefreshToken'),
@@ -73,12 +73,12 @@ async def refresh(payload: RefreshIn):
 
 @router.post("/forgot-password", response_model=MessageOut, summary="Request Password Reset")
 async def forgot_password(payload: ForgotPasswordIn):
-    cognito_service.forgot_password(email=payload.email)
+    cognito_service.forgot_password(username=payload.identifier)
     return MessageOut(message="Password reset code sent to your email/phone.")
 
 @router.post("/reset-password", response_model=MessageOut, summary="Reset Password")
 async def reset_password(payload: ResetPasswordIn):
-    cognito_service.reset_password(email=payload.email, code=payload.code, new_password=payload.new_password)
+    cognito_service.reset_password(username=payload.identifier, code=payload.code, new_password=payload.new_password)
     return MessageOut(message="Password successfully reset. You can now log in.")
 
 # ==========================================
