@@ -1,6 +1,6 @@
 PyJWT
 passlib
-bcrypt
+bcrypt==3.2.2
 boto3
 spacy
 fastapi
