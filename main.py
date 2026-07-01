@@ -26,21 +26,6 @@ def handler(event, context):
             logger.info("Database migration completed successfully.")
             return {"statusCode": 200, "body": "Migration successful"}
 
-        # 1. Detect AWS Cognito Triggers (Lightweight)
-        if "triggerSource" in event:
-            trigger = event["triggerSource"]
-            logger.info(f"Cognito Trigger: {trigger}")
-            
-            if trigger.startswith("PostConfirmation"):
-                from services.auth.handler import post_confirmation
-                return post_confirmation(event, context)
-            
-            if trigger.startswith("CustomMessage") or trigger.startswith("CustomEmailSender"):
-                from services.auth.custom_sender import handler as custom_message_handler
-                return custom_message_handler(event, context)
-                
-            return event # Return event unchanged if no specific handler
-
         # 2. API is a  Gateway Routing (FastAPI - Deferred)
         from mangum import Mangum
         from local_server import app
