@@ -29,8 +29,10 @@ class User(Base):
     # Must be a verified WhatsApp number via Cognito Custom Sender
     phone_number = Column(String, unique=True, nullable=False)
     
-    # Security: Passwords are managed entirely by Amazon Cognito.
-    # We do NOT store password hashes in our local database anymore.
+    # Security
+    hashed_password = Column(String, nullable=True)
+    email_verified = Column(Boolean, default=False)
+    phone_number_verified = Column(Boolean, default=False)
     
     # Permissions Role: Controls access to specific dashboard features
     # - treasurer: Manages specific groups

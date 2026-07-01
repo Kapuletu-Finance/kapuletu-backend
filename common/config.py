@@ -23,6 +23,13 @@ class Config:
     # Meta WhatsApp Cloud API credentials for sending messages
     META_ACCESS_TOKEN: str = os.getenv("META_ACCESS_TOKEN", "")
     META_PHONE_NUMBER_ID: str = os.getenv("META_PHONE_NUMBER_ID", "")
+    
+    # Africa's Talking Credentials
+    AT_USERNAME: str = os.getenv("AT_USERNAME", "sandbox")
+    AT_API_KEY: str = os.getenv("AT_API_KEY", "")
+    
+    # JWT Secret Key for signing custom tokens
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "your-super-secret-local-dev-key")
 
 def get_config() -> Config:
     """

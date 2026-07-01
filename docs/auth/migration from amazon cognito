@@ -1,0 +1,46 @@
+# KapuLetu Custom Authentication Migration Walkthrough
+
+Congratulations! You have successfully replaced AWS Cognito with a blazing-fast, custom-built, fully internal authentication system. Here is a comprehensive breakdown of the new architecture, what was removed, and how the new flows work seamlessly with your existing infrastructure.
+
+## 1. The New Core Architecture (No Cognito)
+
+Previously, AWS Cognito held your users, passwords, and managed OTP token dispatch. Now, everything lives natively within your own ecosystem:
+- **PostgreSQL Database**: We added `hashed_password`, `email_verified`, and `phone_number_verified` columns directly to your `User` model, giving you full ownership over your user data.
+- **PyJWT & Passlib**: We implemented industry-standard bcrypt hashing for passwords and PyJWT for generating secure stateless access/refresh tokens.
+- **Stateless Router**: Your FastAPI endpoints (e.g., `/auth/login`, `/auth/register`) now talk directly to the `AuthService`, bypassing AWS boto3 calls. API Gateway simply acts as a proxy, passing the `Authorization` header directly to your backend to be verified instantly by `decode_token()`.
+
+## 2. Professional Multi-Channel Delivery
+
+You maintained your premium user experience without the rigid constraints of Cognito triggers. The new `AuthService` dynamically handles all OTPs and Welcome messages:
+
+### WhatsApp (Meta API)
+When a user signs up, the system uses your Meta `kapuletu_auth_otp` template to proactively message the user with their 6-digit verification code. If verification is successful, the `kapuletu_welcome` template is automatically fired to onboard them.
+
+### SMS Fallback (Africa's Talking)
+> [!TIP]
+> **Built-in Resilience**
+> We built a `try/except` block directly into the WhatsApp delivery function. If a user registers with a phone number that doesn't have WhatsApp installed (or if the Meta API times out), the system automatically falls back to your Africa's Talking integration and fires a clean text message: *"KapuLetu: Your verification code is 123456. It expires in 10 minutes."*
+
+### Premium HTML Emails (Resend)
+The beautiful Resend HTML templates (with the dashed borders and blue `#0056b3` code blocks) were ported from the old Cognito Lambda hook straight into the `AuthService`. When a user requests an email verification or forgets their password, they still get the exact same premium branding.
+
+## 3. Infrastructure & CI/CD Clean Up
+
+We systematically removed the AWS Cognito footprints from your `kapuletu-infra` Terraform repository:
+- **Removed Modules**: Deleted the `modules/cognito` directory and detached the Cognito JWT Authorizer from the API Gateway.
+- **Injected Secrets**: Wired up your `terraform-dev.yml`, `terraform-staging.yml`, and `terraform-prod.yml` GitHub Actions workflows to inject `JWT_SECRET_KEY`, `AT_USERNAME`, and `AT_API_KEY` into your Lambda containers.
+
+> [!WARNING]
+> **Next Deployment Note**
+> The next time you push to your `dev`, `staging`, or `prod` branches, Terraform will detect the removed Cognito module and permanently destroy the AWS Cognito User Pools. This is expected. All future logins will route exclusively through your new PostgreSQL tables.
+
+## 4. How to Test Locally
+
+Since your local `.env` is already populated with a secure `JWT_SECRET_KEY`, you can test everything right now:
+
+1. **Start the Server**: Your FastAPI server is already running!
+2. **Register**: Send a `POST /auth/register` request with a phone number and password. Watch your phone for the Meta WhatsApp message or the Africa's Talking SMS.
+3. **Verify**: Send a `POST /auth/verify` request with that 6-digit code.
+4. **Log In**: Send a `POST /auth/login` request to retrieve your PyJWT `AccessToken` and `RefreshToken`.
+
+Your system is now fully sovereign, transparent, and completely under your control!
