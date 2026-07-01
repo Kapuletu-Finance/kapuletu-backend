@@ -88,7 +88,17 @@ class AuthService:
 
     def _send_whatsapp_with_fallback(self, phone_number: str, code: str):
         """Attempts Meta API first. If it fails, falls back to Africa's Talking SMS."""
-        if config.META_ACCESS_TOKEN and config.META_PHONE_NUMBER_ID:
+        
+        # --- Diagnostic Logging (Masked for Security) ---
+        logger.info("====== API CREDENTIALS STATUS ======")
+        logger.info(f"META_ACCESS_TOKEN: {'[SET]' if config.META_ACCESS_TOKEN and config.META_ACCESS_TOKEN.strip() else '[MISSING]'}")
+        logger.info(f"META_PHONE_NUMBER_ID: {'[SET]' if config.META_PHONE_NUMBER_ID and config.META_PHONE_NUMBER_ID.strip() else '[MISSING]'}")
+        logger.info(f"AT_USERNAME: {config.AT_USERNAME}")
+        logger.info(f"AT_API_KEY: {'[SET]' if config.AT_API_KEY and config.AT_API_KEY.strip() else '[MISSING]'}")
+        logger.info(f"AT_SENDER_ID: {'[SET]' if config.AT_SENDER_ID and config.AT_SENDER_ID.strip() else '[MISSING]'}")
+        logger.info("====================================")
+        
+        if config.META_ACCESS_TOKEN and config.META_ACCESS_TOKEN.strip() and config.META_PHONE_NUMBER_ID and config.META_PHONE_NUMBER_ID.strip():
             try:
                 logger.info(f"Attempting WhatsApp send to {phone_number}...")
                 url = f"https://graph.facebook.com/v19.0/{config.META_PHONE_NUMBER_ID}/messages"
@@ -131,8 +141,13 @@ class AuthService:
         try:
             logger.info(f"Attempting SMS via Africa's Talking to {phone_number}...")
             message = f"KapuLetu: Your verification code is {code}. It expires in 10 minutes."
-            # send(message, recipients)
-            response = sms.send(message, [phone_number])
+            
+            # send(message, recipients, sender_id=...)
+            if config.AT_SENDER_ID and config.AT_SENDER_ID.strip():
+                response = sms.send(message, [phone_number], sender_id=config.AT_SENDER_ID)
+            else:
+                response = sms.send(message, [phone_number])
+                
             logger.info(f"SMS Fallback successful: {response}")
         except Exception as e:
             logger.error(f"CRITICAL: Both WhatsApp and SMS failed for {phone_number}: {str(e)}")

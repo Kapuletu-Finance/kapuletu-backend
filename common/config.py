@@ -27,6 +27,7 @@ class Config:
     # Africa's Talking Credentials
     AT_USERNAME: str = os.getenv("AT_USERNAME", "sandbox")
     AT_API_KEY: str = os.getenv("AT_API_KEY", "")
+    AT_SENDER_ID: str = os.getenv("AT_SENDER_ID", "")
     
     # JWT Secret Key for signing custom tokens
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "your-super-secret-local-dev-key")
