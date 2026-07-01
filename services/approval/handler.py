@@ -28,6 +28,39 @@ def handler(event, context):
 
         # 3. Action Routing
         try:
+            if event.get("httpMethod") == "GET" and "/pending" in path:
+                from repositories.transaction_repo import TransactionRepository
+                repo = TransactionRepository(db)
+                pendings = repo.fetch_pending_transactions_by_owner(user_id)
+                
+                import decimal
+                from uuid import UUID
+                from datetime import datetime
+                
+                def default_serializer(obj):
+                    if isinstance(obj, UUID): return str(obj)
+                    if isinstance(obj, decimal.Decimal): return float(obj)
+                    if isinstance(obj, datetime): return obj.isoformat()
+                    return str(obj)
+                    
+                results = [
+                    {
+                        "pending_id": p.pending_id,
+                        "raw_message": p.raw_message,
+                        "sender_name": p.sender_name,
+                        "amount": p.amount,
+                        "currency": p.currency,
+                        "transaction_code": p.transaction_code,
+                        "sender_phone": p.sender_phone,
+                        "purpose": p.purpose,
+                        "confidence_score": p.confidence_score,
+                        "workflow_status": p.workflow_status,
+                        "created_at": p.created_at
+                    }
+                    for p in pendings
+                ]
+                return {"statusCode": 200, "body": json.dumps({"results": results}, default=default_serializer)}
+
             if "/bulk/approve" in path:
                 pending_ids = body.get("pending_ids", [])
                 result = service.bulk_approve(pending_ids, user_id, group_id, body.get("campaign_id"))

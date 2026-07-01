@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import UUID, Boolean, Column, DateTime, Float, Numeric, String, Text
+from sqlalchemy import UUID, Boolean, Column, DateTime, Float, Numeric, String, Text, UniqueConstraint
 
 from .base import Base
 
@@ -15,6 +15,7 @@ class PendingTransaction(Base):
     and 'Approves' it, at which point it is transitioned to the immutable ledger.
     """
     __tablename__ = "pending_transactions"
+    __table_args__ = (UniqueConstraint('owner_id', 'transaction_code', name='uix_pending_owner_txn_code'),)
 
     # Unique Identifier for the pending record
     pending_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -38,7 +39,7 @@ class PendingTransaction(Base):
     # currency: Defaults to KES (Kenyan Shillings).
     currency = Column(String, default="KES")
     # transaction_code: The unique M-Pesa or Bank reference code (Used for Idempotency).
-    transaction_code = Column(String, unique=True, nullable=True)
+    transaction_code = Column(String, nullable=True)
     # sender_phone: The phone number of the person who made the payment.
     sender_phone = Column(String, nullable=True) 
     # purpose: Any notes or purpose extracted from the message (e.g. 'January Dues').

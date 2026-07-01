@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import UUID, Column, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import UUID, Column, DateTime, ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -16,6 +16,7 @@ class Transaction(Base):
     and serves as the 'Source of Truth' for all financial reporting and balance calculations.
     """
     __tablename__ = "transactions"
+    __table_args__ = (UniqueConstraint('owner_id', 'transaction_code', name='uix_owner_txn_code'),)
 
     # Unique identifier for the finalized transaction
     transaction_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -30,7 +31,7 @@ class Transaction(Base):
     
     # Financial Details
     # transaction_code: The unique identifier from the payment provider (e.g. M-Pesa ID).
-    transaction_code = Column(String, unique=True, nullable=False)
+    transaction_code = Column(String, nullable=False)
     # amount: The finalized, validated currency amount.
     amount = Column(Numeric(12, 2), nullable=False)
     # sender_phone: The phone number of the member who made the contribution.

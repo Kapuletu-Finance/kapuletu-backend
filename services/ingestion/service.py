@@ -71,8 +71,8 @@ class IngestionService:
             txn_code = f"HASH-{hashlib.md5(context_string.encode()).hexdigest()[:12]}"
             parsed_data["transaction_code"] = txn_code
 
-        # Check if this code has already been seen in the system
-        if self.repo.check_duplicate_transaction_code(txn_code):
+        # Check if this code has already been seen in the system for this user
+        if self.repo.check_duplicate_transaction_code(txn_code, owner.user_id):
             logger.info(f"Idempotency Trigger: Duplicate entry detected ({txn_code}). Skipping processing.")
             return {"status": "ignored", "message": "duplicate_entry", "code": txn_code}
 

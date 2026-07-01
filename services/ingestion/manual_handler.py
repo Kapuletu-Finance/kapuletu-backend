@@ -32,7 +32,7 @@ def handler(event, context):
         txn_code = body.get("transaction_code") or f"MANUAL-{uuid.uuid4().hex[:12].upper()}"
         
         # Check for duplicates even in manual entry
-        if repo.check_duplicate_transaction_code(txn_code):
+        if repo.check_duplicate_transaction_code(txn_code, event["user_id"]):
             return {"statusCode": 409, "body": json.dumps({"error": "Transaction code already exists"})}
 
         pending_txn = PendingTransaction(

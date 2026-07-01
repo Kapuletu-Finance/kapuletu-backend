@@ -35,13 +35,14 @@ class TransactionRepository:
         self.db.refresh(pending_txn)
         return pending_txn
 
-    def check_duplicate_transaction_code(self, transaction_code: str) -> bool:
+    def check_duplicate_transaction_code(self, transaction_code: str, owner_id: UUID) -> bool:
         """
         Checks if a transaction code (or idempotency hash) already exists in 
-        EITHER the pending queue or the finalized ledger.
+        EITHER the pending queue or the finalized ledger FOR THIS SPECIFIC USER.
         
         Args:
             transaction_code (str): The unique code to check.
+            owner_id (UUID): The user to check against.
             
         Returns:
             bool: True if a match is found in either table, False otherwise.
@@ -53,7 +54,8 @@ class TransactionRepository:
         from models.transaction import Transaction
         
         pending_exists = self.db.query(PendingTransaction).filter(
-            PendingTransaction.transaction_code == transaction_code
+            PendingTransaction.transaction_code == transaction_code,
+            PendingTransaction.owner_id == owner_id
         ).first() is not None
         
         if pending_exists:
@@ -61,7 +63,8 @@ class TransactionRepository:
             
         # 2. Check Finalized Transactions
         finalized_exists = self.db.query(Transaction).filter(
-            Transaction.transaction_code == transaction_code
+            Transaction.transaction_code == transaction_code,
+            Transaction.owner_id == owner_id
         ).first() is not None
         
         return finalized_exists
