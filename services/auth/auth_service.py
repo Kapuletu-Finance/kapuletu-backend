@@ -133,7 +133,17 @@ class AuthService:
                     logger.info(f"SUCCESS: WhatsApp code sent to {phone_number}")
                     return # Exit function on success
             except Exception as e:
-                logger.error(f"WhatsApp delivery failed: {str(e)}. Triggering SMS Fallback...")
+                import traceback
+                import urllib.error
+                error_body = ""
+                if isinstance(e, urllib.error.HTTPError):
+                    try:
+                        error_body = e.read().decode('utf-8')
+                    except Exception:
+                        pass
+                logger.error(f"WhatsApp delivery failed: {str(e)} | Response: {error_body}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                logger.error("Triggering SMS Fallback...")
         else:
             logger.warning("Missing Meta Credentials. Falling back to SMS directly.")
 
@@ -150,7 +160,9 @@ class AuthService:
                 
             logger.info(f"SMS Fallback successful: {response}")
         except Exception as e:
+            import traceback
             logger.error(f"CRITICAL: Both WhatsApp and SMS failed for {phone_number}: {str(e)}")
+            logger.error(f"AT SMS Traceback: {traceback.format_exc()}")
 
     def _send_resend_email(self, to_email: str, subject: str, code: str, action_text: str, name: str):
         resend_api_key = os.environ.get('RESEND_API_KEY')
@@ -190,7 +202,16 @@ class AuthService:
             urllib.request.urlopen(req)
             logger.info(f"SUCCESS: Email sent to {to_email}")
         except Exception as e:
-            logger.error(f"ERROR: Email delivery failed: {str(e)}")
+            import traceback
+            import urllib.error
+            error_body = ""
+            if isinstance(e, urllib.error.HTTPError):
+                try:
+                    error_body = e.read().decode('utf-8')
+                except Exception:
+                    pass
+            logger.error(f"ERROR: Email delivery failed: {str(e)} | Response: {error_body}")
+            logger.error(f"Email Traceback: {traceback.format_exc()}")
 
     # ------------------
     # AUTH ENDPOINTS
@@ -303,7 +324,16 @@ class AuthService:
                 urllib.request.urlopen(req)
                 logger.info("SUCCESS: WhatsApp kapuletu_welcome message sent.")
             except Exception as e:
-                logger.error(f"Failed to send WhatsApp welcome message: {str(e)}")
+                import traceback
+                import urllib.error
+                error_body = ""
+                if isinstance(e, urllib.error.HTTPError):
+                    try:
+                        error_body = e.read().decode('utf-8')
+                    except Exception:
+                        pass
+                logger.error(f"Failed to send WhatsApp welcome message: {str(e)} | Response: {error_body}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
 
         # 2. Premium Email Welcome
         support_email = os.environ.get('SUPPORT_EMAIL', 'support@kapuletu.co.ke')
@@ -390,7 +420,16 @@ class AuthService:
                 urllib.request.urlopen(req)
                 logger.info("SUCCESS: Premium Welcome Email sent via Resend.")
             except Exception as e:
-                logger.error(f"Failed to send Premium Welcome Email: {str(e)}")
+                import traceback
+                import urllib.error
+                error_body = ""
+                if isinstance(e, urllib.error.HTTPError):
+                    try:
+                        error_body = e.read().decode('utf-8')
+                    except Exception:
+                        pass
+                logger.error(f"Failed to send Premium Welcome Email: {str(e)} | Response: {error_body}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
 
     def resend_confirmation_code(self, db: Session, username: str):
         user = db.query(User).filter(or_(User.email == username, User.phone_number == username)).first()
@@ -485,8 +524,11 @@ class AuthService:
         db.delete(otp)
         db.commit()
 
-    def logout(self, db: Session, access_token: str):
-        # In a stateless JWT setup without a blacklist table, logout is handled by the client deleting the token.
+    def logout(self, db: Session, access_token: str) -> None:
+        """
+        Logout the user.
+        In a stateless JWT setup without a blacklist table, logout is handled by the client deleting the token.
+        """
         pass
 
 auth_service = AuthService()
