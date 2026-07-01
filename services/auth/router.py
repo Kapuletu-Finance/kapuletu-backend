@@ -5,7 +5,7 @@ from typing import Dict, Any
 from services.auth.schemas import (
     RegisterIn, RegisterOut, LoginIn, VerifyIn, VerifyEmailIn, VerifyPhoneIn, ResendCodeIn, RefreshIn,
     ForgotPasswordIn, ResetPasswordIn, ChangePasswordIn, UpdateProfileIn,
-    TokenOut, UserOut, MessageOut, SettingsIn, SettingsOut
+    TokenOut, UserOut, MessageOut, SettingsIn, SettingsOut, format_phone
 )
 from services.auth.cognito_service import cognito_service
 from common.auth_dependencies import get_current_user
@@ -54,7 +54,9 @@ async def login(payload: LoginIn):
 @router.post("/token", response_model=TokenOut, include_in_schema=False)
 async def login_for_swagger(form_data: OAuth2PasswordRequestForm = Depends()):
     """Hidden endpoint exclusively for Swagger UI Authorize button (expects form-data)."""
-    auth_result = cognito_service.login(username=form_data.username, password=form_data.password)
+    # Swagger passes the username as a string, which could be a phone number
+    formatted_username = format_phone(form_data.username) or form_data.username
+    auth_result = cognito_service.login(username=formatted_username, password=form_data.password)
     return TokenOut(
         access_token=auth_result.get('AccessToken'),
         refresh_token=auth_result.get('RefreshToken'),

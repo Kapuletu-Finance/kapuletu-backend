@@ -4,8 +4,10 @@ import re
 
 def format_phone(v: Optional[str]) -> Optional[str]:
     if not v:
-        return v
+        return None if v == "" else v
     v = re.sub(r'[\s\-]', '', v)
+    if not v:
+        return None
     if re.match(r'^0[17]\d{8}$', v):
         return f"+254{v[1:]}"
     if re.match(r'^254[17]\d{8}$', v):
