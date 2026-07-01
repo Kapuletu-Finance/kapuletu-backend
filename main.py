@@ -18,28 +18,42 @@ def handler(event, context):
             logger.info("Executing database migration task...")
             from alembic.config import Config
             from alembic import command
-            from sqlalchemy import create_engine, text
+            from sqlalchemy import create_engine, text, inspect
             from common.config import get_config
+            import json
             
             alembic_cfg = Config("alembic.ini")
             
             # Self-healing logic for databases created by auto-migration
             try:
                 engine = create_engine(get_config().DATABASE_URL)
-                with engine.connect() as conn:
-                    has_tables = conn.execute(text("SELECT 1 FROM information_schema.tables WHERE table_name = 'users'")).scalar()
-                    try:
+                inspector = inspect(engine)
+                has_tables = inspector.has_table("users")
+                
+                current_rev = None
+                if inspector.has_table("alembic_version"):
+                    with engine.connect() as conn:
                         current_rev = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-                    except Exception:
-                        current_rev = None
                         
                 if has_tables and not current_rev:
                     logger.warning("Database has tables but no alembic version! Stamping to e291751da8fb...")
                     command.stamp(alembic_cfg, "e291751da8fb")
             except Exception as e:
                 logger.error(f"Failed during self-healing check: {e}")
+                import traceback
+                return {
+                    "statusCode": 500,
+                    "body": json.dumps({"error": "self_healing_failed", "message": str(e), "traceback": traceback.format_exc()})
+                }
                 
-            command.upgrade(alembic_cfg, "head")
+            try:
+                command.upgrade(alembic_cfg, "head")
+            except Exception as e:
+                import traceback
+                return {
+                    "statusCode": 500,
+                    "body": json.dumps({"error": "migration_upgrade_failed", "message": str(e), "traceback": traceback.format_exc()})
+                }
             
             logger.info("Database migration completed successfully.")
             return {"statusCode": 200, "body": "Migration successful"}
