@@ -5,6 +5,8 @@ import time
 import random
 import datetime
 import urllib.request
+import urllib.error
+import traceback
 from typing import Dict, Any, Optional
 
 import jwt
@@ -133,8 +135,6 @@ class AuthService:
                     logger.info(f"SUCCESS: WhatsApp code sent to {phone_number}")
                     return # Exit function on success
             except Exception as e:
-                import traceback
-                import urllib.error
                 error_body = ""
                 if isinstance(e, urllib.error.HTTPError):
                     try:
@@ -160,7 +160,6 @@ class AuthService:
                 
             logger.info(f"SMS Fallback successful: {response}")
         except Exception as e:
-            import traceback
             logger.error(f"CRITICAL: Both WhatsApp and SMS failed for {phone_number}: {str(e)}")
             logger.error(f"AT SMS Traceback: {traceback.format_exc()}")
 
@@ -202,8 +201,6 @@ class AuthService:
             urllib.request.urlopen(req)
             logger.info(f"SUCCESS: Email sent to {to_email}")
         except Exception as e:
-            import traceback
-            import urllib.error
             error_body = ""
             if isinstance(e, urllib.error.HTTPError):
                 try:
@@ -324,8 +321,6 @@ class AuthService:
                 urllib.request.urlopen(req)
                 logger.info("SUCCESS: WhatsApp kapuletu_welcome message sent.")
             except Exception as e:
-                import traceback
-                import urllib.error
                 error_body = ""
                 if isinstance(e, urllib.error.HTTPError):
                     try:
@@ -420,8 +415,6 @@ class AuthService:
                 urllib.request.urlopen(req)
                 logger.info("SUCCESS: Premium Welcome Email sent via Resend.")
             except Exception as e:
-                import traceback
-                import urllib.error
                 error_body = ""
                 if isinstance(e, urllib.error.HTTPError):
                     try:
