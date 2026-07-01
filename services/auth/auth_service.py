@@ -130,6 +130,7 @@ class AuthService:
                 req = urllib.request.Request(url, data=data, method='POST')
                 req.add_header('Authorization', f"Bearer {config.META_ACCESS_TOKEN}")
                 req.add_header('Content-Type', 'application/json')
+                req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) KapuLetuApp/1.0')
                 
                 with urllib.request.urlopen(req) as response:
                     logger.info(f"SUCCESS: WhatsApp code sent to {phone_number}")
@@ -198,6 +199,7 @@ class AuthService:
             req = urllib.request.Request(url, data=data, method='POST')
             req.add_header('Authorization', f"Bearer {resend_api_key}")
             req.add_header('Content-Type', 'application/json')
+            req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) KapuLetuApp/1.0')
             urllib.request.urlopen(req)
             logger.info(f"SUCCESS: Email sent to {to_email}")
         except Exception as e:
@@ -318,6 +320,7 @@ class AuthService:
                 req = urllib.request.Request(url, data=data, method='POST')
                 req.add_header('Authorization', f"Bearer {config.META_ACCESS_TOKEN}")
                 req.add_header('Content-Type', 'application/json')
+                req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) KapuLetuApp/1.0')
                 urllib.request.urlopen(req)
                 logger.info("SUCCESS: WhatsApp kapuletu_welcome message sent.")
             except Exception as e:
@@ -412,6 +415,7 @@ class AuthService:
                 req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), method='POST')
                 req.add_header('Authorization', f"Bearer {resend_api_key}")
                 req.add_header('Content-Type', 'application/json')
+                req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) KapuLetuApp/1.0')
                 urllib.request.urlopen(req)
                 logger.info("SUCCESS: Premium Welcome Email sent via Resend.")
             except Exception as e:
