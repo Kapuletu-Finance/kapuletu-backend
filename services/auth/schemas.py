@@ -1,11 +1,34 @@
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, model_validator, field_validator
+import re
+
+def format_phone(v: Optional[str]) -> Optional[str]:
+    if not v:
+        return v
+    v = re.sub(r'[\s\-]', '', v)
+    if re.match(r'^0[17]\d{8}$', v):
+        return f"+254{v[1:]}"
+    if re.match(r'^254[17]\d{8}$', v):
+        return f"+{v}"
+    return v
 
 # --- INPUT SCHEMAS ---
 
 class IdentifierBase(BaseModel):
     email: Optional[EmailStr] = Field(None, json_schema_extra={"example": "treasurer@example.com"})
     phone_number: Optional[str] = Field(None, json_schema_extra={"example": "+254700123456"})
+
+    @field_validator('email', 'phone_number', mode='before')
+    @classmethod
+    def empty_to_none(cls, v):
+        if v == "":
+            return None
+        return v
+
+    @field_validator('phone_number', mode='before')
+    @classmethod
+    def validate_phone(cls, v):
+        return format_phone(v)
 
     @model_validator(mode='after')
     def check_identifier(self):
@@ -23,6 +46,11 @@ class RegisterIn(BaseModel):
     first_name: str = Field(..., min_length=1, json_schema_extra={"example": "Joseph"})
     last_name: str = Field(..., min_length=1, json_schema_extra={"example": "Amuyunzu"})
     phone_number: str = Field(..., json_schema_extra={"example": "+254700123456"})
+
+    @field_validator('phone_number', mode='before')
+    @classmethod
+    def validate_phone(cls, v):
+        return format_phone(v)
 
 class LoginIn(IdentifierBase):
     password: str = Field(..., json_schema_extra={"example": "SecurePass123!"})
@@ -57,6 +85,11 @@ class UpdateProfileIn(BaseModel):
     first_name: Optional[str] = Field(None, min_length=1, json_schema_extra={"example": "Joseph"})
     last_name: Optional[str] = Field(None, min_length=1, json_schema_extra={"example": "Amuyunzu"})
     phone_number: Optional[str] = Field(None, json_schema_extra={"example": "+254700123456"})
+
+    @field_validator('phone_number', mode='before')
+    @classmethod
+    def validate_phone(cls, v):
+        return format_phone(v)
 
 class SettingsIn(BaseModel):
     allow_ai_training: bool = Field(..., json_schema_extra={"example": True})
