@@ -218,9 +218,11 @@ class AuthService:
 
     def register(self, db: Session, email: str, password: str, first_name: str, last_name: str, phone_number: str) -> str:
         # Check existing
-        existing = db.query(User).filter(or_(User.email == email, User.phone_number == phone_number)).first()
-        if existing:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with this email or phone number already exists.")
+        if db.query(User).filter(User.phone_number == phone_number).first():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This phone number is already registered.")
+            
+        if db.query(User).filter(User.email == email).first():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This email is already registered.")
             
         hashed_pw = get_password_hash(password)
         
