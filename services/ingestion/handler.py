@@ -90,6 +90,11 @@ def handler(event, context):
     if not message_body or not sender_phone:
         return {"statusCode": 400, "body": "Missing message body or sender"}
 
+    # Meta sends phone numbers without the '+' sign (e.g., 254712345678).
+    # We must prepend the '+' so it matches the standardized format in our database.
+    if not sender_phone.startswith("+"):
+        sender_phone = f"+{sender_phone}"
+
     # Normalize payload for the existing service architecture
     normalized_payload = {
         "From": sender_phone,
