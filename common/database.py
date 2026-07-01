@@ -21,12 +21,7 @@ engine = create_engine(
     connect_args={"sslmode": "require"} if all(h not in config.DATABASE_URL for h in ["localhost", "127.0.0.1"]) else {}
 )
 
-# --- Ensure Tables Exist (Auto-Migration fallback for AWS) ---
-try:
-    from models import Base
-    Base.metadata.create_all(bind=engine)
-except Exception as e:
-    print(f"Warning: Auto-migration failed: {e}")
+
 
 # SessionLocal is the factory for individual database sessions.
 # - autocommit=False: Transactions must be explicitly committed (Best Practice).

@@ -18,9 +18,27 @@ def handler(event, context):
             logger.info("Executing database migration task...")
             from alembic.config import Config
             from alembic import command
+            from sqlalchemy import create_engine, text
+            from common.config import get_config
             
-            # The alembic.ini is in the root directory (where main.py is)
             alembic_cfg = Config("alembic.ini")
+            
+            # Self-healing logic for databases created by auto-migration
+            try:
+                engine = create_engine(get_config().DATABASE_URL)
+                with engine.connect() as conn:
+                    has_tables = conn.execute(text("SELECT 1 FROM information_schema.tables WHERE table_name = 'users'")).scalar()
+                    try:
+                        current_rev = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+                    except Exception:
+                        current_rev = None
+                        
+                if has_tables and not current_rev:
+                    logger.warning("Database has tables but no alembic version! Stamping to e291751da8fb...")
+                    command.stamp(alembic_cfg, "e291751da8fb")
+            except Exception as e:
+                logger.error(f"Failed during self-healing check: {e}")
+                
             command.upgrade(alembic_cfg, "head")
             
             logger.info("Database migration completed successfully.")
