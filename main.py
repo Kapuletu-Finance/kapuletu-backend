@@ -13,6 +13,19 @@ def handler(event, context):
     Handles API Gateway Proxy, Cognito Triggers, and Error Reporting.
     """
     try:
+        # 0. Intercept manual tasks (e.g. database migrations via CI/CD)
+        if isinstance(event, dict) and event.get("task") == "migrate_database":
+            logger.info("Executing database migration task...")
+            from alembic.config import Config
+            from alembic import command
+            
+            # The alembic.ini is in the root directory (where main.py is)
+            alembic_cfg = Config("alembic.ini")
+            command.upgrade(alembic_cfg, "head")
+            
+            logger.info("Database migration completed successfully.")
+            return {"statusCode": 200, "body": "Migration successful"}
+
         # 1. Detect AWS Cognito Triggers (Lightweight)
         if "triggerSource" in event:
             trigger = event["triggerSource"]
