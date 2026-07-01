@@ -27,6 +27,71 @@ app = FastAPI(
     version="1.0.0",
 )
 
+import time
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response as StarletteResponse
+
+class AuthLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if not request.url.path.startswith("/auth"):
+            return await call_next(request)
+
+        # Log Request
+        body = await request.body()
+        logging.info(f"========== INCOMING AUTH REQUEST ==========")
+        logging.info(f"{request.method} {request.url.path}")
+        if body:
+            try:
+                # Mask password if present
+                payload = json.loads(body)
+                if 'password' in payload:
+                    payload['password'] = '***MASKED***'
+                if 'new_password' in payload:
+                    payload['new_password'] = '***MASKED***'
+                if 'old_password' in payload:
+                    payload['old_password'] = '***MASKED***'
+                logging.info(f"Payload: {json.dumps(payload, indent=2)}")
+            except:
+                logging.info(f"Payload: {body}")
+                
+        # Re-inject body for the route handler
+        async def receive():
+            return {"type": "http.request", "body": body}
+        request._receive = receive
+
+        # Process Response
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = (time.time() - start_time) * 1000
+
+        # Log Response
+        logging.info(f"---------- AUTH RESPONSE ----------")
+        logging.info(f"Status: {response.status_code} ({process_time:.2f}ms)")
+        
+        # Consume response body to log it
+        response_body = b""
+        async for chunk in response.body_iterator:
+            response_body += chunk
+            
+        if response_body:
+            try:
+                logging.info(f"Body: {json.dumps(json.loads(response_body), indent=2)}")
+            except:
+                logging.info(f"Body: {response_body}")
+                
+        logging.info(f"===========================================\n")
+                
+        # Reconstruct response to send to client
+        return StarletteResponse(
+            content=response_body, 
+            status_code=response.status_code, 
+            headers=dict(response.headers),
+            media_type=response.media_type
+        )
+
+app.add_middleware(AuthLoggingMiddleware)
+
+
 # --- Pydantic Schemas for Swagger UI ---
 
 class TransactionIn(BaseModel):
@@ -454,5 +519,4 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-    
+    uvicorn.run("local_server:app", host="0.0.0.0", port=8000, reload=True)

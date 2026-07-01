@@ -17,30 +17,21 @@ def format_phone(v: Optional[str]) -> Optional[str]:
 # --- INPUT SCHEMAS ---
 
 class IdentifierBase(BaseModel):
-    email: Optional[EmailStr] = Field(None, json_schema_extra={"example": "treasurer@example.com"})
-    phone_number: Optional[str] = Field(None, json_schema_extra={"example": "+254700123456"})
+    identifier: str = Field(..., json_schema_extra={"example": "treasurer@example.com (or +254700000000)"})
 
-    @field_validator('email', 'phone_number', mode='before')
+    @field_validator('identifier', mode='before')
     @classmethod
-    def empty_to_none(cls, v):
-        if v == "":
-            return None
+    def validate_identifier(cls, v):
+        if not v:
+            raise ValueError('identifier cannot be empty')
+            
+        v_stripped = re.sub(r'[\s\-]', '', str(v))
+        if re.match(r'^0[17]\d{8}$', v_stripped):
+            return f"+254{v_stripped[1:]}"
+        if re.match(r'^254[17]\d{8}$', v_stripped):
+            return f"+{v_stripped}"
+            
         return v
-
-    @field_validator('phone_number', mode='before')
-    @classmethod
-    def validate_phone(cls, v):
-        return format_phone(v)
-
-    @model_validator(mode='after')
-    def check_identifier(self):
-        if not self.email and not self.phone_number:
-            raise ValueError('Either email or phone_number must be provided')
-        return self
-        
-    @property
-    def identifier(self) -> str:
-        return self.email or self.phone_number
 
 class RegisterIn(BaseModel):
     email: EmailStr = Field(..., json_schema_extra={"example": "treasurer@example.com"})
