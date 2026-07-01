@@ -111,7 +111,7 @@ class AuthService:
                     "type": "template",
                     "template": {
                         "name": "kapuletu_auth_otp",
-                        "language": {"code": "en_US"},
+                        "language": {"code": "en"},
                         "components": [
                             {
                                 "type": "body",
@@ -307,7 +307,7 @@ class AuthService:
                     "type": "template",
                     "template": {
                         "name": "kapuletu_welcome",
-                        "language": {"code": "en_US"},
+                        "language": {"code": "en"},
                         "components": [
                             {
                                 "type": "body",

@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  # The PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: kapuletu_db_prod
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: kapuletu
+    ports:
+      # Expose only to localhost on the server, just in case you need direct access
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    networks:
+      - kapuletu_net
+
+  # The KapuLetu API
+  api:
+    build: 
+      context: .
+      dockerfile: Dockerfile.hetzner
+    container_name: kapuletu_api_prod
+    restart: always
+    ports:
+      - "80:8000"
+    environment:
+      # Direct connection to the 'db' container over the internal network
+      - DATABASE_URL=postgresql://postgres:password@db:5432/kapuletu
+      # The rest of your environment variables should be defined in a .env file on the server
+    env_file:
+      - .env
+    depends_on:
+      - db
+    networks:
+      - kapuletu_net
+
+volumes:
+  postgres_data_prod:
+
+networks:
+  kapuletu_net:
+    driver: bridge
