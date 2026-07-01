@@ -89,3 +89,9 @@ jobs:
             
           echo "Migration Response:"
           cat migration_response.json
+          
+          # Check if the Lambda returned an error (statusCode 500 or FunctionError)
+          if grep -q '"statusCode": 500' migration_response.json || grep -q '"FunctionError"' migration_response.json; then
+            echo "Database migration failed on Lambda!"
+            exit 1
+          fi
