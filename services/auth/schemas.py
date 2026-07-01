@@ -63,8 +63,6 @@ class VerifyIn(IdentifierBase):
 class VerifyEmailIn(BaseModel):
     code: str = Field(..., min_length=6, max_length=6, json_schema_extra={"example": "123456"})
 
-class VerifyPhoneIn(BaseModel):
-    code: str = Field(..., min_length=6, max_length=6, json_schema_extra={"example": "123456"})
 
 class ResendCodeIn(IdentifierBase):
     pass

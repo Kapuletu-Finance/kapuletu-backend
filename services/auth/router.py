@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from common.database import get_db
 from services.auth.schemas import (
-    RegisterIn, RegisterOut, LoginIn, VerifyIn, VerifyEmailIn, VerifyPhoneIn, ResendCodeIn, RefreshIn,
+    RegisterIn, RegisterOut, LoginIn, VerifyIn, VerifyEmailIn, ResendCodeIn, RefreshIn,
     ForgotPasswordIn, ResetPasswordIn, ChangePasswordIn, UpdateProfileIn,
     TokenOut, UserOut, MessageOut, SettingsIn, SettingsOut, format_phone
 )
@@ -30,12 +30,12 @@ async def register(payload: RegisterIn, db: Session = Depends(get_db)):
     )
     return RegisterOut(message="User registered. Please check email/WhatsApp for verification code.", user_id=user_id)
 
-@router.post("/verify", response_model=MessageOut, summary="Verify Phone / Email")
+@router.post("/verify", response_model=MessageOut, summary="Verify Phone (Complete Registration) - Public")
 async def verify(payload: VerifyIn, db: Session = Depends(get_db)):
     auth_service.verify_account(db=db, username=payload.identifier, code=payload.code)
     return MessageOut(message="Account successfully verified. You can now log in.")
 
-@router.post("/resend-code", response_model=MessageOut, summary="Resend Verification Code")
+@router.post("/resend-code", response_model=MessageOut, summary="Resend Registration Code - Public")
 async def resend_code(payload: ResendCodeIn, db: Session = Depends(get_db)):
     details = auth_service.resend_confirmation_code(db=db, username=payload.identifier)
     medium = details.get('DeliveryMedium', 'your contact method')
@@ -144,14 +144,6 @@ async def confirm_email_verification(payload: VerifyEmailIn, current_user: Dict[
     auth_service.confirm_email_verification(db=db, user_id=current_user['sub'], code=payload.code)
     return MessageOut(message="Email successfully verified.")
 
-@router.post("/verify-phone/request", response_model=MessageOut, summary="Request Phone Verification Code")
-async def request_phone_verification(current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Not heavily used since phone is primary verification during signup
-    raise HTTPException(status_code=501, detail="Not implemented in custom auth.")
-
-@router.post("/verify-phone/confirm", response_model=MessageOut, summary="Confirm Phone Verification")
-async def confirm_phone_verification(payload: VerifyPhoneIn, current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
-    raise HTTPException(status_code=501, detail="Not implemented in custom auth.")
 
 @router.get("/settings", response_model=SettingsOut, summary="Get User Settings")
 async def get_settings(current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):

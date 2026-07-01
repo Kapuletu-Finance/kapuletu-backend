@@ -1,8 +1,13 @@
 from __future__ import annotations
 import json
+import logging
 from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, FastAPI, Request, Response
+
+# Ensure all logger.info() messages (like OTP codes) are printed to the console
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:\t  %(message)s")
+
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
