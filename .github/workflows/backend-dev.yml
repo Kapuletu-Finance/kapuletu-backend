@@ -18,8 +18,7 @@ env:
   STAGE: dev
   ECR_REPOSITORY: kapuletu-dev-backend
   IMAGE_TAG: latest
-  COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
-  COGNITO_USER_POOL_ARN: ${{ secrets.COGNITO_USER_POOL_ARN }}
+
 
 jobs:
   deploy:
