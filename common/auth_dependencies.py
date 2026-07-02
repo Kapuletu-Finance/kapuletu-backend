@@ -70,3 +70,28 @@ def get_verified_user(token: str = Depends(oauth2_scheme), db: Session = Depends
         )
     return user_data
 
+def get_admin_user(current_user: Dict[str, Any] = Depends(get_verified_user)) -> Dict[str, Any]:
+    """
+    For endpoints restricted to admin and super_admin roles.
+    """
+    from common.enums import UserRole
+    if current_user.get('role') not in [UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient privileges. Admin access required."
+        )
+    return current_user
+
+def get_super_admin_user(current_user: Dict[str, Any] = Depends(get_verified_user)) -> Dict[str, Any]:
+    """
+    For endpoints restricted exclusively to super_admin roles.
+    """
+    from common.enums import UserRole
+    if current_user.get('role') != UserRole.SUPER_ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient privileges. Super Admin access required."
+        )
+    return current_user
+
+

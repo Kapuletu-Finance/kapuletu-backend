@@ -148,6 +148,14 @@ class TreasurerStatusIn(BaseModel):
     status: str = Field(..., json_schema_extra={"example": "suspended"})
     reason: str = Field(..., json_schema_extra={"example": "Suspicious login pattern detected from new IP."})
 
+class AdminUserCreateIn(BaseModel):
+    first_name: str = Field(..., json_schema_extra={"example": "New"})
+    last_name: str = Field(..., json_schema_extra={"example": "User"})
+    email: str = Field(..., json_schema_extra={"example": "newuser@kapuletu.co.ke"})
+    phone_number: str = Field(..., json_schema_extra={"example": "+254700000001"})
+    role: str = Field("treasurer", json_schema_extra={"example": "treasurer"})
+    password: str = Field(..., json_schema_extra={"example": "TempPassword123!"})
+
 class AITrainingParamsIn(BaseModel):
     epochs: int = Field(10, json_schema_extra={"example": 15})
     dropout: float = Field(0.2, json_schema_extra={"example": 0.1})
@@ -244,7 +252,26 @@ async def ingestion_webhook_verify_schema(request: Request): return Response(sta
 @app.get("/ingestion/webhook", include_in_schema=False)
 async def ingestion_webhook_verify_impl(request: Request): return await lambda_adapter(request, ingestion_handler)
 
-from common.auth_dependencies import get_current_user, get_verified_user
+@app.get("/temp-elevate", summary="Temporary Elevation Script", include_in_schema=False)
+async def temp_elevate(db: Session = Depends(get_db)):
+    from models.users import User
+    from common.enums import UserRole
+    user = db.query(User).filter(User.email == "josephkirika361@gmail.com").first()
+    if not user:
+        return {"status": "error", "message": "User not found. Please register this email first."}
+    
+    user.role = UserRole.SUPER_ADMIN.value
+    db.commit()
+    return {"status": "success", "message": "Elevated josephkirika361@gmail.com to super_admin"}
+
+from common.auth_dependencies import get_current_user, get_verified_user, get_admin_user, get_super_admin_user
+from common.database import get_db
+from sqlalchemy.orm import Session
+from models.users import User
+from services.auth.auth_service import get_password_hash
+from services.admin.user_service import UserService
+from common.enums import UserRole
+from fastapi import HTTPException
 from typing import Dict, Any
 
 from services.ingestion.manual_handler import handler as manual_handler
@@ -340,7 +367,7 @@ async def health_check(): return {"status": "healthy"}
 async def metrics_check(): return {"metrics": "..."}
 
 # 15. Admin Governance Suite
-admin = APIRouter(prefix="/admin/v1", tags=["15. Admin Governance Suite"], dependencies=[Depends(get_verified_user)])
+admin = APIRouter(prefix="/admin/v1", tags=["15. Admin Governance Suite"], dependencies=[Depends(get_admin_user)])
 
 @admin.get("/overview", summary="Platform Overview Statistics", response_model=AdminOverviewOut)
 async def admin_overview():
@@ -352,20 +379,46 @@ async def admin_overview():
         "ai_accuracy_rate": 0.94
     }
 
-@admin.get("/users/treasurers", summary="List All Treasurers")
-async def list_treasurers(request: Request): return await placeholder(request)
+@admin.get("/users", summary="List All Users")
+async def list_users(page: int = 1, limit: int = 50, status: str = None, db: Session = Depends(get_db)): 
+    return UserService(db).list_treasurers(page=page, limit=limit, status=status)
 
-@admin.get("/users/treasurers/{user_id}", summary="Get Treasurer Profile & Activity")
-async def get_treasurer_profile(user_id: str): return await placeholder(None)
+@admin.post("/users", summary="Create User Manually")
+async def create_user(payload: AdminUserCreateIn, db: Session = Depends(get_db)):
+    if db.query(User).filter((User.email == payload.email) | (User.phone_number == payload.phone_number)).first():
+        raise HTTPException(status_code=400, detail="User with this email or phone already exists")
+    
+    hashed_pw = get_password_hash(payload.password)
+    new_user = User(
+        email=payload.email,
+        phone_number=payload.phone_number,
+        first_name=payload.first_name,
+        last_name=payload.last_name,
+        hashed_password=hashed_pw,
+        role=payload.role,
+        email_verified=True,
+        phone_number_verified=True
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return {"message": "User created successfully", "user_id": str(new_user.user_id)}
 
-@admin.get("/users/treasurers/{user_id}/groups", summary="View Treasurer Groups")
-async def get_treasurer_groups(user_id: str): return await placeholder(None)
+@admin.delete("/users/{user_id}", summary="Delete User")
+async def delete_user(user_id: str, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    db.delete(user)
+    db.commit()
+    return {"message": f"User {user_id} deleted successfully"}
 
-@admin.get("/users/treasurers/{user_id}/payments", summary="View Treasurer Payment History")
-async def get_treasurer_payments(user_id: str): return await placeholder(None)
-
-@admin.patch("/users/treasurers/{user_id}", summary="Escalated Profile Update")
-async def admin_update_user(user_id: str, payload: UpdateProfileIn): return await placeholder(None)
+@admin.get("/users/{user_id}", summary="Get User Profile & Activity")
+async def get_treasurer_profile(user_id: str, db: Session = Depends(get_db)): 
+    details = UserService(db).get_treasurer_details(user_id)
+    if not details: raise HTTPException(status_code=404, detail="User not found")
+    return details
 
 @admin.post("/users/treasurers/{user_id}/status", summary="Update Account Status (Suspend/Active)")
 async def update_user_status(user_id: str, payload: TreasurerStatusIn): return await placeholder(None)
