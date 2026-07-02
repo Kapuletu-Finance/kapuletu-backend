@@ -1,6 +1,7 @@
 from typing import Optional
 from pydantic import BaseModel, EmailStr, Field, model_validator, field_validator
 import re
+from common.enums import UserRole
 
 def format_phone(v: Optional[str]) -> Optional[str]:
     if not v:
@@ -109,6 +110,7 @@ class UserOut(BaseModel):
     phone_number: str = Field(..., json_schema_extra={"example": "+254700123456"})
     email_verified: bool = Field(..., json_schema_extra={"example": True})
     phone_number_verified: bool = Field(..., json_schema_extra={"example": False})
+    role: UserRole = Field(..., json_schema_extra={"example": UserRole.TREASURER})
 
 class SettingsOut(BaseModel):
     allow_ai_training: bool = Field(..., json_schema_extra={"example": True})

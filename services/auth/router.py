@@ -11,6 +11,7 @@ from services.auth.schemas import (
 )
 from services.auth.auth_service import auth_service
 from common.auth_dependencies import get_current_user
+from common.enums import UserRole
 
 router = APIRouter(prefix="/auth", tags=["2. Authentication"])
 
@@ -114,7 +115,8 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
         last_name=current_user.get('family_name', ''),
         phone_number=current_user.get('phone_number', ''),
         email_verified=current_user.get('email_verified') == 'true',
-        phone_number_verified=current_user.get('phone_number_verified') == 'true'
+        phone_number_verified=current_user.get('phone_number_verified') == 'true',
+        role=current_user.get('role', UserRole.TREASURER.value)
     )
 
 @router.patch("/me", response_model=MessageOut, summary="Update Profile")

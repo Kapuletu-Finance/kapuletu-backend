@@ -42,6 +42,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         'phone_number': user.phone_number,
         'email_verified': 'true' if user.email_verified else 'false',
         'phone_number_verified': 'true' if user.phone_number_verified else 'false',
+        'role': user.role,
         'access_token': token
     }
     return user_data

@@ -5,6 +5,7 @@ from sqlalchemy import UUID, Boolean, Column, DateTime, String
 from sqlalchemy.orm import relationship
 
 from .base import Base
+from common.enums import UserRole
 
 
 class User(Base):
@@ -38,7 +39,7 @@ class User(Base):
     # - treasurer: Manages specific groups
     # - admin: Platform-level management
     # - super_admin: Infrastructure control
-    role = Column(String, default="treasurer") 
+    role = Column(String, default=UserRole.TREASURER.value) 
     
     # Account Status
     is_active = Column(Boolean, default=True)
