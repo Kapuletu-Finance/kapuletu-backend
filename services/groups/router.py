@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from common.database import get_db
-from common.auth_dependencies import get_current_user
+from common.auth_dependencies import get_verified_user
 from services.groups.schemas import GroupCreate, GroupUpdate, GroupOut
 from repositories import group_repo
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/groups", tags=["3. Groups Management"])
 async def create_group(
     payload: GroupCreate, 
     db: Session = Depends(get_db), 
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Creates a new community organization (Chama) owned by the current treasurer."""
     try:
@@ -39,7 +39,7 @@ async def list_groups(
     skip: int = Query(0, ge=0, description="Pagination skip"),
     limit: int = Query(100, ge=1, le=100, description="Pagination limit"),
     db: Session = Depends(get_db), 
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Lists all active groups owned by the current treasurer with pagination."""
     groups = group_repo.get_owner_groups(db=db, owner_id=current_user.get('sub'), skip=skip, limit=limit)
@@ -49,7 +49,7 @@ async def list_groups(
 async def get_group(
     group_id: UUID, 
     db: Session = Depends(get_db), 
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Retrieves specific details of a group."""
     group = group_repo.get_group(db=db, group_id=str(group_id))
@@ -67,7 +67,7 @@ async def update_group(
     group_id: UUID, 
     payload: GroupUpdate, 
     db: Session = Depends(get_db), 
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Updates group properties (Name, Description). Currency is immutable."""
     group = group_repo.get_group(db=db, group_id=str(group_id))
@@ -91,7 +91,7 @@ async def update_group(
 async def archive_group(
     group_id: UUID, 
     db: Session = Depends(get_db), 
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Safely archives (soft deletes) a group, preserving historical ledger data."""
     group = group_repo.get_group(db=db, group_id=str(group_id))

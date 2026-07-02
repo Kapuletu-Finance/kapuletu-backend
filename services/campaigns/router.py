@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from common.database import get_db
-from common.auth_dependencies import get_current_user
+from common.auth_dependencies import get_verified_user
 from services.campaigns.schemas import CampaignCreate, CampaignUpdate, CampaignOut
 from repositories import campaign_repo, group_repo
 
@@ -25,7 +25,7 @@ async def create_campaign(
     group_id: UUID,
     payload: CampaignCreate,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Creates a new campaign for a specific group."""
     _verify_group_ownership(db, str(group_id), current_user.get('sub'))
@@ -46,7 +46,7 @@ async def list_campaigns(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Lists all active campaigns for a specific group with pagination."""
     _verify_group_ownership(db, str(group_id), current_user.get('sub'))
@@ -58,7 +58,7 @@ async def list_campaigns(
 async def get_campaign(
     campaign_id: UUID,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Retrieves details of a specific campaign."""
     campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
@@ -73,7 +73,7 @@ async def update_campaign(
     campaign_id: UUID,
     payload: CampaignUpdate,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Updates campaign details."""
     campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
@@ -96,7 +96,7 @@ async def update_campaign(
 async def archive_campaign(
     campaign_id: UUID,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Safely archives (soft deletes) a campaign."""
     campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))

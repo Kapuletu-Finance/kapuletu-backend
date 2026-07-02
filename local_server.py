@@ -244,44 +244,44 @@ async def ingestion_webhook_verify_schema(request: Request): return Response(sta
 @app.get("/ingestion/webhook", include_in_schema=False)
 async def ingestion_webhook_verify_impl(request: Request): return await lambda_adapter(request, ingestion_handler)
 
-from common.auth_dependencies import get_current_user
+from common.auth_dependencies import get_current_user, get_verified_user
 from typing import Dict, Any
 
 from services.ingestion.manual_handler import handler as manual_handler
 @ingestion.post("/transactions/manual", summary="Manual Entry")
-async def manual_entry(request: Request, payload: ManualEntryIn, current_user: Dict[str, Any] = Depends(get_current_user)): return await lambda_adapter(request, manual_handler)
+async def manual_entry(request: Request, payload: ManualEntryIn, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, manual_handler)
 
 @ingestion.get("/transactions/pending", summary="Get Pending Transactions (Inbox)")
-async def get_pending(request: Request, current_user: Dict[str, Any] = Depends(get_current_user)): return await lambda_adapter(request, approval_handler)
+async def get_pending(request: Request, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
 @ingestion.get("/transactions/pending/{pending_id}", summary="Get Single Pending")
-async def get_pending_single(request: Request, pending_id: str, current_user: Dict[str, Any] = Depends(get_current_user)): return await lambda_adapter(request, approval_handler)
+async def get_pending_single(request: Request, pending_id: str, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
 
 # 6. Parsing & Validation
 parsing = APIRouter(prefix="/transactions", tags=["6. Parsing & Validation"])
 @parsing.post("/{pending_id}/reparse", summary="Re-parse Message")
-async def reparse(request: Request, pending_id: str, current_user: Dict[str, Any] = Depends(get_current_user)): return await lambda_adapter(request, approval_handler)
+async def reparse(request: Request, pending_id: str, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
 @parsing.post("/{pending_id}/validate", summary="Validate Transaction")
-async def validate_tx(request: Request, pending_id: str, current_user: Dict[str, Any] = Depends(get_current_user)): return await lambda_adapter(request, approval_handler)
+async def validate_tx(request: Request, pending_id: str, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
 
 # 7. Review & Approval
 review = APIRouter(prefix="/transactions", tags=["7. Review & Approval Workflow"])
 @review.post("/{pending_id}/approve", summary="Approve Transaction")
-async def approve(request: Request, pending_id: str, payload: Optional[TransactionActionIn] = None, current_user: Dict[str, Any] = Depends(get_current_user)): return await lambda_adapter(request, approval_handler)
+async def approve(request: Request, pending_id: str, payload: Optional[TransactionActionIn] = None, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
 @review.post("/{pending_id}/reject", summary="Reject Transaction")
-async def reject(request: Request, pending_id: str, payload: Optional[TransactionActionIn] = None, current_user: Dict[str, Any] = Depends(get_current_user)): return await lambda_adapter(request, approval_handler)
+async def reject(request: Request, pending_id: str, payload: Optional[TransactionActionIn] = None, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
 @review.patch("/{pending_id}", summary="Edit Transaction")
-async def edit_tx(request: Request, pending_id: str, payload: TransactionEditIn, current_user: Dict[str, Any] = Depends(get_current_user)): return await lambda_adapter(request, approval_handler)
+async def edit_tx(request: Request, pending_id: str, payload: TransactionEditIn, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
 @review.post("/{pending_id}/note", summary="Add Note")
-async def add_note(request: Request, pending_id: str, payload: TransactionActionIn, current_user: Dict[str, Any] = Depends(get_current_user)): return await lambda_adapter(request, approval_handler)
+async def add_note(request: Request, pending_id: str, payload: TransactionActionIn, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
 @review.post("/{pending_id}/split", summary="Split Transaction")
-async def split_tx(request: Request, payload: TransactionSplit, pending_id: str, current_user: Dict[str, Any] = Depends(get_current_user)): return await lambda_adapter(request, approval_handler)
+async def split_tx(request: Request, payload: TransactionSplit, pending_id: str, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
 @review.post("/bulk/approve", summary="Bulk Approval")
-async def bulk_approve(request: Request, payload: BulkActionIn, current_user: Dict[str, Any] = Depends(get_current_user)): return await lambda_adapter(request, approval_handler)
+async def bulk_approve(request: Request, payload: BulkActionIn, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
 @review.post("/bulk/reject", summary="Bulk Reject")
-async def bulk_reject(request: Request, payload: BulkActionIn, current_user: Dict[str, Any] = Depends(get_current_user)): return await lambda_adapter(request, approval_handler)
+async def bulk_reject(request: Request, payload: BulkActionIn, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
 
 # 8. Ledger
-ledger = APIRouter(prefix="/ledger", tags=["8. Ledger (Immutable)"], dependencies=[Depends(get_current_user)])
+ledger = APIRouter(prefix="/ledger", tags=["8. Ledger (Immutable)"], dependencies=[Depends(get_verified_user)])
 @ledger.get("", summary="Get Ledger Entries")
 async def list_ledger(request: Request): return await placeholder(request)
 @ledger.get("/campaign/{campaign_id}", summary="Get Ledger by Campaign")
@@ -290,7 +290,7 @@ async def ledger_by_campaign(campaign_id: str): return await placeholder(None)
 async def get_ledger_entry(ledger_id: str): return await placeholder(None)
 
 # 9. Members
-members = APIRouter(tags=["9. Members Management"], dependencies=[Depends(get_current_user)])
+members = APIRouter(tags=["9. Members Management"], dependencies=[Depends(get_verified_user)])
 @members.get("/members/suggestions", summary="Auto-Suggest Members")
 async def suggest_members(request: Request): return await lambda_adapter(request, members_handler)
 @members.post("/members", summary="Create Member (Optional)")
@@ -299,7 +299,7 @@ async def create_member(request: Request, payload: MemberIn): return await lambd
 async def group_members(request: Request, group_id: str): return await lambda_adapter(request, members_handler)
 
 # 10. Reporting
-reporting = APIRouter(prefix="/reports", tags=["10. Reporting Service"], dependencies=[Depends(get_current_user)])
+reporting = APIRouter(prefix="/reports", tags=["10. Reporting Service"], dependencies=[Depends(get_verified_user)])
 @reporting.get("/daily", summary="Daily Summary")
 async def daily_report(request: Request): return await lambda_adapter(request, reporting_handler)
 @reporting.get("/campaign/{campaign_id}", summary="Campaign Progress")
@@ -314,21 +314,21 @@ async def export_pdf(request: Request): return await lambda_adapter(request, rep
 async def whatsapp_summary(request: Request): return await lambda_adapter(request, reporting_handler)
 
 # 11. Evidence
-evidence = APIRouter(prefix="/transactions", tags=["11. Evidence Management"], dependencies=[Depends(get_current_user)])
+evidence = APIRouter(prefix="/transactions", tags=["11. Evidence Management"], dependencies=[Depends(get_verified_user)])
 @evidence.get("/{pending_id}/evidence", summary="Get Transaction Evidence")
 async def get_evidence(pending_id: str): return await placeholder(None)
 @evidence.post("/{pending_id}/evidence", summary="Upload Evidence (Future)")
 async def upload_evidence(pending_id: str): return await placeholder(None)
 
 # 12. Audit Logs
-audit = APIRouter(prefix="/audit", tags=["12. Audit Logs"], dependencies=[Depends(get_current_user)])
+audit = APIRouter(prefix="/audit", tags=["12. Audit Logs"], dependencies=[Depends(get_verified_user)])
 @audit.get("/logs", summary="Get Audit Logs")
 async def get_logs(request: Request): return await placeholder(request)
 @audit.get("/logs/{entity_type}/{entity_id}", summary="Get Logs by Entity")
 async def get_logs_by_entity(entity_type: str, entity_id: str): return await placeholder(None)
 
 # 13. Notifications
-notifications = APIRouter(prefix="/notifications", tags=["13. Notifications"], dependencies=[Depends(get_current_user)])
+notifications = APIRouter(prefix="/notifications", tags=["13. Notifications"], dependencies=[Depends(get_verified_user)])
 @notifications.post("/send", summary="Send Confirmation (After Approval)")
 async def send_notification(request: Request, payload: NotificationIn): return await placeholder(request)
 
@@ -340,7 +340,7 @@ async def health_check(): return {"status": "healthy"}
 async def metrics_check(): return {"metrics": "..."}
 
 # 15. Admin Governance Suite
-admin = APIRouter(prefix="/admin/v1", tags=["15. Admin Governance Suite"], dependencies=[Depends(get_current_user)])
+admin = APIRouter(prefix="/admin/v1", tags=["15. Admin Governance Suite"], dependencies=[Depends(get_verified_user)])
 
 @admin.get("/overview", summary="Platform Overview Statistics", response_model=AdminOverviewOut)
 async def admin_overview():
@@ -398,7 +398,7 @@ async def system_broadcast(payload: SystemBroadcastIn): return {"status": "sent"
 async def search_audit_logs(request: Request): return await placeholder(request)
 
 # --- Section 16: Finance & Subscriptions (Treasurer Facing) ---
-finance = APIRouter(tags=["16. Finance & Subscriptions"], prefix="/finance", dependencies=[Depends(get_current_user)])
+finance = APIRouter(tags=["16. Finance & Subscriptions"], prefix="/finance", dependencies=[Depends(get_verified_user)])
 
 @finance.post("/checkout", response_model=KapuletuCheckoutOut, summary="Initiate Subscription Payment")
 async def initiate_checkout(data: KapuletuCheckoutIn):

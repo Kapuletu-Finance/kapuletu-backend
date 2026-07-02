@@ -252,10 +252,6 @@ class AuthService:
     def login(self, db: Session, username: str, password: str) -> Dict[str, Any]:
         user = self._get_user_by_identifier(db, username)
         
-        # Check verification (Cognito prevented unverified logins, we must too)
-        if not user.phone_number_verified and not user.email_verified:
-             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account not verified. Please verify your phone number.")
-             
         if not user.hashed_password or not verify_password(password, user.hashed_password):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password.")
             
