@@ -263,16 +263,17 @@ from fastapi import HTTPException
 from typing import Dict, Any
 
 @app.get("/temp-elevate", summary="Temporary Elevation Script", include_in_schema=False)
-async def temp_elevate(db: Session = Depends(get_db)):
+async def temp_elevate(email: str, db: Session = Depends(get_db)):
     from models.users import User
     from common.enums import UserRole
-    user = db.query(User).filter(User.email == "josephkirika361@gmail.com").first()
+    user = db.query(User).filter(User.email == email).first()
     if not user:
-        return {"status": "error", "message": "User not found. Please register this email first."}
+        return {"status": "error", "message": f"User {email} not found. Please register this email first."}
     
     user.role = UserRole.SUPER_ADMIN.value
     db.commit()
-    return {"status": "success", "message": "Elevated josephkirika361@gmail.com to super_admin"}
+    return {"status": "success", "message": f"Elevated {email} to super_admin"}
+
 
 
 from services.ingestion.manual_handler import handler as manual_handler

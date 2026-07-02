@@ -20,7 +20,7 @@ def handler(event, context):
             from alembic import command
             from sqlalchemy import create_engine, text, inspect
             from common.config import get_config
-            
+                
             alembic_cfg = Config("alembic.ini")
             
             # Self-healing logic for databases created by auto-migration
