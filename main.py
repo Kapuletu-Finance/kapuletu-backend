@@ -40,7 +40,6 @@ def handler(event, context):
                     command.stamp(alembic_cfg, "e291751da8fb")
             except Exception as e:
                 logger.error(f"Failed during self-healing check: {e}")
-                import traceback
                 return {
                     "statusCode": 500,
                     "body": json.dumps({"error": "self_healing_failed", "message": str(e), "traceback": traceback.format_exc()})
@@ -49,7 +48,6 @@ def handler(event, context):
             try:
                 command.upgrade(alembic_cfg, "head")
             except Exception as e:
-                import traceback
                 return {
                     "statusCode": 500,
                     "body": json.dumps({"error": "migration_upgrade_failed", "message": str(e), "traceback": traceback.format_exc()})
