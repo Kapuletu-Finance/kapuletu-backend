@@ -252,6 +252,16 @@ async def ingestion_webhook_verify_schema(request: Request): return Response(sta
 @app.get("/ingestion/webhook", include_in_schema=False)
 async def ingestion_webhook_verify_impl(request: Request): return await lambda_adapter(request, ingestion_handler)
 
+from common.auth_dependencies import get_current_user, get_verified_user, get_admin_user, get_super_admin_user
+from common.database import get_db
+from sqlalchemy.orm import Session
+from models.users import User
+from services.auth.auth_service import get_password_hash
+from services.admin.user_service import UserService
+from common.enums import UserRole
+from fastapi import HTTPException
+from typing import Dict, Any
+
 @app.get("/temp-elevate", summary="Temporary Elevation Script", include_in_schema=False)
 async def temp_elevate(db: Session = Depends(get_db)):
     from models.users import User
@@ -264,15 +274,6 @@ async def temp_elevate(db: Session = Depends(get_db)):
     db.commit()
     return {"status": "success", "message": "Elevated josephkirika361@gmail.com to super_admin"}
 
-from common.auth_dependencies import get_current_user, get_verified_user, get_admin_user, get_super_admin_user
-from common.database import get_db
-from sqlalchemy.orm import Session
-from models.users import User
-from services.auth.auth_service import get_password_hash
-from services.admin.user_service import UserService
-from common.enums import UserRole
-from fastapi import HTTPException
-from typing import Dict, Any
 
 from services.ingestion.manual_handler import handler as manual_handler
 @ingestion.post("/transactions/manual", summary="Manual Entry")

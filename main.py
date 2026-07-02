@@ -20,7 +20,6 @@ def handler(event, context):
             from alembic import command
             from sqlalchemy import create_engine, text, inspect
             from common.config import get_config
-            import json
             
             alembic_cfg = Config("alembic.ini")
             
