@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
@@ -7,15 +7,24 @@ from common.database import get_db
 from services.auth.auth_service import decode_token
 from models.users import User
 
-# This line magically enables the "Authorize" padlock in Swagger UI!
-# It tells Swagger that authentication is handled by sending form-data to /auth/token
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+# auto_error=False so it doesn't fail immediately if Header is missing; we want to check cookies too.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> Dict[str, Any]:
+def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Dependency to secure endpoints.
-    Extracts the Bearer token, validates it securely via PyJWT, and fetches user data from Postgres.
+    Extracts token from either Authorization Header or HTTP-Only Cookies.
     """
+    if not token:
+        token = request.cookies.get("kapuletu_access_token")
+        
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
     payload = decode_token(token)
     user_id = payload.get("sub")
     if not user_id:

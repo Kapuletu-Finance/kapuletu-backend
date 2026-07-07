@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import Dict, Any
 from sqlalchemy.orm import Session
@@ -44,9 +44,28 @@ async def resend_code(payload: ResendCodeIn, db: Session = Depends(get_db)):
     return MessageOut(message=f"Verification code resent successfully to {medium} ({destination}).")
 
 @router.post("/login", response_model=TokenOut, summary="Login (JSON payload)")
-async def login(payload: LoginIn, db: Session = Depends(get_db)):
-    """Standard JSON login endpoint for frontend convenience."""
+async def login(payload: LoginIn, response: Response, db: Session = Depends(get_db)):
+    """Standard JSON login endpoint. Sets HTTP-Only cookies for frontend."""
     auth_result = auth_service.login(db=db, username=payload.identifier, password=payload.password)
+    
+    # Set HTTP-Only Cookies
+    response.set_cookie(
+        key="kapuletu_access_token", 
+        value=auth_result.get('AccessToken'), 
+        httponly=True, 
+        secure=True, 
+        samesite='lax', 
+        max_age=15 * 60 # 15 minutes
+    )
+    response.set_cookie(
+        key="kapuletu_refresh_token", 
+        value=auth_result.get('RefreshToken'), 
+        httponly=True, 
+        secure=True, 
+        samesite='lax', 
+        max_age=1 * 24 * 60 * 60 # 1 day
+    )
+    
     return TokenOut(
         access_token=auth_result.get('AccessToken'),
         refresh_token=auth_result.get('RefreshToken'),
@@ -67,8 +86,28 @@ async def login_for_swagger(form_data: OAuth2PasswordRequestForm = Depends(), db
     )
 
 @router.post("/refresh", response_model=TokenOut, summary="Refresh Token")
-async def refresh(payload: RefreshIn, db: Session = Depends(get_db)):
-    auth_result = auth_service.refresh_token(db=db, refresh_token=payload.refresh_token)
+async def refresh(request: Request, response: Response, payload: RefreshIn = None, db: Session = Depends(get_db)):
+    """Refreshes the access token using the HTTP-Only refresh cookie."""
+    # Check cookie first, fallback to JSON payload if provided
+    refresh_token = request.cookies.get("kapuletu_refresh_token")
+    if not refresh_token and payload:
+        refresh_token = payload.refresh_token
+        
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Refresh token missing")
+        
+    auth_result = auth_service.refresh_token(db=db, refresh_token=refresh_token)
+    
+    # Set new Access Token cookie
+    response.set_cookie(
+        key="kapuletu_access_token", 
+        value=auth_result.get('AccessToken'), 
+        httponly=True, 
+        secure=True, 
+        samesite='lax', 
+        max_age=15 * 60
+    )
+    
     return TokenOut(
         access_token=auth_result.get('AccessToken'),
         id_token=auth_result.get('IdToken'),
@@ -90,9 +129,11 @@ async def reset_password(payload: ResetPasswordIn, db: Session = Depends(get_db)
 # ==========================================
 
 @router.post("/logout", response_model=MessageOut, summary="Logout")
-async def logout(current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Logs out globally from all devices using the current token."""
+async def logout(response: Response, current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Logs out by clearing the HTTP-Only cookies."""
     auth_service.logout(db=db, access_token=current_user['access_token'])
+    response.delete_cookie("kapuletu_access_token")
+    response.delete_cookie("kapuletu_refresh_token")
     return MessageOut(message="Logged out successfully.")
 
 @router.post("/change-password", response_model=MessageOut, summary="Change Password")

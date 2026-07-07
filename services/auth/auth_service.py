@@ -39,13 +39,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(data: dict, expires_delta: datetime.timedelta = None):
     to_encode = data.copy()
-    expire = datetime.datetime.utcnow() + (expires_delta if expires_delta else datetime.timedelta(minutes=60))
+    expire = datetime.datetime.utcnow() + (expires_delta if expires_delta else datetime.timedelta(minutes=15))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, config.JWT_SECRET_KEY, algorithm="HS256")
 
 def create_refresh_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.datetime.utcnow() + datetime.timedelta(days=7)
+    expire = datetime.datetime.utcnow() + datetime.timedelta(days=1)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, config.JWT_SECRET_KEY, algorithm="HS256")
 
