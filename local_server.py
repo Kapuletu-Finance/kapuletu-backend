@@ -256,7 +256,7 @@ async def placeholder(request: Request):
 
 
 # 5. Transaction Ingestion
-ingestion = APIRouter(tags=["5. Transaction Ingestion"])
+ingestion = APIRouter(tags=["6. Transaction Ingestion"])
 @ingestion.post("/ingestion/webhook", summary="Webhook (Meta / External)")
 async def ingestion_webhook_schema(payload: TransactionIn): return Response(status_code=200)
 @app.post("/ingestion/webhook", include_in_schema=False)
@@ -300,7 +300,7 @@ async def manual_entry(request: Request, payload: ManualEntryIn, current_user: D
 # Removed ledger endpoints since they are now in native services/finance/ledger_router.py
 
 # 9. Members
-members = APIRouter(tags=["9. Members Management"], dependencies=[Depends(get_verified_user)])
+members = APIRouter(tags=["2. Members Management"], dependencies=[Depends(get_verified_user)])
 @members.get("/members/suggestions", summary="Auto-Suggest Members")
 async def suggest_members(request: Request): return await lambda_adapter(request, members_handler)
 @members.post("/members", summary="Create Member (Optional)")
@@ -316,12 +316,12 @@ async def group_members(request: Request, group_id: str): return await lambda_ad
 # Removed audit placeholders since they are now in native services/audit/router.py
 
 # 13. Notifications
-notifications = APIRouter(prefix="/notifications", tags=["13. Notifications"], dependencies=[Depends(get_verified_user)])
+notifications = APIRouter(prefix="/notifications", tags=["10. Notifications"], dependencies=[Depends(get_verified_user)])
 @notifications.post("/send", summary="Send Confirmation (After Approval)")
 async def send_notification(request: Request, payload: NotificationIn): return await placeholder(request)
 
 # 14. System Health
-health = APIRouter(tags=["14. System Health & Admin"])
+health = APIRouter(tags=["13. System Health & Admin"])
 @health.get("/health", summary="Health Check")
 async def health_check(): return {"status": "healthy"}
 
@@ -331,7 +331,7 @@ app.include_router(reporting)
 async def metrics_check(): return {"metrics": "..."}
 
 # 15. Admin Governance Suite
-admin = APIRouter(prefix="/admin/v1", tags=["15. Admin Governance Suite"], dependencies=[Depends(get_admin_user)])
+admin = APIRouter(prefix="/admin/v1", tags=["12. Admin Governance Suite"], dependencies=[Depends(get_admin_user)])
 
 @admin.get("/overview", summary="Platform Overview Statistics", response_model=AdminOverviewOut)
 async def admin_overview():
@@ -415,7 +415,7 @@ async def system_broadcast(payload: SystemBroadcastIn): return {"status": "sent"
 async def search_audit_logs(request: Request): return await placeholder(request)
 
 # --- Section 16: Finance & Subscriptions (Treasurer Facing) ---
-finance = APIRouter(tags=["16. Finance & Subscriptions"], prefix="/finance", dependencies=[Depends(get_verified_user)])
+finance = APIRouter(tags=["5. Finance & Subscriptions"], prefix="/finance", dependencies=[Depends(get_verified_user)])
 
 @finance.post("/checkout", response_model=KapuletuCheckoutOut, summary="Initiate Subscription Payment")
 async def initiate_checkout(data: KapuletuCheckoutIn):

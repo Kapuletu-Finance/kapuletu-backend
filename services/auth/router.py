@@ -13,7 +13,7 @@ from services.auth.auth_service import auth_service
 from common.auth_dependencies import get_current_user
 from common.enums import UserRole
 
-router = APIRouter(prefix="/auth", tags=["2. Authentication"])
+router = APIRouter(prefix="/auth", tags=["1. Authentication"])
 
 # ==========================================
 # PUBLIC ENDPOINTS
