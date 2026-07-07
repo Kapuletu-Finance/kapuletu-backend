@@ -5,6 +5,7 @@ from common.database import SessionLocal
 from common.decorators import with_auth
 from models.pending_transaction import PendingTransaction
 from repositories.transaction_repo import TransactionRepository
+from services.audit.service import AuditService
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,15 @@ def handler(event, context):
         )
         
         saved_txn = repo.insert_pending_transaction(pending_txn)
+        
+        AuditService(db).log_action(
+            actor_id=event["user_id"],
+            action="MANUAL_ENTRY",
+            entity_type="PENDING_TRANSACTION",
+            entity_id=str(saved_txn.pending_id),
+            details={"amount": float(body["amount"])}
+        )
+        
         db.close()
 
         return {

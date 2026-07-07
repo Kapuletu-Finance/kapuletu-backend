@@ -7,6 +7,7 @@ from models.pending_transaction import PendingTransaction
 from models.transaction import Transaction
 from models.users import User
 from services.ingestion.active_learner import log_for_active_learning
+from services.audit.service import AuditService
 
 logger = get_logger(__name__)
 
@@ -106,6 +107,15 @@ class ApprovalService:
         pending.workflow_status = "approved"
         
         self.db.commit()
+        
+        AuditService(self.db).log_action(
+            actor_id=treasurer_id,
+            action="TXN_APPROVED",
+            entity_type="TRANSACTION",
+            entity_id=str(new_txn.transaction_id),
+            details={"amount": float(new_txn.amount)}
+        )
+        
         logger.info(f"Transaction {new_txn.transaction_id} successfully finalized and ledger-locked.")
         return new_txn
 
@@ -170,6 +180,15 @@ class ApprovalService:
         pending.workflow_status = "split_approved"
         
         self.db.commit()
+
+        AuditService(self.db).log_action(
+            actor_id=treasurer_id,
+            action="TXN_SPLIT_APPROVED",
+            entity_type="TRANSACTION",
+            entity_id=str(new_txn.transaction_id),
+            details={"splits": len(allocations)}
+        )
+
         return new_txn
 
     def reject_transaction(self, pending_txn_id, treasurer_id):
@@ -192,6 +211,14 @@ class ApprovalService:
         pending.workflow_status = "rejected"
         
         self.db.commit()
+        
+        AuditService(self.db).log_action(
+            actor_id=treasurer_id,
+            action="TXN_REJECTED",
+            entity_type="PENDING_TRANSACTION",
+            entity_id=str(pending_txn_id)
+        )
+        
         logger.info(f"Transaction {pending_txn_id} rejected by treasurer {treasurer_id}.")
         return {"status": "rejected"}
 

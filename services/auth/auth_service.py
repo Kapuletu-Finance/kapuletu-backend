@@ -19,6 +19,7 @@ from sqlalchemy import or_
 from models.users import User
 from models.otp import OTP
 from common.config import get_config
+from services.audit.service import AuditService
 
 logger = logging.getLogger(__name__)
 config = get_config()
@@ -258,6 +259,13 @@ class AuthService:
         access_token = create_access_token({"sub": str(user.user_id)})
         refresh_token = create_refresh_token({"sub": str(user.user_id)})
         
+        AuditService(db).log_action(
+            actor_id=str(user.user_id),
+            action="USER_LOGIN",
+            entity_type="USER",
+            entity_id=str(user.user_id)
+        )
+        
         return {
             "AccessToken": access_token,
             "RefreshToken": refresh_token,
@@ -490,6 +498,13 @@ class AuthService:
         user.hashed_password = get_password_hash(new_password)
         db.commit()
 
+        AuditService(db).log_action(
+            actor_id=user_id,
+            action="PASSWORD_CHANGED",
+            entity_type="USER",
+            entity_id=user_id
+        )
+
     def update_profile(self, db: Session, user_id: str, updates: dict):
         user = db.query(User).filter(User.user_id == user_id).first()
         if not user:
@@ -499,6 +514,14 @@ class AuthService:
             if hasattr(user, key) and value is not None:
                 setattr(user, key, value)
         db.commit()
+
+        AuditService(db).log_action(
+            actor_id=user_id,
+            action="PROFILE_UPDATED",
+            entity_type="USER",
+            entity_id=user_id,
+            details=updates
+        )
 
     def request_email_verification(self, db: Session, user_id: str):
         user = db.query(User).filter(User.user_id == user_id).first()

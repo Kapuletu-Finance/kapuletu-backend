@@ -11,6 +11,7 @@ from services.reporting.schemas import ReportSettingsIn, ReportSettingsOut, Publ
 from services.reporting.excel_gen import generate_excel_report
 from services.reporting.pdf_gen import generate_pdf_report
 from models.report_settings import CampaignReportSettings
+from services.audit.service import AuditService
 
 router = APIRouter(prefix="/reports", tags=["10. Reporting Service"])
 
@@ -65,6 +66,14 @@ async def update_settings(
     
     db.commit()
     db.refresh(settings)
+    
+    AuditService(db).log_action(
+        actor_id=current_user.get("sub"),
+        action="REPORT_SETTINGS_UPDATED",
+        entity_type="CAMPAIGN",
+        entity_id=campaign_id
+    )
+    
     return settings
 
 @router.post("/public/{campaign_id}", response_model=PublicReportOut, summary="Secure Public Ledger Access")

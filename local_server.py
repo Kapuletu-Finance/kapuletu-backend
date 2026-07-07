@@ -313,11 +313,7 @@ async def group_members(request: Request, group_id: str): return await lambda_ad
 # Removed evidence endpoints since they are now in native services/evidence/router.py
 
 # 12. Audit Logs
-audit = APIRouter(prefix="/audit", tags=["12. Audit Logs"], dependencies=[Depends(get_verified_user)])
-@audit.get("/logs", summary="Get Audit Logs")
-async def get_logs(request: Request): return await placeholder(request)
-@audit.get("/logs/{entity_type}/{entity_id}", summary="Get Logs by Entity")
-async def get_logs_by_entity(entity_type: str, entity_id: str): return await placeholder(None)
+# Removed audit placeholders since they are now in native services/audit/router.py
 
 # 13. Notifications
 notifications = APIRouter(prefix="/notifications", tags=["13. Notifications"], dependencies=[Depends(get_verified_user)])
@@ -467,9 +463,9 @@ app.include_router(ledger) # 8
 app.include_router(members) # 9
 app.include_router(reporting) # 10
 
-from services.evidence.router import router as evidence
-app.include_router(evidence) # 11
-app.include_router(audit)
+
+from services.audit.router import router as audit_router
+app.include_router(audit_router) # 12
 app.include_router(notifications)
 app.include_router(health)
 app.include_router(admin)
