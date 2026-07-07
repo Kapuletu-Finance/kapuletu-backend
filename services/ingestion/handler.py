@@ -51,6 +51,35 @@ def handler(event, context):
             logger.error(f"Failed to decode base64 body: {e}")
             return {"statusCode": 400, "body": json.dumps({"error": "invalid_encoding"})}
             
+    # 3. SQS Decoupling (If configured)
+    sqs_queue_url = os.environ.get("SQS_QUEUE_URL")
+    if sqs_queue_url:
+        import boto3
+        sqs = boto3.client("sqs", region_name=os.environ.get("AWS_REGION", "eu-west-1"))
+        try:
+            sqs.send_message(QueueUrl=sqs_queue_url, MessageBody=body_str)
+            logger.info("Successfully queued webhook payload to SQS.")
+            return {"statusCode": 200, "body": "OK"}
+        except Exception as e:
+            logger.error(f"Failed to queue to SQS: {e}")
+            # Fall back to synchronous processing if SQS fails
+    
+    # 4. Synchronous Processing (Fallback or Local Dev)
+    return process_ingestion(body_str, config)
+
+def process_sqs_record(record):
+    """
+    Entry point for SQS worker triggering from the Webhook Queue.
+    """
+    logger.info("Processing SQS Webhook Record")
+    body_str = record.get("body", "{}")
+    config = get_config()
+    return process_ingestion(body_str, config)
+
+def process_ingestion(body_str: str, config):
+    """
+    Core logic: parses payload, saves to database, and sends WhatsApp reply.
+    """
     try:
         payload_data = json.loads(body_str)
     except json.JSONDecodeError:
@@ -158,7 +187,7 @@ def handler(event, context):
         }
         
     except Exception as e:
-        logger.error(f"CRITICAL: Unexpected error in ingestion handler: {e}", exc_info=True)
+        logger.error(f"CRITICAL: Unexpected error in ingestion processing: {e}", exc_info=True)
         return {
             "statusCode": 500,
             "body": json.dumps({"error": "internal_server_error", "message": str(e)})

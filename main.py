@@ -13,7 +13,16 @@ def handler(event, context):
     Handles API Gateway Proxy, Cognito Triggers, and Error Reporting.
     """
     try:
-        # 0. Intercept manual tasks (e.g. database migrations via CI/CD)
+        # 1. Intercept SQS Events (Webhook Background Processing)
+        if isinstance(event, dict) and "Records" in event:
+            record = event["Records"][0]
+            if record.get("eventSource") == "aws:sqs":
+                logger.info("Processing SQS Event for Ingestion")
+                from services.ingestion.handler import process_sqs_record
+                result = process_sqs_record(record)
+                return result
+
+        # 2. Intercept manual tasks (e.g. database migrations via CI/CD)
         if isinstance(event, dict) and event.get("task") == "migrate_database":
             logger.info("Executing database migration task...")
             from alembic.config import Config
