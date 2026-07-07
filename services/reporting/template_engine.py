@@ -72,6 +72,7 @@ class TemplateEngine:
             f"Total Paid      = KSh. {total_collected:>10,.0f}\n"
             f"Expected Amount = KSh. {target:>10,.0f}\n"
             f"Deficit         = KSh. {deficit:>10,.0f}\n\n"
+            f"{{payment_instructions}}\n"
             f"Thank you for your continued support."
         )
 
@@ -79,12 +80,15 @@ class TemplateEngine:
         footer = settings.footer_template or default_footer
 
         # Smart Tag Replacement
+        pay_instruct = campaign.payment_instructions if campaign.payment_instructions else ""
+        
         replacements = {
             "{{campaign_title}}": campaign.title,
             "{{current_date}}": date_str,
             "{{total_raised}}": f"{total_collected:,.0f}",
             "{{target_amount}}": f"{target:,.0f}",
-            "{{deficit}}": f"{deficit:,.0f}"
+            "{{deficit}}": f"{deficit:,.0f}",
+            "{{payment_instructions}}": pay_instruct
         }
         
         for tag, val in replacements.items():

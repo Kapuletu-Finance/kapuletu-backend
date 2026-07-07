@@ -30,6 +30,8 @@ class LedgerService:
             "transaction_code": txn.transaction_code,
             "amount": float(txn.amount),
             "sender_phone": txn.sender_phone,
+            "payment_method": txn.payment_method,
+            "source_evidence": txn.source_evidence,
             "status": txn.status,
             "created_at": txn.created_at.isoformat()
         }
@@ -106,6 +108,8 @@ class LedgerService:
                     status=txn.status,
                     created_at=txn.created_at,
                     ledger_hash=txn.ledger_hash,
+                    payment_method=txn.payment_method,
+                    source_evidence=txn.source_evidence,
                     is_tampered=is_tampered
                 )
             )
@@ -155,6 +159,8 @@ class LedgerService:
                     status=txn.status,
                     created_at=txn.created_at,
                     ledger_hash=txn.ledger_hash,
+                    payment_method=txn.payment_method,
+                    source_evidence=txn.source_evidence,
                     is_tampered=is_tampered
                 )
             )

@@ -89,7 +89,9 @@ class IngestionService:
             purpose=parsed_data.get("purpose"),
             original_ai_output=parsed_data, # Persist the raw AI response for feedback loops
             confidence_score=parsed_data.get("confidence_score"),
-            workflow_status="pending"
+            workflow_status="pending",
+            payment_method="M-Pesa",
+            source_evidence=message_body
         )
         
         # Save to database

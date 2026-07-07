@@ -58,7 +58,8 @@ class ApprovalService:
             amount=pending.amount,
             sender_phone=pending.sender_phone,
             sender_name=pending.sender_name,
-            evidence_url=pending.evidence_url,
+            payment_method=pending.payment_method,
+            source_evidence=pending.source_evidence,
             status="approved"
         )
         self.db.add(new_txn)
@@ -143,6 +144,8 @@ class ApprovalService:
             transaction_code=pending.transaction_code,
             amount=pending.amount,
             sender_phone=pending.sender_phone,
+            payment_method=pending.payment_method,
+            source_evidence=pending.source_evidence,
             status="approved"
         )
         self.db.add(new_txn)
@@ -229,6 +232,8 @@ class ApprovalService:
             "transaction_code": txn.transaction_code,
             "amount": float(txn.amount),
             "sender_phone": txn.sender_phone,
+            "payment_method": txn.payment_method,
+            "source_evidence": txn.source_evidence,
             "status": txn.status,
             "created_at": txn.created_at.isoformat()
         }

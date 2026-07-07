@@ -45,7 +45,9 @@ def handler(event, context):
             sender_phone=body["sender_phone"],
             purpose=body.get("purpose", "Manual Entry"),
             confidence_score=1.0, # Manual entry is 100% confident
-            workflow_status="pending"
+            workflow_status="pending",
+            payment_method="Cash",
+            source_evidence="Manually entered by treasurer"
         )
         
         saved_txn = repo.insert_pending_transaction(pending_txn)

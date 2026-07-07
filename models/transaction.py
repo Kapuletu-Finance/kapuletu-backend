@@ -46,8 +46,10 @@ class Transaction(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     # ledger_hash: A SHA-256 integrity seal that ensures the record has not been modified after approval.
     ledger_hash = Column(String, nullable=True)
-    # evidence_url: Link to the verification screenshot (M-Pesa/Bank receipt).
-    evidence_url = Column(String, nullable=True)
+    # payment_method: Automatic tag (e.g., "M-Pesa", "Cash", "Bank Transfer").
+    payment_method = Column(String, default="Cash")
+    # source_evidence: The raw SMS string or the manual entry note. Internal use only.
+    source_evidence = Column(String, nullable=True)
 
     # Relationships
     # A single transaction can be split into multiple allocations (e.g. 50% Dues, 50% Social).

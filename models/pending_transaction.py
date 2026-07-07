@@ -57,7 +57,9 @@ class PendingTransaction(Base):
     workflow_status = Column(String, default="pending") 
     # is_processed: Flag to indicate if the transaction has been finalized in the ledger.
     is_processed = Column(Boolean, default=False)
-    # evidence_url: Link to the verification screenshot.
-    evidence_url = Column(String, nullable=True)
+    # payment_method: Automatic tag (e.g., "M-Pesa", "Cash").
+    payment_method = Column(String, default="Cash")
+    # source_evidence: The raw message or default text.
+    source_evidence = Column(String, nullable=True)
     # created_at: Timestamp when the ingestion occurred.
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

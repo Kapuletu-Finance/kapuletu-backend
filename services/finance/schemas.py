@@ -14,6 +14,8 @@ class LedgerEntryOut(BaseModel):
     status: str
     created_at: datetime
     ledger_hash: Optional[str]
+    payment_method: Optional[str]
+    source_evidence: Optional[str]
     
     # Immutability Check
     is_tampered: bool = Field(..., description="If true, the record has been modified after approval and its cryptographic seal is broken.")
