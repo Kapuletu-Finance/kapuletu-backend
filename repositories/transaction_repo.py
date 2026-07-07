@@ -99,3 +99,21 @@ class TransactionRepository:
             PendingTransaction.is_processed == False
         )
         return self.db.execute(stmt).scalars().all()
+
+    def fetch_pending_transaction_by_id(self, pending_id: str, owner_id: UUID) -> Optional[PendingTransaction]:
+        """
+        Retrieves a specific pending transaction for a specific treasurer.
+        
+        Args:
+            pending_id (str): The unique ID of the pending transaction.
+            owner_id (UUID): The unique ID of the treasurer.
+            
+        Returns:
+            Optional[PendingTransaction]: The pending transaction if found and owned by user, else None.
+        """
+        stmt = select(PendingTransaction).where(
+            PendingTransaction.pending_id == pending_id,
+            PendingTransaction.owner_id == owner_id,
+            PendingTransaction.is_processed == False
+        )
+        return self.db.execute(stmt).scalars().first()

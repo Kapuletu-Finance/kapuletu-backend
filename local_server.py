@@ -238,7 +238,13 @@ async def placeholder(request: Request):
 
 # 3. Groups Management (Native FastAPI Router imported from services.groups.router)
 
+from services.approval.router import router as approval
+from services.finance.ledger_router import router as ledger
+from services.evidence.router import router as evidence
 
+app.include_router(approval)
+app.include_router(ledger)
+app.include_router(evidence)
 
 # 5. Transaction Ingestion
 ingestion = APIRouter(tags=["5. Transaction Ingestion"])
@@ -280,43 +286,9 @@ from services.ingestion.manual_handler import handler as manual_handler
 @ingestion.post("/transactions/manual", summary="Manual Entry")
 async def manual_entry(request: Request, payload: ManualEntryIn, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, manual_handler)
 
-@ingestion.get("/transactions/pending", summary="Get Pending Transactions (Inbox)")
-async def get_pending(request: Request, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
-@ingestion.get("/transactions/pending/{pending_id}", summary="Get Single Pending")
-async def get_pending_single(request: Request, pending_id: str, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
-
-# 6. Parsing & Validation
-parsing = APIRouter(prefix="/transactions", tags=["6. Parsing & Validation"])
-@parsing.post("/{pending_id}/reparse", summary="Re-parse Message")
-async def reparse(request: Request, pending_id: str, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
-@parsing.post("/{pending_id}/validate", summary="Validate Transaction")
-async def validate_tx(request: Request, pending_id: str, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
-
-# 7. Review & Approval
-review = APIRouter(prefix="/transactions", tags=["7. Review & Approval Workflow"])
-@review.post("/{pending_id}/approve", summary="Approve Transaction")
-async def approve(request: Request, pending_id: str, payload: Optional[TransactionActionIn] = None, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
-@review.post("/{pending_id}/reject", summary="Reject Transaction")
-async def reject(request: Request, pending_id: str, payload: Optional[TransactionActionIn] = None, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
-@review.patch("/{pending_id}", summary="Edit Transaction")
-async def edit_tx(request: Request, pending_id: str, payload: TransactionEditIn, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
-@review.post("/{pending_id}/note", summary="Add Note")
-async def add_note(request: Request, pending_id: str, payload: TransactionActionIn, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
-@review.post("/{pending_id}/split", summary="Split Transaction")
-async def split_tx(request: Request, payload: TransactionSplit, pending_id: str, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
-@review.post("/bulk/approve", summary="Bulk Approval")
-async def bulk_approve(request: Request, payload: BulkActionIn, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
-@review.post("/bulk/reject", summary="Bulk Reject")
-async def bulk_reject(request: Request, payload: BulkActionIn, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, approval_handler)
-
+# Removed parsing and review endpoints since they are now in native services/approval/router.py
 # 8. Ledger
-ledger = APIRouter(prefix="/ledger", tags=["8. Ledger (Immutable)"], dependencies=[Depends(get_verified_user)])
-@ledger.get("", summary="Get Ledger Entries")
-async def list_ledger(request: Request): return await placeholder(request)
-@ledger.get("/campaign/{campaign_id}", summary="Get Ledger by Campaign")
-async def ledger_by_campaign(campaign_id: str): return await placeholder(None)
-@ledger.get("/{ledger_id}", summary="Get Ledger Entry")
-async def get_ledger_entry(ledger_id: str): return await placeholder(None)
+# Removed ledger endpoints since they are now in native services/finance/ledger_router.py
 
 # 9. Members
 members = APIRouter(tags=["9. Members Management"], dependencies=[Depends(get_verified_user)])
@@ -343,11 +315,7 @@ async def export_pdf(request: Request): return await lambda_adapter(request, rep
 async def whatsapp_summary(request: Request): return await lambda_adapter(request, reporting_handler)
 
 # 11. Evidence
-evidence = APIRouter(prefix="/transactions", tags=["11. Evidence Management"], dependencies=[Depends(get_verified_user)])
-@evidence.get("/{pending_id}/evidence", summary="Get Transaction Evidence")
-async def get_evidence(pending_id: str): return await placeholder(None)
-@evidence.post("/{pending_id}/evidence", summary="Upload Evidence (Future)")
-async def upload_evidence(pending_id: str): return await placeholder(None)
+# Removed evidence endpoints since they are now in native services/evidence/router.py
 
 # 12. Audit Logs
 audit = APIRouter(prefix="/audit", tags=["12. Audit Logs"], dependencies=[Depends(get_verified_user)])
@@ -491,12 +459,8 @@ app.include_router(groups)
 from services.campaigns.router import router as campaigns_router
 app.include_router(campaigns_router)
 app.include_router(ingestion)
-app.include_router(parsing)
-app.include_router(review)
-app.include_router(ledger)
 app.include_router(members)
 app.include_router(reporting)
-app.include_router(evidence)
 app.include_router(audit)
 app.include_router(notifications)
 app.include_router(health)
