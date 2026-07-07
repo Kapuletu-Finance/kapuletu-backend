@@ -238,13 +238,6 @@ async def placeholder(request: Request):
 
 # 3. Groups Management (Native FastAPI Router imported from services.groups.router)
 
-from services.approval.router import router as approval
-from services.finance.ledger_router import router as ledger
-from services.evidence.router import router as evidence
-
-app.include_router(approval)
-app.include_router(ledger)
-app.include_router(evidence)
 
 # 5. Transaction Ingestion
 ingestion = APIRouter(tags=["5. Transaction Ingestion"])
@@ -454,13 +447,23 @@ async def my_subscription():
     }
 
 # --- Include All Routers ---
-app.include_router(auth)
-app.include_router(groups)
+app.include_router(auth) # 2
+app.include_router(groups) # 3
 from services.campaigns.router import router as campaigns_router
-app.include_router(campaigns_router)
-app.include_router(ingestion)
-app.include_router(members)
-app.include_router(reporting)
+app.include_router(campaigns_router) # 4
+app.include_router(ingestion) # 5
+
+from services.approval.router import router as approval
+app.include_router(approval) # 6
+
+from services.finance.ledger_router import router as ledger
+app.include_router(ledger) # 8
+
+app.include_router(members) # 9
+app.include_router(reporting) # 10
+
+from services.evidence.router import router as evidence
+app.include_router(evidence) # 11
 app.include_router(audit)
 app.include_router(notifications)
 app.include_router(health)
