@@ -342,8 +342,7 @@ health = APIRouter(tags=["13. System Health & Admin"])
 @health.get("/health", summary="Health Check")
 async def health_check(): return {"status": "healthy"}
 
-app.include_router(ledger)
-app.include_router(reporting)
+
 @health.get("/metrics", summary="Metrics")
 async def metrics_check(): return {"metrics": "..."}
 
