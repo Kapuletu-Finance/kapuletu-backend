@@ -14,3 +14,4 @@ from .transaction import Transaction
 from .users import User
 from .system_config import SystemConfig
 from .otp import OTP
+from .report_settings import CampaignReportSettings

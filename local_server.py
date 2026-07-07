@@ -15,11 +15,12 @@ from services.approval.handler import handler as approval_handler
 from services.auth.router import router as auth
 
 from services.groups.router import router as groups
+from services.finance.ledger_router import router as ledger
+from services.reporting.router import router as reporting
 
 # Import Handlers
 from services.ingestion.handler import handler as ingestion_handler
 from services.members.handler import handler as members_handler
-from services.reporting.handler import handler as reporting_handler
 
 app = FastAPI(
     title="KapuLetu Treasury API — Full Specification",
@@ -308,20 +309,6 @@ async def create_member(request: Request, payload: MemberIn): return await lambd
 async def group_members(request: Request, group_id: str): return await lambda_adapter(request, members_handler)
 
 # 10. Reporting
-reporting = APIRouter(prefix="/reports", tags=["10. Reporting Service"], dependencies=[Depends(get_verified_user)])
-@reporting.get("/daily", summary="Daily Summary")
-async def daily_report(request: Request): return await lambda_adapter(request, reporting_handler)
-@reporting.get("/campaign/{campaign_id}", summary="Campaign Progress")
-async def campaign_report(request: Request, campaign_id: str): return await lambda_adapter(request, reporting_handler)
-@reporting.get("/contributors/{campaign_id}", summary="Contributor List")
-async def contributors_report(request: Request, campaign_id: str): return await lambda_adapter(request, reporting_handler)
-@reporting.get("/export/excel", summary="Export Excel")
-async def export_excel(request: Request): return await lambda_adapter(request, reporting_handler)
-@reporting.get("/export/pdf", summary="Export PDF")
-async def export_pdf(request: Request): return await lambda_adapter(request, reporting_handler)
-@reporting.get("/whatsapp-summary", summary="WhatsApp Summary Format")
-async def whatsapp_summary(request: Request): return await lambda_adapter(request, reporting_handler)
-
 # 11. Evidence
 # Removed evidence endpoints since they are now in native services/evidence/router.py
 
@@ -341,6 +328,9 @@ async def send_notification(request: Request, payload: NotificationIn): return a
 health = APIRouter(tags=["14. System Health & Admin"])
 @health.get("/health", summary="Health Check")
 async def health_check(): return {"status": "healthy"}
+
+app.include_router(ledger)
+app.include_router(reporting)
 @health.get("/metrics", summary="Metrics")
 async def metrics_check(): return {"metrics": "..."}
 
