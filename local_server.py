@@ -22,11 +22,28 @@ from services.reporting.router import router as reporting
 from services.ingestion.handler import handler as ingestion_handler
 from services.members.handler import handler as members_handler
 
+openapi_tags = [
+    {"name": "1. Authentication", "description": "User registration, login, and profile management."},
+    {"name": "2. Members Management", "description": "Manage community members and directories."},
+    {"name": "3. Groups Management", "description": "Manage contribution groups and communities."},
+    {"name": "4. Campaigns Management", "description": "Manage fundraising and contribution campaigns."},
+    {"name": "5. Finance & Subscriptions", "description": "Platform subscription plans and checkouts."},
+    {"name": "6. Transaction Ingestion", "description": "Automated ingestion via external webhooks (e.g., MPesa)."},
+    {"name": "7. Review & Approval Workflow", "description": "Review, approve, or reject pending transactions."},
+    {"name": "8. Ledger (Immutable)", "description": "Core immutable financial ledger records."},
+    {"name": "9. Reporting Service", "description": "Dashboards and detailed financial reports."},
+    {"name": "10. Notifications", "description": "System alerts and external communication."},
+    {"name": "11. Audit Logs", "description": "System-wide immutable audit trail."},
+    {"name": "12. Admin Governance Suite", "description": "Platform-wide administrative controls."},
+    {"name": "13. System Health & Admin", "description": "Service health checks and metrics."}
+]
+
 app = FastAPI(
     title="KapuLetu Treasury API — Full Specification",
     description="Local development bridge mapping every endpoint from the technical specification (v1).",
     version="1.0.0",
-    swagger_ui_parameters={"persistAuthorization": True}
+    swagger_ui_parameters={"persistAuthorization": True},
+    openapi_tags=openapi_tags
 )
 
 from fastapi.middleware.cors import CORSMiddleware
