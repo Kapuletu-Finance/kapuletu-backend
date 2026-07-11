@@ -12,7 +12,7 @@ from services.approval.schemas import (
 from repositories.transaction_repo import TransactionRepository
 from services.approval.service import ApprovalService
 
-router = APIRouter(prefix="/transactions", tags=["7. Review & Approval Workflow"])
+router = APIRouter(prefix="/transactions", tags=["8. Review & Approval Workflow"])
 
 @router.get("/pending", response_model=List[PendingTransactionOut], summary="Get Pending Transactions (Inbox)")
 async def get_pending(

@@ -14,7 +14,7 @@ from models.subscription import Subscription, Plan
 from models.audit_log import AuditLog
 from services.workspace.schemas import WorkspaceOverviewOut, GroupOverview, SubscriptionOverview, WorkspaceActivity
 
-router = APIRouter(prefix="/workspace", tags=["Workspace"])
+router = APIRouter(prefix="/workspace", tags=["2. Workspace Overview"])
 
 @router.get("/overview", response_model=WorkspaceOverviewOut, summary="Get Workspace Overview")
 async def get_workspace_overview(

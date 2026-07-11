@@ -8,7 +8,7 @@ from common.auth_dependencies import get_verified_user
 from models.audit_log import AuditLog
 from services.audit.schemas import AuditLogOut
 
-router = APIRouter(prefix="/audit", tags=["11. Audit Logs"])
+router = APIRouter(prefix="/audit", tags=["12. Audit Logs"])
 
 @router.get("/logs", response_model=List[AuditLogOut], summary="Get Audit Logs")
 def get_logs(

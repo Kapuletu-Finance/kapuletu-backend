@@ -13,7 +13,7 @@ from services.reporting.pdf_gen import generate_pdf_report
 from models.report_settings import CampaignReportSettings
 from services.audit.service import AuditService
 
-router = APIRouter(prefix="/reports", tags=["9. Reporting Service"])
+router = APIRouter(prefix="/reports", tags=["10. Reporting Service"])
 
 from datetime import datetime, timedelta
 from models.campaign import Campaign

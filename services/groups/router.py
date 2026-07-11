@@ -9,7 +9,7 @@ from common.auth_dependencies import get_verified_user
 from services.groups.schemas import GroupCreate, GroupUpdate, GroupOut
 from repositories import group_repo
 
-router = APIRouter(prefix="/groups", tags=["3. Groups Management"])
+router = APIRouter(prefix="/groups", tags=["4. Groups Management"])
 
 @router.post("", response_model=GroupOut, status_code=status.HTTP_201_CREATED, summary="Create Group")
 async def create_group(

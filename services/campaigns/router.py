@@ -8,7 +8,7 @@ from common.auth_dependencies import get_verified_user
 from services.campaigns.schemas import CampaignCreate, CampaignUpdate, CampaignOut
 from repositories import campaign_repo, group_repo
 
-router = APIRouter(prefix="", tags=["4. Campaigns Management"])
+router = APIRouter(prefix="", tags=["5. Campaigns Management"])
 
 def _verify_group_ownership(db: Session, group_id: str, owner_id: str):
     """Helper to verify that the group exists and belongs to the current user."""

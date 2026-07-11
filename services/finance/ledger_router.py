@@ -7,7 +7,7 @@ from common.auth_dependencies import get_verified_user
 from services.finance.ledger_service import LedgerService
 from services.finance.schemas import LedgerResponse, IntegrityCheckOut
 
-router = APIRouter(prefix="/ledger", tags=["8. Ledger (Immutable)"])
+router = APIRouter(prefix="/ledger", tags=["9. Ledger (Immutable)"])
 
 @router.get("", response_model=LedgerResponse, summary="Get Global Ledger")
 async def get_global_ledger(

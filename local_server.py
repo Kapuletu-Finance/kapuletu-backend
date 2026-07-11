@@ -16,6 +16,7 @@ from services.auth.router import router as auth
 
 from services.groups.router import router as groups
 from services.finance.ledger_router import router as ledger
+from services.finance.checkout_router import router as checkout_router
 from services.reporting.router import router as reporting
 
 # Import Handlers
@@ -24,18 +25,20 @@ from services.members.handler import handler as members_handler
 
 openapi_tags = [
     {"name": "1. Authentication", "description": "User registration, login, and profile management."},
-    {"name": "2. Members Management", "description": "Manage community members and directories."},
-    {"name": "3. Groups Management", "description": "Manage contribution groups and communities."},
-    {"name": "4. Campaigns Management", "description": "Manage fundraising and contribution campaigns."},
-    {"name": "5. Finance & Subscriptions", "description": "Platform subscription plans and checkouts."},
-    {"name": "6. Transaction Ingestion", "description": "Automated ingestion via external webhooks (e.g., MPesa)."},
-    {"name": "7. Review & Approval Workflow", "description": "Review, approve, or reject pending transactions."},
-    {"name": "8. Ledger (Immutable)", "description": "Core immutable financial ledger records."},
-    {"name": "9. Reporting Service", "description": "Dashboards and detailed financial reports."},
-    {"name": "10. Notifications", "description": "System alerts and external communication."},
-    {"name": "11. Audit Logs", "description": "System-wide immutable audit trail."},
-    {"name": "12. Admin Governance Suite", "description": "Platform-wide administrative controls."},
-    {"name": "13. System Health & Admin", "description": "Service health checks and metrics."}
+    {"name": "2. Workspace Overview", "description": "Treasurer's primary workspace dashboard and statistics."},
+    {"name": "3. Members Management", "description": "Manage community members and directories."},
+    {"name": "4. Groups Management", "description": "Manage contribution groups and communities."},
+    {"name": "5. Campaigns Management", "description": "Manage fundraising and contribution campaigns."},
+    {"name": "6. Finance & Subscriptions", "description": "Platform subscription plans and checkouts."},
+    {"name": "7. Transaction Ingestion", "description": "Automated ingestion via external webhooks (e.g., MPesa)."},
+    {"name": "8. Review & Approval Workflow", "description": "Review, approve, or reject pending transactions."},
+    {"name": "9. Ledger (Immutable)", "description": "Core immutable financial ledger records."},
+    {"name": "10. Reporting Service", "description": "Dashboards and detailed financial reports."},
+    {"name": "11. Notifications", "description": "System alerts and external communication."},
+    {"name": "12. Audit Logs", "description": "System-wide immutable audit trail."},
+    {"name": "13. Enterprise Settings", "description": "Global and entity-level configuration settings."},
+    {"name": "14. Admin Governance Suite", "description": "Platform-wide administrative controls."},
+    {"name": "15. System Health & Admin", "description": "Service health checks and metrics."}
 ]
 
 app = FastAPI(
@@ -273,7 +276,7 @@ async def placeholder(request: Request):
 
 
 # 5. Transaction Ingestion
-ingestion = APIRouter(tags=["6. Transaction Ingestion"])
+ingestion = APIRouter(tags=["7. Transaction Ingestion"])
 @ingestion.post("/ingestion/webhook", summary="Webhook (Meta / External)")
 async def ingestion_webhook_schema(payload: TransactionIn): return Response(status_code=200)
 @app.post("/ingestion/webhook", include_in_schema=False)
@@ -317,7 +320,7 @@ async def manual_entry(request: Request, payload: ManualEntryIn, current_user: D
 # Removed ledger endpoints since they are now in native services/finance/ledger_router.py
 
 # 9. Members
-members = APIRouter(tags=["2. Members Management"], dependencies=[Depends(get_verified_user)])
+members = APIRouter(tags=["3. Members Management"], dependencies=[Depends(get_verified_user)])
 @members.get("/members/suggestions", summary="Auto-Suggest Members")
 async def suggest_members(request: Request): return await lambda_adapter(request, members_handler)
 @members.post("/members", summary="Create Member (Optional)")
@@ -333,12 +336,12 @@ async def group_members(request: Request, group_id: str): return await lambda_ad
 # Removed audit placeholders since they are now in native services/audit/router.py
 
 # 13. Notifications
-notifications = APIRouter(prefix="/notifications", tags=["10. Notifications"], dependencies=[Depends(get_verified_user)])
+notifications = APIRouter(prefix="/notifications", tags=["11. Notifications"], dependencies=[Depends(get_verified_user)])
 @notifications.post("/send", summary="Send Confirmation (After Approval)")
 async def send_notification(request: Request, payload: NotificationIn): return await placeholder(request)
 
 # 14. System Health
-health = APIRouter(tags=["13. System Health & Admin"])
+health = APIRouter(tags=["15. System Health & Admin"])
 @health.get("/health", summary="Health Check")
 async def health_check(): return {"status": "healthy"}
 
@@ -347,7 +350,7 @@ async def health_check(): return {"status": "healthy"}
 async def metrics_check(): return {"metrics": "..."}
 
 # 15. Admin Governance Suite
-admin = APIRouter(prefix="/admin/v1", tags=["12. Admin Governance Suite"], dependencies=[Depends(get_admin_user)])
+admin = APIRouter(prefix="/admin/v1", tags=["14. Admin Governance Suite"], dependencies=[Depends(get_admin_user)])
 
 @admin.get("/overview", summary="Platform Overview Statistics", response_model=AdminOverviewOut)
 async def admin_overview():
@@ -463,14 +466,13 @@ app.include_router(notifications)
 app.include_router(health)
 app.include_router(admin)
 
-from services.finance.checkout_router import router as checkout_router
-app.include_router(checkout_router, tags=["5. Finance & Subscriptions"], prefix="/finance", dependencies=[Depends(get_verified_user)])
+app.include_router(checkout_router, tags=["6. Finance & Subscriptions"], prefix="/finance", dependencies=[Depends(get_verified_user)])
 
 from services.workspace.router import router as workspace_router
 app.include_router(workspace_router, dependencies=[Depends(get_verified_user)])
 
 from services.settings.router import router as settings_router
-app.include_router(settings_router, tags=["17. Enterprise Settings"], prefix="", dependencies=[Depends(get_verified_user)])
+app.include_router(settings_router, tags=["13. Enterprise Settings"], prefix="", dependencies=[Depends(get_verified_user)])
 
 # Serve static assets (Logo, Favicons, etc.)
 import os
