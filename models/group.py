@@ -9,7 +9,7 @@ from .base import Base
 
 class Group(Base):
     """
-    Group Model: Represents a community organization or Chamas.
+    Group Model: Represents a community organization or fundraising fund.
     
     This is the primary organizational unit in KapuLetu. 
     A treasurer can manage multiple groups, each with its own members,
@@ -33,6 +33,9 @@ class Group(Base):
     # Boolean flag for quick status checks
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    from sqlalchemy import JSON
+    settings_override = Column(JSON, default=dict)
 
     # Relationships
     owner = relationship("User", back_populates="groups")

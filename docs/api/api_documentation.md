@@ -32,7 +32,7 @@ Base URL: https://api.kapuletu.com/v1
 - POST /auth/settings: update user preferences
 
 3. Groups Management
-- POST /groups: Create Chama/Organization
+- POST /groups: Create Organization/Fund
 - GET /groups: List my groups
 - GET /groups/{group_id}: Details
 - PATCH /groups/{group_id}: Update
@@ -73,7 +73,7 @@ Base URL: https://api.kapuletu.com/v1
 - GET /members?group_id={group_id}&phone={phone}: Contributor history
 
 10. Reporting Service
-- GET /reports/daily: Real-time dashboard stats
+- GET /reports/dashboard: Executive Dashboard Summary (Returns global totals, campaign breakdown, recent activity, and 7-day collections time-series data for frontend charts)
 - GET /reports/campaign/{campaign_id}: Official WhatsApp-formatted report
 - GET /reports/export/excel: CSV/XLSX export for audits
 - GET /reports/export/pdf: PDF document generation
@@ -125,3 +125,25 @@ Base URL: https://api.kapuletu.com/v1
 - amount MUST be > 0.
 - split total MUST equal original amount.
 - NO update or delete allowed on the Ledger.
+
+17. Enterprise Settings Module (Hierarchical)
+17.1 Global User Settings
+- GET /settings/me: Fetch complete user settings blob
+- PUT /settings/me/security/2fa: Toggle 2FA (SMS/App)
+- PUT /settings/me/security/timeout: Set session timeout
+- PUT /settings/me/automation/auto-approve: Enable AI parsing
+- PUT /settings/me/automation/fallback: Set default group routing
+- PUT /settings/me/reports/frequency: Set auto-report frequency (daily/weekly/monthly)
+- PUT /settings/me/reports/branding: Set headers, footers, KapuLetu watermark
+- PUT /settings/me/regional/localization: Set currency, timezone, date format
+- PUT /settings/me/notifications/alerts: Set large transaction alerts
+- PUT /settings/me/billing: Toggle auto-renew, set default payment method
+
+17.2 Group Level Settings (Overrides)
+- GET /groups/{group_id}/settings: Fetch group overrides
+- PUT /groups/{group_id}/settings/reports: Override headers/footers for this group
+- PUT /groups/{group_id}/settings/automation: Override automation rules
+
+17.3 Campaign Level Settings (Overrides)
+- GET /campaigns/{campaign_id}/settings: Fetch campaign overrides
+- PUT /campaigns/{campaign_id}/settings/reports: Set campaign-specific public PIN or header

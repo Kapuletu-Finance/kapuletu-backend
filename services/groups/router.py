@@ -17,7 +17,7 @@ async def create_group(
     db: Session = Depends(get_db), 
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    """Creates a new community organization (Chama) owned by the current treasurer."""
+    """Creates a new community organization or fund owned by the current treasurer."""
     try:
         new_group = group_repo.create_group(
             db=db, 

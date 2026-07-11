@@ -424,6 +424,13 @@ async def global_payments(): return await placeholder(None)
 @admin.post("/finance/payments/override", summary="Manual Subscription Override")
 async def manual_override(): return {"status": "success", "message": "Subscription updated"}
 
+@admin.post("/finance/trigger-reminders", summary="Trigger Subscription Reminders Manually")
+async def trigger_reminders():
+    import subprocess
+    import sys
+    subprocess.Popen([sys.executable, "services/subscriptions/expiry_worker.py"])
+    return {"status": "success", "message": "Expiry worker triggered in background"}
+
 @admin.post("/crm/broadcast", summary="Platform-Wide Broadcast")
 async def system_broadcast(payload: SystemBroadcastIn): return {"status": "sent", "recipient_count": 1250}
 
@@ -431,37 +438,7 @@ async def system_broadcast(payload: SystemBroadcastIn): return {"status": "sent"
 async def search_audit_logs(request: Request): return await placeholder(request)
 
 # --- Section 16: Finance & Subscriptions (Treasurer Facing) ---
-finance = APIRouter(tags=["5. Finance & Subscriptions"], prefix="/finance", dependencies=[Depends(get_verified_user)])
-
-@finance.post("/checkout", response_model=KapuletuCheckoutOut, summary="Initiate Subscription Payment")
-async def initiate_checkout(data: KapuletuCheckoutIn):
-    return {
-        "checkout_id": "CH-SUB-12345",
-        "status": "initiated",
-        "provider_response": {"message": "STK Push Sent / Payment Intent Created"}
-    }
-
-@finance.get("/status/{checkout_id}", summary="Check Payment Fulfillment Status")
-async def get_payment_status(checkout_id: str):
-    return {"status": "success", "confirmed_at": "2024-05-14T10:00:00Z", "plan": "Professional"}
-
-@finance.get("/available-plans", summary="List Subscription Tiers")
-async def list_plans():
-    return [
-        {"id": "basic", "name": "Basic", "price": 0, "limits": {"groups": 1}},
-        {"id": "pro", "name": "Professional", "price": 1000, "limits": {"groups": 10}}
-    ]
-
-@finance.get("/my-subscription", summary="View Active Subscription & Usage")
-async def my_subscription():
-    return {
-        "active_plan": "Professional",
-        "expiry_date": "2024-06-14",
-        "usage": {
-            "groups": "3/10",
-            "campaigns": "5/50"
-        }
-    }
+# Removed placeholder finance endpoints since they are now in native services/finance/checkout_router.py
 
 # --- Include All Routers ---
 app.include_router(auth) # 2
@@ -485,7 +462,15 @@ app.include_router(audit_router) # 12
 app.include_router(notifications)
 app.include_router(health)
 app.include_router(admin)
-app.include_router(finance)
+
+from services.finance.checkout_router import router as checkout_router
+app.include_router(checkout_router, tags=["5. Finance & Subscriptions"], prefix="/finance", dependencies=[Depends(get_verified_user)])
+
+from services.workspace.router import router as workspace_router
+app.include_router(workspace_router, dependencies=[Depends(get_verified_user)])
+
+from services.settings.router import router as settings_router
+app.include_router(settings_router, tags=["17. Enterprise Settings"], prefix="", dependencies=[Depends(get_verified_user)])
 
 # Serve static assets (Logo, Favicons, etc.)
 import os

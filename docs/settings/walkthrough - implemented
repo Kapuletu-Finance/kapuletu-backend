@@ -1,0 +1,109 @@
+# Exhaustive Walkthrough: Enterprise Settings Module
+
+The Enterprise Settings Module has been completely implemented from end-to-end. This is a deeply detailed account of the architecture, the hierarchical engine, the specific data models, and the API endpoints that power the configuration of the KapuLetu ecosystem.
+
+> [!NOTE]
+> This module was explicitly built to prevent "clashing." Instead of forcing the frontend to juggle massive JSON blobs, the entire system is built around strict domain isolation and explicit button-mapped endpoints.
+
+---
+
+## 1. Zero-Clash Database Architecture
+
+To support the massive volume of settings without creating an unmanageable 40+ column SQL table, the database schema was augmented with strictly validated `JSON` columns.
+
+- **`models/users.py`**: Added the `preferences` (JSON) column to hold the Global User settings.
+- **`models/group.py`**: Added the `settings_override` (JSON) column to hold local Group overrides.
+- **`models/campaign.py`**: Added the `settings_override` (JSON) column to hold local Campaign overrides.
+
+### Domain Isolation Execution
+When a user updates their security timeout via `/settings/me/security/timeout`, the backend uses SQLAlchemy's `flag_modified` to extract, mutate, and re-save **only** the `security` dictionary inside the JSON. This mathematically guarantees that updating security will never accidentally overwrite or clash with automation or billing settings.
+
+---
+
+## 2. Exhaustive Data Modeling (Pydantic Engine)
+
+The unstructured JSON columns in the database are rigidly governed by `services/settings/schemas.py`. This ensures no corrupted data ever enters the database. Every parameter requested in the specification is implemented:
+
+### A. SecuritySettings
+- `require_2fa` (bool): Forces Two-Factor Authentication.
+- `two_fa_method` (string): Accepts `SMS`, `AUTHENTICATOR`, `WHATSAPP`.
+- `session_timeout_minutes` (int): Sets the auto-logout threshold for the Auth Middleware.
+- `require_pin_for_export` (bool): Governs whether Excel Ledger downloads require a master PIN.
+- `audit_log_retention_days` (int): Retains forensic trails for 30, 90, or 365 days.
+
+### B. AutomationSettings
+- `auto_approve_enabled` (bool): Bypasses the Review Inbox if NLP confidence is high enough.
+- `confidence_threshold` (float): The exact threshold (e.g., `0.90`) the AI must reach to auto-approve.
+- `default_group_id` (uuid): The fallback routing destination for unmapped contributions.
+- `fallback_action` (string): What the engine does if confidence is low (`REVIEW_INBOX` or `REJECT`).
+
+### C. RegionalSettings
+- `default_currency` (string): `KES`, `USD`, `TZS`.
+- `timezone` (string): e.g., `Africa/Nairobi`.
+- `number_format` (string): `COMMA` (`1,000.00`) vs `DOT` (`1.000,00`).
+- `date_format` (string): `DD/MM/YYYY`, etc.
+- `language` (string): `EN`, `SW`.
+
+### D. NotificationSettings
+- `large_transaction_alert` (bool): Toggles instant asynchronous pings on large deposits.
+- `large_transaction_threshold` (float): The amount (e.g., `50000`) that triggers the alert.
+- `alert_channels` (list): The delivery medium (e.g., `["WHATSAPP", "EMAIL"]`).
+
+### E. ReportingSettings
+- `auto_report_frequency` (string): Enum for `daily`, `weekly`, `monthly`, or `none`. Triggers the background cron workers.
+- `global_header_template` & `global_footer_template` (string): Custom branding injected into PDFs/WhatsApp receipts.
+- `remove_kapuletu_branding` (bool): Strips "Powered by KapuLetu" from generated ledgers.
+- `use_emojis` (bool): Toggles formatting for text-based reports.
+- `public_ledger_pin` (string): The master PIN required for public link sharing.
+
+### F. BillingSettings
+- `auto_renew_subscription` (bool): Toggles automatic billing.
+- `default_payment_method` (string): `MPESA` or `CARD`.
+- `billing_email` (string): Destination for invoices.
+
+---
+
+## 3. The Resolution & Gatekeeper Engine (Service Layer)
+
+The true power of this module lies in `services/settings/settings_service.py`. It provides 3 critical backend mechanics:
+
+> [!IMPORTANT]
+> **Hierarchical Resolution:** 
+> When the `ReportingService` generates a PDF, it calls `resolve_setting("reporting", "global_header_template")`. The engine will check the **Campaign** for a custom header. If missing, it checks the **Group**. If missing, it checks the **Global User** settings. If missing, it falls back to the hardcoded KapuLetu Default.
+
+> [!CAUTION]
+> **Subscription Feature Gating:** 
+> Users cannot hack the API to unlock premium features. When a `PUT` request is made to enable `auto_approve_enabled` or `remove_kapuletu_branding`, the service triggers `_enforce_feature_gate()`. This dynamically queries the `Subscription` table, checks the user's active Plan feature limits, and explicitly blocks the request with a `402 Payment Required` if they are unauthorized.
+
+> [!TIP]
+> **Cross-Module DB Syncing:** 
+> When a user toggles `auto_renew_subscription` in the Settings API, the Service instantly executes a database `UPDATE` on the `subscriptions` table. This ensures the `expiry_worker.py` (which handles downgrades) is perfectly synchronized with the user's settings.
+
+---
+
+## 4. UI-Mapped API Endpoints
+
+To prevent the frontend from having to send massive, clashing JSON payloads, `services/settings/router.py` exposes exactly **14 independent, button-mapped endpoints**.
+
+### Global User Level
+1. `GET /settings/me`: Fetches the entire settings blob for initial UI rendering.
+2. `PUT /settings/me/security/2fa`: Dedicated endpoint for the 2FA toggle.
+3. `PUT /settings/me/security/timeout`: Dedicated endpoint for the timeout slider.
+4. `PUT /settings/me/automation/auto-approve`: Dedicated endpoint for the AI auto-approve toggle *(Gated)*.
+5. `PUT /settings/me/automation/fallback`: Dedicated endpoint for the fallback routing dropdown.
+6. `PUT /settings/me/reports/frequency`: Dedicated endpoint for report scheduling dropdown.
+7. `PUT /settings/me/reports/branding`: Dedicated endpoint for headers/footers *(Gated)*.
+8. `PUT /settings/me/regional/localization`: Dedicated endpoint for currency/timezone dropdowns.
+9. `PUT /settings/me/notifications/alerts`: Dedicated endpoint for large transaction thresholds.
+10. `PUT /settings/me/billing`: Dedicated endpoint for auto-renew toggles (syncs with Subscriptions DB).
+
+### Group Level (Overrides)
+11. `GET /groups/{group_id}/settings`: Fetches local overrides.
+12. `PUT /groups/{group_id}/settings/reports`: Overrides the header/footer just for this Group.
+13. `PUT /groups/{group_id}/settings/automation`: Overrides automation routing just for this Group.
+
+### Campaign Level (Overrides)
+14. `GET /campaigns/{campaign_id}/settings`: Fetches local overrides.
+15. `PUT /campaigns/{campaign_id}/settings/reports`: Sets a specific `public_ledger_pin` strictly for this campaign.
+
+All endpoints are mounted on the root FastAPI instance in `local_server.py` and are officially documented in the Swagger UI under the **"17. Enterprise Settings"** tag.

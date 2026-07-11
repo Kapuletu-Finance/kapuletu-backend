@@ -46,6 +46,9 @@ class User(Base):
     # allow_ai_training: If True, the user's corrections are used to retrain the parsing model.
     allow_ai_training = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    from sqlalchemy import JSON
+    preferences = Column(JSON, default=dict)
 
     # Relationships
     # A user can have multiple active feature subscriptions

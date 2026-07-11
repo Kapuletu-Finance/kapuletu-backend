@@ -3,7 +3,7 @@
 This document provides a deep dive into the business value of KapuLetu, an analysis of monetizable features, and a detailed framework for subscription packages and pricing strategies tailored to the Kenyan market.
 
 ## 1. Business Value Proposition & Analytics
-The core target audience for KapuLetu consists of Treasurers managing Chamas, Church Welfare funds, Alumni associations, and investment groups. 
+The core target audience for KapuLetu consists of Treasurers managing Organizations, Church Welfare funds, Alumni associations, and investment groups. 
 
 **The Core Pain Points:**
 1. **Time Drain:** Reconciling M-PESA messages with member lists takes hours of manual Excel entry.
@@ -21,7 +21,7 @@ To create tiered pricing, we must gate specific parameters and capabilities. Her
 
 ### A. Volume & Capacity Constraints
 *   **Transaction Limits (per month):** How many M-PESA messages the system will parse and ingest.
-*   **Group Limits:** Number of distinct organizations/chamas a single treasurer can manage.
+*   **Group Limits:** Number of distinct organizations/funds a single treasurer can manage.
 *   **Campaign Limits:** Number of active parallel collections (e.g., "January Welfare", "John's Wedding") per group.
 *   **Contributor Limits:** Maximum number of registered members contributing to the group.
 
@@ -50,7 +50,7 @@ To create tiered pricing, we must gate specific parameters and capabilities. Her
 Given the nature of the application, a **Hybrid Model (Subscription + Usage-based Add-ons)** is the most viable and profitable approach.
 
 ### Why not pure Pay-As-You-Go (PAYG)?
-Pure PAYG (e.g., charging KES 5 per transaction parsed) creates friction. Chamas collect small amounts frequently; penalizing them per transaction discourages platform usage. Furthermore, SaaS investors and businesses prefer predictable Monthly Recurring Revenue (MRR).
+Pure PAYG (e.g., charging KES 5 per transaction parsed) creates friction. Fundraising committees collect small amounts frequently; penalizing them per transaction discourages platform usage. Furthermore, SaaS investors and businesses prefer predictable Monthly Recurring Revenue (MRR).
 
 ### Why not pure Subscription?
 Some features have hard variable costs for KapuLetu (e.g., sending outgoing WhatsApp messages/SMS via Twilio or Meta API costs money per message). If a group with 1,000 members decides to send daily SMS reminders on a flat subscription, KapuLetu will lose money.
@@ -66,7 +66,7 @@ Some features have hard variable costs for KapuLetu (e.g., sending outgoing What
 Here is a proposed three-tier pricing model tailored to the Kenyan market.
 
 ### Tier 1: KapuLetu Starter (KES 500 / Month)
-*Target: Small family/friends Chamas, casual collections.*
+*Target: Small family/friends collections, casual collections.*
 *   **Capacity:** 1 Group, Up to 2 Active Campaigns, Max 20 Contributors.
 *   **Transactions:** Up to 50 transactions per month.
 *   **Ingestion:** Single message forwarding only. Manual approval required for all.
@@ -99,7 +99,7 @@ Regardless of the tier, if users want to use KapuLetu to send outgoing mass comm
 
 ## 5. Detailed User Scenarios
 
-### Scenario A: The "Wajukuu" Family Chama
+### Scenario A: The "Wajukuu" Family Fund
 *   **Profile:** 15 cousins saving KES 1,000 monthly for family events.
 *   **Behavior:** Very low transaction volume (15 per month). The treasurer just hates writing things down.
 *   **Plan Fit:** **Starter (KES 500/mo)**. They forward the 15 messages individually over the month, download one PDF at the end of the month, and post it to their WhatsApp group manually.

@@ -28,5 +28,8 @@ class Campaign(Base):
     status = Column(String, default="active")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    from sqlalchemy import JSON
+    settings_override = Column(JSON, default=dict)
 
     group = relationship("Group", back_populates="campaigns")

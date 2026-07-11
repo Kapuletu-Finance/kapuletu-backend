@@ -25,7 +25,9 @@ class Plan(Base):
     max_transactions_per_month = Column(Integer, default=100)
     # Monthly cost in local currency units
     price = Column(Integer, default=0) 
-
+    # JSON containing allowed features e.g. {"excel_exports": true}
+    from sqlalchemy import JSON
+    allowed_features = Column(JSON, default=dict)
 class Subscription(Base):
     """
     Subscription Model: Maps a User to a specific Plan with timing constraints.

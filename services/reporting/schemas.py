@@ -26,3 +26,30 @@ class PublicReportOut(BaseModel):
     target_amount: float
     total_raised: float
     contributors: List[PublicContributorOut]
+
+from datetime import datetime
+
+class CampaignSummary(BaseModel):
+    campaign_id: str
+    title: str
+    target_amount: float
+    total_raised: float
+    progress_percentage: float
+
+class RecentActivity(BaseModel):
+    transaction_id: str
+    sender_name: str
+    amount: float
+    campaign_title: Optional[str]
+    created_at: datetime
+
+class DailyCollection(BaseModel):
+    date: str
+    amount: float
+
+class DashboardOverviewOut(BaseModel):
+    total_collected: float
+    transaction_count: int
+    campaign_breakdown: List[CampaignSummary]
+    recent_activity: List[RecentActivity]
+    daily_collections_7_days: List[DailyCollection]

@@ -15,22 +15,92 @@ from services.audit.service import AuditService
 
 router = APIRouter(prefix="/reports", tags=["9. Reporting Service"])
 
-@router.get("/dashboard", summary="Executive Dashboard Summary")
+from datetime import datetime, timedelta
+from models.campaign import Campaign
+from models.group import Group
+from services.reporting.schemas import DashboardOverviewOut, CampaignSummary, RecentActivity, DailyCollection
+
+@router.get("/dashboard", response_model=DashboardOverviewOut, summary="Executive Dashboard Summary")
 async def dashboard_summary(
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """
-    Returns high-level JSON data for frontend graphs and charts.
+    Returns comprehensive, high-level JSON data for frontend graphs and charts,
+    including global totals, campaign breakdown, recent activity, and a 7-day 
+    time-series chart of collections.
     """
+    owner_id = current_user.get("sub")
     ledger_service = LedgerService(db)
-    ledger = ledger_service.get_global_ledger(owner_id=current_user.get("sub"))
+    ledger = ledger_service.get_global_ledger(owner_id=owner_id)
     
-    total = sum(e.amount for e in ledger.entries if not e.is_tampered)
-    return {
-        "total_collected": total,
-        "transaction_count": len(ledger.entries)
-    }
+    valid_entries = [e for e in ledger.entries if not e.is_tampered]
+    total_collected = sum(e.amount for e in valid_entries)
+    
+    # Map Campaigns
+    campaigns = db.execute(
+        select(Campaign).join(Group).where(Group.owner_id == owner_id)
+    ).scalars().all()
+    campaign_map = {str(c.campaign_id): c for c in campaigns}
+    
+    # Campaign Breakdown
+    breakdown_dict = {}
+    for c in campaigns:
+        breakdown_dict[str(c.campaign_id)] = {
+            "title": c.title,
+            "target": float(c.target_amount) if c.target_amount else 0.0,
+            "raised": 0.0
+        }
+        
+    for e in valid_entries:
+        if e.campaign_id and e.campaign_id in breakdown_dict:
+            breakdown_dict[e.campaign_id]["raised"] += e.amount
+
+    campaign_breakdown = []
+    for cid, data in breakdown_dict.items():
+        progress = (data["raised"] / data["target"] * 100) if data["target"] > 0 else 0.0
+        campaign_breakdown.append(
+            CampaignSummary(
+                campaign_id=cid,
+                title=data["title"],
+                target_amount=data["target"],
+                total_raised=data["raised"],
+                progress_percentage=round(progress, 2)
+            )
+        )
+        
+    # Recent Activity (Top 10)
+    recent_activity = []
+    for e in valid_entries[:10]:
+        c_title = campaign_map[e.campaign_id].title if e.campaign_id and e.campaign_id in campaign_map else None
+        recent_activity.append(
+            RecentActivity(
+                transaction_id=str(e.transaction_id),
+                sender_name=e.sender_name or "Unknown",
+                amount=e.amount,
+                campaign_title=c_title,
+                created_at=e.created_at
+            )
+        )
+        
+    # Daily Collections (Last 7 Days)
+    today = datetime.utcnow().date()
+    daily_totals = { (today - timedelta(days=i)).strftime("%Y-%m-%d"): 0.0 for i in range(6, -1, -1) }
+    
+    for e in valid_entries:
+        dt_str = e.created_at.strftime("%Y-%m-%d")
+        if dt_str in daily_totals:
+            daily_totals[dt_str] += e.amount
+            
+    daily_collections = [DailyCollection(date=k, amount=v) for k, v in daily_totals.items()]
+    
+    return DashboardOverviewOut(
+        total_collected=total_collected,
+        transaction_count=len(valid_entries),
+        campaign_breakdown=campaign_breakdown,
+        recent_activity=recent_activity,
+        daily_collections_7_days=daily_collections
+    )
 
 @router.get("/whatsapp/{campaign_id}", summary="WhatsApp Smart Template")
 async def get_whatsapp_report(

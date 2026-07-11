@@ -1,117 +1,87 @@
-# KapuLetu User Settings Module Specification
+# KapuLetu Enterprise Settings Module: Technical Specification
 
-This document provides a comprehensive technical and functional specification for the User Settings Module. It outlines the deep parameters, customization options, and strict workflows required to give users full autonomy over their experience while maintaining security and data integrity.
+## 1. Executive Summary
+The Settings Module is the configuration backbone of the KapuLetu treasury platform. Moving beyond simple cosmetic toggles, this enterprise-grade engine governs strict financial automation rules, hierarchical overrides (Global User vs Local Campaign), feature-gating based on active subscriptions, and regional compliance rules.
 
-## 1. Overview
-The settings module is divided into six distinct categories:
-1. **Transaction & Workflow Automation**
-2. **Privacy & AI Model Training**
-3. **Profile & Identity**
-4. **Reporting & Notifications**
-5. **Security & Authentication**
-6. **Display & Preferences**
+## 2. Hierarchical Configuration Strategy (Global vs Local)
+Enterprise software requires default configurations with granular override capabilities.
+- **Global User Level (Level 1)**: Defines the treasurer's baseline. Example: *Global WhatsApp Footer = "Managed by KapuLetu"*.
+- **Group Level (Level 2)**: Overrides Global. Example: *Welfare Group Footer = "Welfare Matters"*.
+- **Campaign Level (Level 3)**: Overrides Group. Example: *Funeral Campaign Footer = "Rest in Peace"*.
 
----
+## 3. Subscription & Feature Gating
+Settings are strictly tied to the `Subscription` and `Plan` models. The backend will enforce these gates when a user attempts to fetch or modify settings.
 
-## 2. Settings Categories & Deep Parameters
+| Feature Category | Basic Plan | Pro Plan | Enterprise Plan |
+| :--- | :--- | :--- | :--- |
+| **Automation** | Manual Review Only | Auto-Approve (AI) enabled | Custom AI Training allowed |
+| **Branding/Reports** | Standard KapuLetu Template | Custom Headers/Footers | Full Whitelabel (No Watermark) |
+| **Security** | SMS OTP | SMS + Authenticator App | Custom Session Timeouts |
+| **Export Formats**| PDF Only | PDF + Excel | PDF + Excel + Direct API |
 
-### 2.1 Transaction & Workflow Automation
-Empowers users to automate the parsing and assignment of incoming transactions to minimize manual entry.
+## 4. Deep Audit: Exhaustive Settings Dictionary
 
-* **`default_group_id`** (UUID | Null): The ID of the Chama/Group where transactions without explicit group markers will be routed by default.
-* **`default_campaign_id`** (UUID | Null): The ID of the specific campaign (within the default group) where unallocated funds should be placed.
-* **`auto_approve_transactions`** (Boolean): 
-    * `false` (Default): All parsed transactions go to the "Pending/Review" inbox.
-    * `true`: High-confidence parsed transactions bypass the review inbox and are instantly committed to the ledger.
-* **`auto_approve_confidence_threshold`** (Float, 0.0 - 1.0): If `auto_approve_transactions` is true, this dictates the AI confidence score required to auto-approve. (e.g., `0.95` means 95% certainty).
+### 4.1 Security & Compliance (Domain: `security`)
+* `require_2fa` (Boolean): Enforces 2FA across all logins.
+* `2fa_method` (Enum: `SMS`, `AUTHENTICATOR`, `WHATSAPP`): Delivery method.
+* `session_timeout_minutes` (Int: `15` to `120`): *[Pro/Enterprise]* Auto-logout threshold.
+* `require_pin_for_export` (Boolean): *[Enterprise]* Requires entering a Master PIN before downloading an Excel ledger.
+* `audit_log_retention_days` (Int: `30`, `90`, `365`): Depends on subscription tier.
 
-### 2.2 Privacy & AI Data Usage
-Controls how user data is interacted with by KapuLetu's underlying parsing engines.
+### 4.2 Automation & AI (Domain: `automation`)
+* `auto_approve_enabled` (Boolean): *[Pro/Enterprise]* If true, AI parses directly to the ledger.
+* `confidence_threshold` (Float: `0.80` to `1.0`): The minimum AI certainty required for auto-approval.
+* `default_group_id` (UUID): Fallback routing for transactions without a clear group context.
+* `fallback_action` (Enum: `REVIEW_INBOX`, `REJECT`): What to do if AI confidence is low.
 
-* **`allow_data_for_ai_training`** (Boolean): 
-    * `true` (Default): Anonymized transaction structures can be used to improve the KapuLetu AI parser.
-    * `false`: Opt-out of data collection. Strict data masking applied; data is only used for immediate parsing and then dropped from training pipelines.
+### 4.3 Regional & Localization (Domain: `regional`)
+* `default_currency` (String: `KES`, `USD`, `TZS`).
+* `timezone` (String: e.g., `Africa/Nairobi`).
+* `number_format` (Enum: `COMMA`, `DOT` -> `1,000.00` vs `1.000,00`).
+* `date_format` (Enum: `DD/MM/YYYY`, `MM/DD/YYYY`, `YYYY-MM-DD`).
+* `language` (Enum: `EN`, `SW`).
 
-### 2.3 Profile & Identity
-Manages the user's core identity. 
+### 4.4 Notifications & SLA (Domain: `notifications`)
+* `daily_digest_enabled` (Boolean): Receive a 6:00 PM summary of all transactions.
+* `weekly_report_enabled` (Boolean): Receive an end-of-week PDF to email.
+* `large_transaction_alert` (Boolean): Instant ping for massive contributions.
+* `large_transaction_threshold` (Float): E.g., `50000` KES.
+* `alert_channels` (List: `["WHATSAPP", "EMAIL", "SMS"]`).
 
-* **`first_name`** (String): User's given name.
-* **`last_name`** (String): User's family name.
-* **`email_address`** (String): User's email address. Requires an email verification loop if changed.
-* **`phone_number`** (String): Core identifier and primary authentication mechanism.
-    > [!WARNING]
-    > **Strict Phone Number Change Workflow:**
-    > Changing a phone number cannot be done directly via a simple PATCH request. It requires a multi-step verification process to prevent account takeover and ledger corruption.
-    > 1. **Initiation**: User requests to change phone number to `New_Number`.
-    > 2. **Uniqueness Check**: System verifies `New_Number` is not attached to any other active account.
-    > 3. **Primary Verification**: OTP is sent to the **OLD** phone number to authorize the change request.
-    > 4. **Secondary Verification**: OTP is sent to the **NEW** phone number to verify possession.
-    > 5. **Execution**: Only upon double-validation is the phone number updated in the database and Identity Provider (Cognito/Firebase).
-
-### 2.4 Reporting & Notifications
-Allows users to configure how and when they receive financial summaries.
-
-* **`auto_receive_reports`** (Boolean): Enable or disable automated reporting.
-* **`report_frequency`** (Enum): Options: `DAILY`, `WEEKLY`, `MONTHLY`, `POST_MEETING`.
-* **`report_delivery_channels`** (Array of Enums): Where to send the reports. Options: `WHATSAPP`, `EMAIL`, `IN_APP`.
-* **`include_zero_activity_reports`** (Boolean): If true, sends a report even if no contributions occurred during the period.
-* **`report_format`** (Enum): Options: `PDF_SUMMARY`, `EXCEL_DETAILED`, `TEXT_SUMMARY` (Optimized for WhatsApp).
-
-### 2.5 Security & Authentication
-Secures the treasurer's account.
-
-* **`two_step_verification_enabled`** (Boolean): Enable/Disable 2FA.
-* **`two_step_method`** (Enum): 
-    * `SMS_OTP`: Sends a code via SMS on every login from a new device.
-    * `AUTHENTICATOR_APP`: Time-based One-Time Password (TOTP) via Google/Microsoft Authenticator.
-    * `WHATSAPP_OTP`: Sends login codes via WhatsApp.
-* **`session_timeout_minutes`** (Integer): Auto-logout after inactivity (e.g., 15, 30, 60 minutes).
-
-### 2.6 Display & Preferences
-UI/UX customizations.
-
-* **`theme_mode`** (Enum): `LIGHT`, `DARK`, `SYSTEM_DEFAULT`.
-* **`currency_display_format`** (Enum): E.g., `1,234.56` vs `1 234,56`.
-* **`language`** (Enum): `en-US`, `sw-KE` (Swahili), etc.
+### 4.5 Reporting & Branding (Domain: `reporting`)
+* `global_header_template` (String): *[Pro/Enterprise]* Used if campaign lacks one.
+* `global_footer_template` (String): *[Pro/Enterprise]* Used if campaign lacks one.
+* `remove_kapuletu_branding` (Boolean): *[Enterprise Only]* Strips "Powered by KapuLetu" from PDFs and WhatsApp texts.
+* `use_emojis` (Boolean): Global default for reports.
+* `public_ledger_pin` (String): Master PIN used for public sharing if no campaign PIN exists.
 
 ---
 
-## 3. Proposed Database JSON Schema (Settings Object)
+## 5. Architectural Decision: The `report_settings` Migration
+**Audit Analysis of `models/report_settings.py`:**
+Should `CampaignReportSettings` be deleted and migrated entirely into the User Settings JSON?
 
-To allow for flexible growth without altering database schemas continuously, it is highly recommended to store the non-relational settings in a `JSONB` column named `preferences` on the `users` table, while keeping critical items (like phone number and 2FA status) as primary relational columns.
+**Decision: NO. It must remain a relational table, but architecture will change to an Inheritance Model.**
+*Why?* A treasurer with 10 different campaigns needs different settings (different payment instructions, different PINs for different public groups). Migrating them to a single User blob would destroy multi-tenant capabilities.
+*How it will work:* 
+When generating a report, the `TemplateEngine` will fetch `CampaignReportSettings`. If a field (like `header_template`) is null, it will query the `UserSettings` (Global blob). If the Global blob lacks it, it falls back to the hardcoded `KapuLetu Standard Default`.
+
+## 6. Database Schema Architecture
+To support the sheer volume of these settings without creating 40 columns in PostgreSQL, we will implement a strictly typed JSONB field on the `User` model, governed by Pydantic validators.
 
 ```json
+// The user.preferences JSONB column
 {
-  "automation": {
-    "default_group_id": "uuid-string-here",
-    "default_campaign_id": "uuid-string-here",
-    "auto_approve": false,
-    "confidence_threshold": 0.90
-  },
-  "privacy": {
-    "allow_ai_training": true
-  },
-  "reporting": {
-    "auto_receive": true,
-    "frequency": "WEEKLY",
-    "channels": ["WHATSAPP", "EMAIL"],
-    "format": "TEXT_SUMMARY"
-  },
-  "display": {
-    "theme": "DARK",
-    "language": "en-US"
-  }
+  "security": { "require_2fa": true, "session_timeout_minutes": 60 },
+  "automation": { "auto_approve_enabled": false },
+  "regional": { "currency": "KES", "timezone": "Africa/Nairobi" },
+  "notifications": { "daily_digest": true, "large_tx_threshold": 50000 },
+  "reporting": { "remove_branding": false }
 }
 ```
 
-## 4. API Endpoints Required
-
-To support this module, the following endpoints should be implemented in `services/auth/router.py` or a dedicated `services/settings/router.py`:
-
-* `GET /settings` - Fetch all user preferences.
-* `PATCH /settings` - Update standard preferences (theme, reports, automation).
-* `POST /settings/phone/initiate` - Step 1 of strict phone change (generates OTP to old phone).
-* `POST /settings/phone/verify-old` - Step 2 (validates OTP from old phone, triggers OTP to new phone).
-* `POST /settings/phone/confirm-new` - Step 3 (validates OTP from new phone, executes change).
-* `POST /settings/security/2fa/enable` - Setup TOTP or SMS 2FA.
-* `POST /settings/security/2fa/disable` - Requires current password/OTP to disable.
+## 7. Service Layer Integration
+A new `SettingsService` will act as the gatekeeper. 
+1. It parses the JSONB blob.
+2. It queries `SubscriptionService` to check the user's active plan.
+3. If a Basic user tries to set `remove_branding: true`, the service intercepts it, throws a `HTTP 402 Payment Required`, and drops the operation.
