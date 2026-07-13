@@ -56,22 +56,20 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: 
     }
     return user_data
 
-def get_optional_user(token: str = Depends(OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)), db: Session = Depends(get_db)) -> Optional[Dict[str, Any]]:
+def get_optional_user(request: Request, token: str = Depends(OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)), db: Session = Depends(get_db)) -> Optional[Dict[str, Any]]:
     """
     For endpoints where authentication is optional.
     """
-    if not token:
-        return None
     try:
-        return get_current_user(token, db)
+        return get_current_user(request, token, db)
     except HTTPException:
         return None
 
-def get_verified_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> Dict[str, Any]:
+def get_verified_user(request: Request, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     For endpoints where the user MUST be verified.
     """
-    user_data = get_current_user(token, db)
+    user_data = get_current_user(request, token, db)
     if user_data.get('phone_number_verified') != 'true' and user_data.get('email_verified') != 'true':
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

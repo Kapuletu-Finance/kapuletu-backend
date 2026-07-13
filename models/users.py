@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import UUID, Boolean, Column, DateTime, String
+from sqlalchemy import UUID, Boolean, Column, DateTime, String, JSON
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -47,7 +47,6 @@ class User(Base):
     allow_ai_training = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     
-    from sqlalchemy import JSON
     preferences = Column(JSON, default=dict)
 
     # Relationships
