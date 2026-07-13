@@ -8,10 +8,13 @@ from .parser_knowledge import ParserKnowledge
 from .pending_transaction import PendingTransaction
 from .review_action import ReviewAction
 from .review_allocation import ReviewAllocation
-from .subscription import Plan, Subscription, UsageTracking
+from .subscription import Plan, Subscription, UsageTracking, SubscriptionPayment
 from .group import Group
 from .transaction import Transaction
 from .users import User
 from .system_config import SystemConfig
 from .otp import OTP
 from .report_settings import CampaignReportSettings
+from .audit_log import AuditLog
+from .ai_feedback import AIFeedback
+from .support_ticket import SupportTicket
