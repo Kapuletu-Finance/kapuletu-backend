@@ -77,8 +77,9 @@ jobs:
       # -----------------------------
       - name: Run Alembic Migrations
         run: |
-          # Wait a few seconds for the Lambda function update to settle
-          sleep 10
+          # Wait for the Lambda function update to fully complete
+          echo "Waiting for Lambda to finish updating..."
+          aws lambda wait function-updated --function-name kapuletu-${{ env.STAGE }}-backend
           
           # Invoke the Lambda function to trigger the migration script
           aws lambda invoke \
