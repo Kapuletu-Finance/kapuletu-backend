@@ -2,6 +2,13 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
 
+class ReviewAllocationOut(BaseModel):
+    member_name: str
+    allocated_amount: float
+    
+    class Config:
+        from_attributes = True
+
 class LedgerEntryOut(BaseModel):
     transaction_id: str
     owner_id: str
@@ -19,6 +26,8 @@ class LedgerEntryOut(BaseModel):
     
     # Immutability Check
     is_tampered: bool = Field(..., description="If true, the record has been modified after approval and its cryptographic seal is broken.")
+    
+    allocations: List[ReviewAllocationOut] = []
     
     class Config:
         from_attributes = True

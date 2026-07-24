@@ -14,7 +14,7 @@ KapuLetu is designed as an intelligent assistant for treasurers. It captures tra
 AWS Lambda is a serverless compute service that runs code in response to events. Instead of running a server continuously, Lambda functions execute only when triggered (e.g., by a webhook). This reduces cost and simplifies scaling.
 6. Event Flow
 1. A user sends a payment confirmation via WhatsApp/SMS.
-2. Twilio forwards the message to an API endpoint.
+2. WhatsApp forwards the message to KapuLetu.
 3. AWS API Gateway triggers a Lambda function.
 4. The ingestion service parses and stores the transaction.
 5. The treasurer reviews and approves the transaction.

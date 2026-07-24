@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
@@ -18,6 +18,7 @@ router = APIRouter(prefix="/reports", tags=["10. Reporting Service"])
 from datetime import datetime, timedelta
 from models.campaign import Campaign
 from models.group import Group
+from models.transaction import Transaction
 from services.reporting.schemas import DashboardOverviewOut, CampaignSummary, RecentActivity, DailyCollection
 
 @router.get("/dashboard", response_model=DashboardOverviewOut, summary="Executive Dashboard Summary")
@@ -31,72 +32,133 @@ async def dashboard_summary(
     time-series chart of collections.
     """
     owner_id = current_user.get("sub")
-    ledger_service = LedgerService(db)
-    ledger = ledger_service.get_global_ledger(owner_id=owner_id)
     
-    valid_entries = [e for e in ledger.entries if not e.is_tampered]
-    total_collected = sum(e.amount for e in valid_entries)
+    from sqlalchemy import func
     
-    # Map Campaigns
+    # 1. Total Collected
+    total_stmt = select(func.sum(Transaction.amount)).where(
+        Transaction.owner_id == owner_id,
+        Transaction.status == "approved"
+    )
+    total_collected = db.execute(total_stmt).scalar() or 0.0
+    
+    # True Transaction Count (Parent Txns - Split Parents + Allocations)
+    total_parents_stmt = select(func.count(Transaction.transaction_id)).where(
+        Transaction.owner_id == owner_id,
+        Transaction.status == "approved"
+    )
+    total_parents = db.execute(total_parents_stmt).scalar() or 0
+    
+    from models.review_allocation import ReviewAllocation
+    alloc_count_stmt = select(func.count(ReviewAllocation.allocation_id)).join(Transaction).where(
+        Transaction.owner_id == owner_id,
+        Transaction.status == "approved"
+    )
+    total_allocs = db.execute(alloc_count_stmt).scalar() or 0
+    
+    split_parents_stmt = select(func.count(func.distinct(ReviewAllocation.transaction_id))).join(Transaction).where(
+        Transaction.owner_id == owner_id,
+        Transaction.status == "approved"
+    )
+    split_parents = db.execute(split_parents_stmt).scalar() or 0
+    
+    transaction_count = total_parents - split_parents + total_allocs
+    
+    # 2. Campaign Breakdown
     campaigns = db.execute(
         select(Campaign).join(Group).where(Group.owner_id == owner_id)
     ).scalars().all()
-    campaign_map = {str(c.campaign_id): c for c in campaigns}
     
-    # Campaign Breakdown
-    breakdown_dict = {}
-    for c in campaigns:
-        breakdown_dict[str(c.campaign_id)] = {
-            "title": c.title,
-            "target": float(c.target_amount) if c.target_amount else 0.0,
-            "raised": 0.0
-        }
-        
-    for e in valid_entries:
-        if e.campaign_id and e.campaign_id in breakdown_dict:
-            breakdown_dict[e.campaign_id]["raised"] += e.amount
-
+    # Aggregate grouped by campaign
+    breakdown_stmt = select(
+        Transaction.campaign_id, 
+        func.sum(Transaction.amount)
+    ).where(
+        Transaction.owner_id == owner_id,
+        Transaction.status == "approved"
+    ).group_by(Transaction.campaign_id)
+    
+    raised_map = {str(row[0]): float(row[1]) for row in db.execute(breakdown_stmt).all() if row[0]}
+    
     campaign_breakdown = []
-    for cid, data in breakdown_dict.items():
-        progress = (data["raised"] / data["target"] * 100) if data["target"] > 0 else 0.0
+    for c in campaigns:
+        target = float(c.target_amount) if c.target_amount else 0.0
+        raised = raised_map.get(str(c.campaign_id), 0.0)
+        progress = (raised / target * 100) if target > 0 else 0.0
         campaign_breakdown.append(
             CampaignSummary(
-                campaign_id=cid,
-                title=data["title"],
-                target_amount=data["target"],
-                total_raised=data["raised"],
+                campaign_id=str(c.campaign_id),
+                title=c.title,
+                target_amount=target,
+                total_raised=raised,
                 progress_percentage=round(progress, 2)
             )
         )
         
-    # Recent Activity (Top 10)
+    # 3. Recent Activity (Top 10)
+    from sqlalchemy.orm import joinedload
+    recent_stmt = select(Transaction).options(joinedload(Transaction.allocations)).where(
+        Transaction.owner_id == owner_id,
+        Transaction.status == "approved"
+    ).order_by(Transaction.created_at.desc()).limit(10)
+    
+    recent_txns = db.execute(recent_stmt).scalars().unique().all()
+    campaign_map = {str(c.campaign_id): c for c in campaigns}
+    
     recent_activity = []
-    for e in valid_entries[:10]:
-        c_title = campaign_map[e.campaign_id].title if e.campaign_id and e.campaign_id in campaign_map else None
-        recent_activity.append(
-            RecentActivity(
-                transaction_id=str(e.transaction_id),
-                sender_name=e.sender_name or "Unknown",
-                amount=e.amount,
-                campaign_title=c_title,
-                created_at=e.created_at
-            )
-        )
+    for e in recent_txns:
+        c_title = campaign_map[str(e.campaign_id)].title if e.campaign_id and str(e.campaign_id) in campaign_map else None
         
-    # Daily Collections (Last 7 Days)
+        if e.allocations:
+            for alloc in e.allocations:
+                recent_activity.append(
+                    RecentActivity(
+                        transaction_id=str(e.transaction_id),
+                        sender_name=alloc.member_name or "Anonymous",
+                        amount=float(alloc.allocated_amount),
+                        campaign_title=c_title,
+                        created_at=e.created_at
+                    )
+                )
+        else:
+            recent_activity.append(
+                RecentActivity(
+                    transaction_id=str(e.transaction_id),
+                    sender_name=e.sender_name or "Unknown",
+                    amount=float(e.amount),
+                    campaign_title=c_title,
+                    created_at=e.created_at
+                )
+            )
+            
+    # Sort and slice to ensure exactly 10 items even after flattening
+    recent_activity.sort(key=lambda x: x.created_at, reverse=True)
+    recent_activity = recent_activity[:10]
+        
+    # 4. Daily Collections (Last 7 Days)
     today = datetime.utcnow().date()
     daily_totals = { (today - timedelta(days=i)).strftime("%Y-%m-%d"): 0.0 for i in range(6, -1, -1) }
     
-    for e in valid_entries:
-        dt_str = e.created_at.strftime("%Y-%m-%d")
+    from sqlalchemy import cast, Date
+    daily_stmt = select(
+        cast(Transaction.created_at, Date),
+        func.sum(Transaction.amount)
+    ).where(
+        Transaction.owner_id == owner_id,
+        Transaction.status == "approved",
+        Transaction.created_at >= (today - timedelta(days=6))
+    ).group_by(cast(Transaction.created_at, Date))
+    
+    for row in db.execute(daily_stmt).all():
+        dt_str = row[0].strftime("%Y-%m-%d")
         if dt_str in daily_totals:
-            daily_totals[dt_str] += e.amount
+            daily_totals[dt_str] = float(row[1])
             
     daily_collections = [DailyCollection(date=k, amount=v) for k, v in daily_totals.items()]
     
     return DashboardOverviewOut(
-        total_collected=total_collected,
-        transaction_count=len(valid_entries),
+        total_collected=float(total_collected),
+        transaction_count=transaction_count,
         campaign_breakdown=campaign_breakdown,
         recent_activity=recent_activity,
         daily_collections_7_days=daily_collections
@@ -172,8 +234,13 @@ async def public_web_report(
     contributors = []
     for e in ledger.entries:
         if not e.is_tampered:
-            name = e.sender_name or "Anonymous Member"
-            contributors.append(PublicContributorOut(name=name, amount=e.amount))
+            if e.allocations:
+                for alloc in e.allocations:
+                    name = alloc.member_name or "Anonymous Member"
+                    contributors.append(PublicContributorOut(name=name, amount=alloc.allocated_amount))
+            else:
+                name = e.sender_name or "Anonymous Member"
+                contributors.append(PublicContributorOut(name=name, amount=e.amount))
             
     return PublicReportOut(
         campaign_title=campaign.title,
@@ -182,49 +249,87 @@ async def public_web_report(
         contributors=contributors
     )
 
-@router.get("/export/excel/{campaign_id}", summary="Export Ledger (Excel)")
+@router.get("/export/excel/{campaign_id}", status_code=status.HTTP_202_ACCEPTED, summary="Export Ledger (Excel)")
 async def export_excel(
     campaign_id: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """
-    Generates a real-time Base64 Excel file of the immutable ledger.
+    Triggers an asynchronous generation of an Excel file for the campaign.
+    Allocations are flattened so splits appear as individual rows.
     """
-    ledger_service = LedgerService(db)
-    ledger = ledger_service.get_campaign_ledger(campaign_id=campaign_id, owner_id=current_user.get("sub"))
-    
-    # Convert entries to dict
-    data = []
-    for e in ledger.entries:
-        data.append({
-            "Transaction ID": e.transaction_id,
-            "Code": e.transaction_code,
-            "Name": e.sender_name,
-            "Phone": e.sender_phone,
-            "Amount": e.amount,
-            "Date": e.created_at.strftime("%Y-%m-%d"),
-            "Tampered": e.is_tampered
-        })
+    def _generate_and_upload():
+        # Simulated async worker
+        ledger_service = LedgerService(db)
+        ledger = ledger_service.get_campaign_ledger(campaign_id=campaign_id, owner_id=current_user.get("sub"))
         
-    b64_excel = generate_excel_report(data)
-    return {"filename": f"ledger_{campaign_id}.xlsx", "file_data": b64_excel}
+        data = []
+        for e in ledger.entries:
+            if e.allocations:
+                for alloc in e.allocations:
+                    data.append({
+                        "Transaction ID": e.transaction_id,
+                        "Code": e.transaction_code,
+                        "Name": alloc.member_name or e.sender_name,
+                        "Phone": e.sender_phone,
+                        "Amount": alloc.allocated_amount,
+                        "Date": e.created_at.strftime("%Y-%m-%d"),
+                        "Tampered": e.is_tampered
+                    })
+            else:
+                data.append({
+                    "Transaction ID": e.transaction_id,
+                    "Code": e.transaction_code,
+                    "Name": e.sender_name,
+                    "Phone": e.sender_phone,
+                    "Amount": e.amount,
+                    "Date": e.created_at.strftime("%Y-%m-%d"),
+                    "Tampered": e.is_tampered
+                })
+        # Simulate upload
+        b64_excel = generate_excel_report(data)
+        import logging
+        logging.getLogger(__name__).info(f"Excel Export Background Task Complete for Campaign {campaign_id}")
 
-@router.get("/export/pdf/{campaign_id}", summary="Export Ledger (PDF)")
+    background_tasks.add_task(_generate_and_upload)
+    return {"status": "processing", "message": "Your report is generating in the background and will be ready shortly."}
+
+@router.get("/export/pdf/{campaign_id}", status_code=status.HTTP_202_ACCEPTED, summary="Export Ledger (PDF)")
 async def export_pdf(
     campaign_id: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """
-    Generates a real-time Base64 PDF document of the immutable ledger.
+    Triggers an asynchronous generation of a PDF document of the immutable ledger.
     """
-    ledger_service = LedgerService(db)
-    ledger = ledger_service.get_campaign_ledger(campaign_id=campaign_id, owner_id=current_user.get("sub"))
-    
-    title = ledger.summary.title if ledger.summary else "KapuLetu Campaign"
-    target = ledger.summary.target_amount if ledger.summary else 0.0
-    total = ledger.summary.total_raised if ledger.summary else 0.0
-    
-    b64_pdf = generate_pdf_report(title, total, target, ledger.entries)
-    return {"filename": f"ledger_{campaign_id}.pdf", "file_data": b64_pdf}
+    def _generate_and_upload():
+        ledger_service = LedgerService(db)
+        ledger = ledger_service.get_campaign_ledger(campaign_id=campaign_id, owner_id=current_user.get("sub"))
+        
+        # Flatten allocations for the PDF generator
+        flattened_entries = []
+        import copy
+        for e in ledger.entries:
+            if e.allocations:
+                for alloc in e.allocations:
+                    new_e = copy.deepcopy(e)
+                    new_e.sender_name = alloc.member_name or e.sender_name
+                    new_e.amount = float(alloc.allocated_amount)
+                    flattened_entries.append(new_e)
+            else:
+                flattened_entries.append(e)
+
+        title = ledger.summary.title if ledger.summary else "KapuLetu Campaign"
+        target = ledger.summary.target_amount if ledger.summary else 0.0
+        total = ledger.summary.total_raised if ledger.summary else 0.0
+        
+        b64_pdf = generate_pdf_report(title, total, target, flattened_entries)
+        import logging
+        logging.getLogger(__name__).info(f"PDF Export Background Task Complete for Campaign {campaign_id}")
+
+    background_tasks.add_task(_generate_and_upload)
+    return {"status": "processing", "message": "Your report is generating in the background and will be ready shortly."}

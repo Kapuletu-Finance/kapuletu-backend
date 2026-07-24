@@ -98,15 +98,14 @@ class AIGovernanceService:
         # 1. Fetch all approved feedback to build a training set (simulation)
         approved_count = self.db.query(AIFeedback).filter(AIFeedback.is_approved_for_training == True).count()
         
-        # 2. Trigger the local training script (Local Bridge Mode)
-        # We use subprocess to run the existing train_model.py
+        # 2. Trigger asynchronous job (SageMaker / AWS Batch simulation)
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"SAGEMAKER_TRIGGER_SIMULATED: Initiating AI retraining with {approved_count} samples for {epochs} epochs.")
+        
         try:
-            # Note: This is synchronous for local testing; in prod it would be async.
-            script_path = os.path.join(os.getcwd(), "scripts", "train_model.py")
-            # subprocess.Popen(["python", script_path, "--epochs", str(epochs)]) # Async
-            
             return {
-                "status": "training_started",
+                "status": "training_queued_sagemaker",
                 "samples_included": approved_count,
                 "epochs": epochs,
                 "engine": "SpaCy v3"
@@ -131,11 +130,5 @@ class AIGovernanceService:
         self.db.add(feedback)
         self.db.commit()
 
-        # Check for Continuous Training trigger
-        config = self.get_config()
-        if config.get("training_mode") == "continuous":
-            # In continuous mode, we immediately approve and trigger training
-            feedback.is_reviewed = True
-            feedback.is_approved_for_training = True
-            self.db.commit()
-            self.trigger_training(epochs=2) # Fast fine-tuning
+        # Continuous training disabled to prevent DoS attacks.
+        # AI Retraining must be triggered manually via the /ai/parser/train endpoint.

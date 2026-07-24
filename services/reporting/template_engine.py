@@ -1,6 +1,6 @@
 from datetime import datetime
 import random
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import select
 
 from models.campaign import Campaign
@@ -43,11 +43,11 @@ class TemplateEngine:
         settings = self.get_or_create_settings(campaign_id)
         
         txns = self.db.execute(
-            select(Transaction).where(
+            select(Transaction).options(joinedload(Transaction.allocations)).where(
                 Transaction.campaign_id == campaign_id,
                 Transaction.status == "approved"
             ).order_by(Transaction.created_at.asc())
-        ).scalars().all()
+        ).scalars().unique().all()
 
         # 2. Calculate Variables
         total_collected = sum(float(t.amount) for t in txns)
@@ -125,10 +125,12 @@ class TemplateEngine:
         report += "\n" + footer + "\n\n"
 
         # 6. Append Public Web Link CTA
+        import os
+        frontend_url = os.environ.get("FRONTEND_URL", "https://app.kapuletu.co.ke")
         report += (
             f"====================================\n"
-            f"🌍 View organized live report online:\n"
-            f"https://app.kapuletu.co.ke/report/{campaign_id}\n"
+            f" View organized live report online:\n"
+            f"{frontend_url}/report/{campaign_id}\n"
             f"Access Code: {settings.public_access_pin}\n"
             f"===================================="
         )

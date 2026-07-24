@@ -2,6 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import Dict, Any
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 from common.database import get_db
 from services.auth.schemas import (
@@ -20,7 +24,8 @@ router = APIRouter(prefix="/auth", tags=["1. Authentication"])
 # ==========================================
 
 @router.post("/register", response_model=RegisterOut, summary="Register Treasurer")
-async def register(payload: RegisterIn, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+async def register(request: Request, payload: RegisterIn, db: Session = Depends(get_db)):
     user_id = auth_service.register(
         db=db,
         email=payload.email,
@@ -32,19 +37,22 @@ async def register(payload: RegisterIn, db: Session = Depends(get_db)):
     return RegisterOut(message="User registered. Please check email/WhatsApp for verification code.", user_id=user_id)
 
 @router.post("/verify", response_model=MessageOut, summary="Verify Phone (Complete Registration) - Public")
-async def verify(payload: VerifyIn, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+async def verify(request: Request, payload: VerifyIn, db: Session = Depends(get_db)):
     auth_service.verify_account(db=db, username=payload.identifier, code=payload.code)
     return MessageOut(message="Account successfully verified. You can now log in.")
 
 @router.post("/resend-code", response_model=MessageOut, summary="Resend Registration Code - Public")
-async def resend_code(payload: ResendCodeIn, db: Session = Depends(get_db)):
+@limiter.limit("3/minute")
+async def resend_code(request: Request, payload: ResendCodeIn, db: Session = Depends(get_db)):
     details = auth_service.resend_confirmation_code(db=db, username=payload.identifier)
     medium = details.get('DeliveryMedium', 'your contact method')
     destination = details.get('Destination', '')
     return MessageOut(message=f"Verification code resent successfully to {medium} ({destination}).")
 
 @router.post("/login", response_model=TokenOut, summary="Login (JSON payload)")
-async def login(payload: LoginIn, response: Response, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, payload: LoginIn, response: Response, db: Session = Depends(get_db)):
     """Standard JSON login endpoint. Sets HTTP-Only cookies for frontend."""
     auth_result = auth_service.login(db=db, username=payload.identifier, password=payload.password)
     
@@ -115,7 +123,8 @@ async def refresh(request: Request, response: Response, payload: RefreshIn = Non
     )
 
 @router.post("/forgot-password", response_model=MessageOut, summary="Request Password Reset")
-async def forgot_password(payload: ForgotPasswordIn, db: Session = Depends(get_db)):
+@limiter.limit("3/minute")
+async def forgot_password(request: Request, payload: ForgotPasswordIn, db: Session = Depends(get_db)):
     auth_service.forgot_password(db=db, username=payload.identifier)
     return MessageOut(message="Password reset code sent to your email/phone.")
 
@@ -131,7 +140,7 @@ async def reset_password(payload: ResetPasswordIn, db: Session = Depends(get_db)
 @router.post("/logout", response_model=MessageOut, summary="Logout")
 async def logout(response: Response, current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
     """Logs out by clearing the HTTP-Only cookies."""
-    auth_service.logout(db=db, access_token=current_user['access_token'])
+    auth_service.logout(db=db, access_token=current_user['access_token'], user_id=current_user['sub'])
     response.delete_cookie("kapuletu_access_token")
     response.delete_cookie("kapuletu_refresh_token")
     return MessageOut(message="Logged out successfully.")

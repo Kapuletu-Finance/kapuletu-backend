@@ -16,5 +16,6 @@ from .system_config import SystemConfig
 from .otp import OTP
 from .report_settings import CampaignReportSettings
 from .audit_log import AuditLog
-from .ai_feedback import AIFeedback
+from .ai_feedback import AIFeedback, ActiveLearningSample
 from .support_ticket import SupportTicket
+from .token_blacklist import TokenBlacklist

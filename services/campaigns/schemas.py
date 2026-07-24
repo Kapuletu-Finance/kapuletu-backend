@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 from uuid import UUID
@@ -30,5 +30,17 @@ class CampaignOut(BaseModel):
     status: CampaignStatusEnum = Field(..., json_schema_extra={"example": "active"})
     is_active: bool = Field(..., json_schema_extra={"example": True})
     created_at: datetime
+    
+    # New Operational Metrics
+    total_raised: float = Field(0.0, json_schema_extra={"example": 25000.0})
+    progress_percentage: float = Field(0.0, json_schema_extra={"example": 50.0})
+    contributor_count: int = Field(0, json_schema_extra={"example": 12})
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+class PaginatedCampaignResponse(BaseModel):
+    items: List[CampaignOut]
+    total_items: int = Field(..., json_schema_extra={"example": 120})
+    total_pages: int = Field(..., json_schema_extra={"example": 12})
+    page: int = Field(..., json_schema_extra={"example": 1})
+    limit: int = Field(..., json_schema_extra={"example": 10})

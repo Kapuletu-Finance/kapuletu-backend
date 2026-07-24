@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 from uuid import UUID
@@ -34,5 +34,17 @@ class GroupOut(BaseModel):
     status: GroupStatusEnum = Field(..., json_schema_extra={"example": "active"})
     is_active: bool = Field(..., json_schema_extra={"example": True})
     created_at: datetime
+    
+    # New Operational Metrics
+    total_campaigns_count: int = Field(0, json_schema_extra={"example": 5})
+    active_campaigns_count: int = Field(0, json_schema_extra={"example": 2})
+    total_funds_raised: float = Field(0.0, json_schema_extra={"example": 150000.0})
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+class PaginatedGroupResponse(BaseModel):
+    items: List[GroupOut]
+    total_items: int = Field(..., json_schema_extra={"example": 45})
+    total_pages: int = Field(..., json_schema_extra={"example": 5})
+    page: int = Field(..., json_schema_extra={"example": 1})
+    limit: int = Field(..., json_schema_extra={"example": 10})

@@ -16,6 +16,8 @@ class TransactionSplit(BaseModel):
     campaign_id: Optional[str] = None
     group_id: Optional[str] = None
 
+
+
 class ManualEntryIn(BaseModel):
     amount: float = Field(..., json_schema_extra={"example": 1500.0})
     sender_name: str = Field(..., json_schema_extra={"example": "Joseph Njoroge"})
@@ -55,6 +57,13 @@ class PendingTransactionOut(BaseModel):
     
     class Config:
         from_attributes = True
+
+class PaginatedPendingResponse(BaseModel):
+    items: List[PendingTransactionOut]
+    total_items: int
+    total_pages: int
+    page: int
+    limit: int
 
 class TransactionOut(BaseModel):
     transaction_id: UUID

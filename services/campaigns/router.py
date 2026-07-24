@@ -1,11 +1,12 @@
 from typing import List, Dict, Any
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 
 from common.database import get_db
 from common.auth_dependencies import get_verified_user
-from services.campaigns.schemas import CampaignCreate, CampaignUpdate, CampaignOut
+from services.campaigns.schemas import CampaignCreate, CampaignUpdate, CampaignOut, PaginatedCampaignResponse
+from services.auth.router import limiter
 from repositories import campaign_repo, group_repo
 
 router = APIRouter(prefix="", tags=["5. Campaigns Management"])
@@ -21,7 +22,9 @@ def _verify_group_ownership(db: Session, group_id: str, owner_id: str):
 
 
 @router.post("/groups/{group_id}/campaigns", response_model=CampaignOut, status_code=status.HTTP_201_CREATED, summary="Create Campaign")
+@limiter.limit("50/minute")
 async def create_campaign(
+    request: Request,
     group_id: UUID,
     payload: CampaignCreate,
     db: Session = Depends(get_db),
@@ -40,18 +43,22 @@ async def create_campaign(
     )
     return new_campaign
 
-@router.get("/groups/{group_id}/campaigns", response_model=List[CampaignOut], summary="List Campaigns")
+@router.get("/groups/{group_id}/campaigns", response_model=PaginatedCampaignResponse, summary="List Campaigns")
+@limiter.limit("50/minute")
 async def list_campaigns(
+    request: Request,
     group_id: UUID,
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=100),
+    search: str = Query(None, description="Search by title"),
+    campaign_status: str = Query(None, description="active, archived, or all"),
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    """Lists all active campaigns for a specific group with pagination."""
+    """Lists all campaigns for a specific group with pagination, search, and dynamic stats."""
     _verify_group_ownership(db, str(group_id), current_user.get('sub'))
     
-    campaigns = campaign_repo.get_group_campaigns(db=db, group_id=str(group_id), skip=skip, limit=limit)
+    campaigns = campaign_repo.get_group_campaigns(db=db, group_id=str(group_id), skip=skip, limit=limit, search=search, status=campaign_status)
     return campaigns
 
 @router.get("/campaigns/{campaign_id}", response_model=CampaignOut, summary="Get Campaign")

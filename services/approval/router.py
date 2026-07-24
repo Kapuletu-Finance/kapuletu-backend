@@ -7,21 +7,32 @@ from common.database import get_db
 from common.auth_dependencies import get_verified_user
 from services.approval.schemas import (
     TransactionActionIn, TransactionEditIn, TransactionSplit, BulkActionIn,
-    PendingTransactionOut, TransactionOut
+    PendingTransactionOut, TransactionOut, PaginatedPendingResponse
 )
 from repositories.transaction_repo import TransactionRepository
 from services.approval.service import ApprovalService
 
 router = APIRouter(prefix="/transactions", tags=["8. Review & Approval Workflow"])
 
-@router.get("/pending", response_model=List[PendingTransactionOut], summary="Get Pending Transactions (Inbox)")
+from fastapi import Query
+import math
+
+@router.get("/pending", response_model=PaginatedPendingResponse, summary="Get Pending Transactions (Inbox)")
 async def get_pending(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db), 
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     repo = TransactionRepository(db)
-    pendings = repo.fetch_pending_transactions_by_owner(current_user.get("sub"))
-    return pendings
+    items, total = repo.fetch_pending_transactions_by_owner(current_user.get("sub"), skip, limit)
+    return {
+        "items": items,
+        "total_items": total,
+        "total_pages": math.ceil(total / limit) if total > 0 else 1,
+        "page": (skip // limit) + 1,
+        "limit": limit
+    }
 
 @router.get("/pending/{pending_id}", response_model=PendingTransactionOut, summary="Get Single Pending")
 async def get_pending_single(

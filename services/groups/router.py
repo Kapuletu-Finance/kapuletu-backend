@@ -1,18 +1,21 @@
 from typing import List, Dict, Any
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from common.database import get_db
 from common.auth_dependencies import get_verified_user
-from services.groups.schemas import GroupCreate, GroupUpdate, GroupOut
+from services.groups.schemas import GroupCreate, GroupUpdate, GroupOut, PaginatedGroupResponse
+from services.auth.router import limiter
 from repositories import group_repo
 
 router = APIRouter(prefix="/groups", tags=["4. Groups Management"])
 
 @router.post("", response_model=GroupOut, status_code=status.HTTP_201_CREATED, summary="Create Group")
+@limiter.limit("50/minute")
 async def create_group(
+    request: Request,
     payload: GroupCreate, 
     db: Session = Depends(get_db), 
     current_user: Dict[str, Any] = Depends(get_verified_user)
@@ -34,15 +37,19 @@ async def create_group(
             detail="Could not create group. Please ensure your user profile is fully synchronized."
         )
 
-@router.get("", response_model=List[GroupOut], summary="Get All My Groups")
+@router.get("", response_model=PaginatedGroupResponse, summary="Get All My Groups")
+@limiter.limit("50/minute")
 async def list_groups(
+    request: Request,
     skip: int = Query(0, ge=0, description="Pagination skip"),
-    limit: int = Query(100, ge=1, le=100, description="Pagination limit"),
+    limit: int = Query(10, ge=1, le=100, description="Pagination limit"),
+    search: str = Query(None, description="Search group by name"),
+    group_status: str = Query(None, description="active, archived, or all"),
     db: Session = Depends(get_db), 
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    """Lists all active groups owned by the current treasurer with pagination."""
-    groups = group_repo.get_owner_groups(db=db, owner_id=current_user.get('sub'), skip=skip, limit=limit)
+    """Lists all groups owned by the current treasurer with pagination, search, and stats."""
+    groups = group_repo.get_owner_groups(db=db, owner_id=current_user.get('sub'), skip=skip, limit=limit, search=search, status=group_status)
     return groups
 
 @router.get("/{group_id}", response_model=GroupOut, summary="Get Single Group")

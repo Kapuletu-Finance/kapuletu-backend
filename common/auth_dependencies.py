@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 from common.database import get_db
 from services.auth.auth_service import decode_token
 from models.users import User
+from models.token_blacklist import TokenBlacklist
 
 # auto_error=False so it doesn't fail immediately if Header is missing; we want to check cookies too.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
@@ -31,6 +32,14 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    is_blacklisted = db.query(TokenBlacklist).filter(TokenBlacklist.token == token).first()
+    if is_blacklisted:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
             headers={"WWW-Authenticate": "Bearer"},
         )
     

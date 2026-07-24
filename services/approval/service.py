@@ -43,8 +43,13 @@ class ApprovalService:
         Returns:
             Transaction: The newly created permanent transaction record.
         """
-        # 1. Fetch the original pending record
-        pending = self.db.query(PendingTransaction).filter(PendingTransaction.pending_id == pending_txn_id).first()
+        # 1. Fetch the original pending record with an exclusive DB lock to prevent double-approvals
+        try:
+            pending = self.db.query(PendingTransaction).filter(PendingTransaction.pending_id == pending_txn_id).with_for_update(nowait=True).first()
+        except Exception as e:
+            logger.error(f"Approval Failed: Database lock could not be acquired for Pending ID {pending_txn_id}. {e}")
+            raise Exception("Transaction is currently being processed by another request. Please try again.")
+            
         if not pending:
             logger.error(f"Approval Failed: Pending ID {pending_txn_id} not found.")
             raise Exception("Pending transaction not found")
@@ -88,7 +93,7 @@ class ApprovalService:
             )
 
         try:
-            log_for_active_learning(pending.raw_message, finalized_data)
+            log_for_active_learning(self.db, pending.raw_message, finalized_data)
         except Exception as e:
             logger.error(f"Active Learning Hook Failed: {e}")
 
@@ -122,22 +127,18 @@ class ApprovalService:
     def split_transaction(self, pending_txn_id, treasurer_id, group_id, allocations, campaign_id=None):
         """
         Splits a single pending transaction into multiple member allocations.
-        
-        Args:
-            pending_txn_id (UUID): The record to split.
-            treasurer_id (UUID): The authorizing treasurer.
-            group_id (UUID): The target group.
-            allocations (List[dict]): List of { "name": str, "amount": float }
-            campaign_id (UUID, optional): Default campaign.
-            
-        Returns:
-            Transaction: The parent transaction record.
         """
         from models.review_allocation import ReviewAllocation
         import uuid
 
         # 1. Fetch record
-        pending = self.db.query(PendingTransaction).filter(PendingTransaction.pending_id == pending_txn_id).first()
+        try:
+            pending = self.db.query(PendingTransaction).filter(
+                PendingTransaction.pending_id == pending_txn_id
+            ).with_for_update(nowait=True).first()
+        except Exception:
+            raise Exception("Transaction is currently being processed by another request. Please try again.")
+
         if not pending:
             raise Exception("Pending transaction not found")
 
@@ -191,6 +192,8 @@ class ApprovalService:
 
         return new_txn
 
+
+
     def reject_transaction(self, pending_txn_id, treasurer_id):
         """
         Marks a pending transaction as rejected.
@@ -199,10 +202,13 @@ class ApprovalService:
             pending_txn_id (UUID): The record to reject.
             treasurer_id (UUID): The treasurer rejecting the record.
         """
-        pending = self.db.query(PendingTransaction).filter(
-            PendingTransaction.pending_id == pending_txn_id,
-            PendingTransaction.owner_id == treasurer_id
-        ).first()
+        try:
+            pending = self.db.query(PendingTransaction).filter(
+                PendingTransaction.pending_id == pending_txn_id,
+                PendingTransaction.owner_id == treasurer_id
+            ).with_for_update(nowait=True).first()
+        except Exception:
+            raise Exception("Transaction is currently being processed by another request.")
         
         if not pending:
             raise Exception("Pending transaction not found or access denied")

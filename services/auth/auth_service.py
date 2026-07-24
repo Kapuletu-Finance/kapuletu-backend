@@ -18,6 +18,7 @@ from sqlalchemy import or_
 
 from models.users import User
 from models.otp import OTP
+from models.token_blacklist import TokenBlacklist
 from common.config import get_config
 from services.audit.service import AuditService
 
@@ -290,10 +291,16 @@ class AuthService:
         if otp.expires_at < datetime.datetime.utcnow():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification code has expired. Please request a new one.")
             
-        # Mark as verified
         user.phone_number_verified = True
         db.delete(otp)
         db.commit()
+        
+        AuditService(db).log_action(
+            actor_id=str(user.user_id),
+            action="ACCOUNT_VERIFIED",
+            entity_type="USER",
+            entity_id=str(user.user_id)
+        )
         
         # Fire the post-confirmation welcome messages!
         self._send_welcome_messages(user)
@@ -490,6 +497,13 @@ class AuthService:
         db.delete(otp)
         db.commit()
 
+        AuditService(db).log_action(
+            actor_id=str(user.user_id),
+            action="PASSWORD_RESET",
+            entity_type="USER",
+            entity_id=str(user.user_id)
+        )
+
     def change_password(self, db: Session, user_id: str, old_password: str, new_password: str):
         user = db.query(User).filter(User.user_id == user_id).first()
         if not user or not verify_password(old_password, user.hashed_password):
@@ -542,11 +556,21 @@ class AuthService:
         db.delete(otp)
         db.commit()
 
-    def logout(self, db: Session, access_token: str) -> None:
+    def logout(self, db: Session, access_token: str, user_id: str) -> None:
         """
-        Logout the user.
-        In a stateless JWT setup without a blacklist table, logout is handled by the client deleting the token.
+        Logout the user by blacklisting the active access token.
         """
-        pass
+        if access_token:
+            if not db.query(TokenBlacklist).filter(TokenBlacklist.token == access_token).first():
+                blacklist_entry = TokenBlacklist(token=access_token, user_id=user_id)
+                db.add(blacklist_entry)
+                db.commit()
+                
+            AuditService(db).log_action(
+                actor_id=user_id,
+                action="USER_LOGOUT",
+                entity_type="USER",
+                entity_id=user_id
+            )
 
 auth_service = AuthService()

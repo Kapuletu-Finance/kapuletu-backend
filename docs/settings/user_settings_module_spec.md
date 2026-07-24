@@ -46,7 +46,7 @@ Settings are strictly tied to the `Subscription` and `Plan` models. The backend 
 * `weekly_report_enabled` (Boolean): Receive an end-of-week PDF to email.
 * `large_transaction_alert` (Boolean): Instant ping for massive contributions.
 * `large_transaction_threshold` (Float): E.g., `50000` KES.
-* `alert_channels` (List: `["WHATSAPP", "EMAIL", "SMS"]`).
+* `alert_channels` (List: `["WHATSAPP", "EMAIL" ]`).
 
 ### 4.5 Reporting & Branding (Domain: `reporting`)
 * `global_header_template` (String): *[Pro/Enterprise]* Used if campaign lacks one.
@@ -55,7 +55,7 @@ Settings are strictly tied to the `Subscription` and `Plan` models. The backend 
 * `use_emojis` (Boolean): Global default for reports.
 * `public_ledger_pin` (String): Master PIN used for public sharing if no campaign PIN exists.
 
----
+---b
 
 ## 5. Architectural Decision: The `report_settings` Migration
 **Audit Analysis of `models/report_settings.py`:**

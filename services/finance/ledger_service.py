@@ -1,12 +1,13 @@
 import json
 import hashlib
 import logging
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import select, func
 
 from models.transaction import Transaction
 from models.campaign import Campaign
 from services.finance.schemas import LedgerEntryOut, CampaignLedgerSummaryOut, LedgerResponse, IntegrityCheckOut
+from services.audit.service import AuditService
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,16 @@ class LedgerService:
         recalculated = self._recalculate_hash(txn)
         is_valid = (recalculated == txn.ledger_hash)
         
+        if not is_valid:
+            logger.critical(f"TAMPERING DETECTED: Transaction {transaction_id} hash mismatch!")
+            AuditService(self.db).log_action(
+                actor_id=owner_id,
+                action="TAMPERING_DETECTED",
+                entity_type="TRANSACTION",
+                entity_id=str(transaction_id),
+                details={"original_hash": txn.ledger_hash, "recalculated": recalculated}
+            )
+        
         return IntegrityCheckOut(
             transaction_id=str(txn.transaction_id),
             is_valid=is_valid,
@@ -74,13 +85,13 @@ class LedgerService:
         ).scalars().first()
         
         # 2. Fetch all approved transactions for this campaign
-        stmt = select(Transaction).where(
+        stmt = select(Transaction).options(joinedload(Transaction.allocations)).where(
             Transaction.owner_id == owner_id,
             Transaction.campaign_id == campaign_id,
             Transaction.status == "approved"
         ).order_by(Transaction.created_at.desc())
         
-        txns = self.db.execute(stmt).scalars().all()
+        txns = self.db.execute(stmt).scalars().unique().all()
         
         # 3. Process Entries and Verify Integrity
         entries = []
@@ -94,6 +105,8 @@ class LedgerService:
             # If not tampered, add to trusted total
             if not is_tampered:
                 total_raised += float(txn.amount)
+                
+            allocs = [{"member_name": a.member_name, "allocated_amount": float(a.allocated_amount)} for a in txn.allocations]
                 
             entries.append(
                 LedgerEntryOut(
@@ -110,7 +123,8 @@ class LedgerService:
                     ledger_hash=txn.ledger_hash,
                     payment_method=txn.payment_method,
                     source_evidence=txn.source_evidence,
-                    is_tampered=is_tampered
+                    is_tampered=is_tampered,
+                    allocations=allocs
                 )
             )
             
@@ -134,17 +148,19 @@ class LedgerService:
         """
         Fetches the complete ledger for the owner.
         """
-        stmt = select(Transaction).where(
+        stmt = select(Transaction).options(joinedload(Transaction.allocations)).where(
             Transaction.owner_id == owner_id,
             Transaction.status == "approved"
         ).order_by(Transaction.created_at.desc())
         
-        txns = self.db.execute(stmt).scalars().all()
+        txns = self.db.execute(stmt).scalars().unique().all()
         
         entries = []
         for txn in txns:
             recalculated = self._recalculate_hash(txn)
             is_tampered = (recalculated != txn.ledger_hash)
+            
+            allocs = [{"member_name": a.member_name, "allocated_amount": float(a.allocated_amount)} for a in txn.allocations]
             
             entries.append(
                 LedgerEntryOut(
@@ -161,7 +177,8 @@ class LedgerService:
                     ledger_hash=txn.ledger_hash,
                     payment_method=txn.payment_method,
                     source_evidence=txn.source_evidence,
-                    is_tampered=is_tampered
+                    is_tampered=is_tampered,
+                    allocations=allocs
                 )
             )
             

@@ -34,3 +34,16 @@ class AIFeedback(Base):
 
     user = relationship("User", foreign_keys=[user_id])
     reviewer = relationship("User", foreign_keys=[reviewed_by])
+
+class ActiveLearningSample(Base):
+    """
+    ActiveLearningSample Model: Stores ground-truth NLP training samples 
+    (raw text and exact character offsets of entities) for AI retraining.
+    """
+    __tablename__ = "active_learning_samples"
+
+    sample_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    raw_text = Column(String, nullable=False)
+    entities = Column(JSON, nullable=False) # e.g. [(10, 15, "AMOUNT")]
+    is_consumed = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)

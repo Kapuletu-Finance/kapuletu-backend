@@ -3,6 +3,9 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+import time
+
+_UNAUTHORIZED_PHONE_CACHE = {}
 
 from models.pending_transaction import PendingTransaction
 from models.users import User
@@ -73,6 +76,7 @@ class TransactionRepository:
         """
         Identifies the Treasurer (User) associated with a specific phone number.
         This is used during ingestion to route messages to the correct account.
+        Includes a 5-minute TTL cache for unauthorized numbers to prevent DB DoS attacks.
         
         Args:
             phone_number (str): The sender's phone number.
@@ -80,25 +84,54 @@ class TransactionRepository:
         Returns:
             Optional[User]: The User record if found, else None.
         """
+        now = time.time()
+        
+        # Check Circuit Breaker / Cache
+        if phone_number in _UNAUTHORIZED_PHONE_CACHE:
+            if now - _UNAUTHORIZED_PHONE_CACHE[phone_number] < 300: # 5 minute TTL
+                return None
+            else:
+                del _UNAUTHORIZED_PHONE_CACHE[phone_number]
+                
         stmt = select(User).where(User.phone_number == phone_number)
-        return self.db.execute(stmt).scalars().first()
+        user = self.db.execute(stmt).scalars().first()
+        
+        if not user:
+            _UNAUTHORIZED_PHONE_CACHE[phone_number] = now
+            # Cap memory growth
+            if len(_UNAUTHORIZED_PHONE_CACHE) > 10000:
+                _UNAUTHORIZED_PHONE_CACHE.clear()
+                
+        return user
 
-    def fetch_pending_transactions_by_owner(self, owner_id: UUID) -> List[PendingTransaction]:
+    def fetch_pending_transactions_by_owner(self, owner_id: UUID, skip: int = 0, limit: int = 100) -> tuple[List[PendingTransaction], int]:
         """
-        Retrieves all unprocessed pending transactions for a specific treasurer.
+        Retrieves all unprocessed pending transactions for a specific treasurer with pagination.
         Typically used to populate the treasurer's approval inbox.
         
         Args:
             owner_id (UUID): The unique ID of the treasurer.
+            skip (int): Pagination offset.
+            limit (int): Pagination limit.
             
         Returns:
-            List[PendingTransaction]: A list of pending transactions.
+            tuple: (List[PendingTransaction], total_count)
         """
-        stmt = select(PendingTransaction).where(
+        from sqlalchemy import func
+        
+        count_stmt = select(func.count()).select_from(PendingTransaction).where(
             PendingTransaction.owner_id == owner_id,
             PendingTransaction.is_processed == False
         )
-        return self.db.execute(stmt).scalars().all()
+        total = self.db.execute(count_stmt).scalar()
+        
+        stmt = select(PendingTransaction).where(
+            PendingTransaction.owner_id == owner_id,
+            PendingTransaction.is_processed == False
+        ).order_by(PendingTransaction.created_at.desc()).offset(skip).limit(limit)
+        
+        items = self.db.execute(stmt).scalars().all()
+        return items, total
 
     def fetch_pending_transaction_by_id(self, pending_id: str, owner_id: UUID) -> Optional[PendingTransaction]:
         """

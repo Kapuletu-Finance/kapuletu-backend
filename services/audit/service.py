@@ -48,8 +48,6 @@ class AuditService:
             logger.info(f"Audit Log [{action}] for {entity_type} {entity_id} by {actor_id}")
             return log_entry
         except Exception as e:
-            # Audit logging should ideally never crash the main transaction
             self.db.rollback()
-            logger.error(f"Failed to record audit log {action} for {actor_id}: {e}")
-            # We don't re-raise here to prevent blocking user workflows, but in a bank it might be required.
-            return None
+            logger.error(f"CRITICAL: Failed to record audit log {action} for {actor_id}: {e}")
+            raise e

@@ -64,8 +64,20 @@ def handler(event, context):
             logger.error(f"Failed to queue to SQS: {e}")
             # Fall back to synchronous processing if SQS fails
     
-    # 4. Synchronous Processing (Fallback or Local Dev)
-    return process_ingestion(body_str, config)
+    # 4. Asynchronous Thread Fallback (Local Dev or SQS Bypassed)
+    import threading
+    
+    def background_task(body, conf):
+        try:
+            process_ingestion(body, conf)
+        except Exception as e:
+            logger.error(f"Background thread processing failed: {e}")
+            
+    thread = threading.Thread(target=background_task, args=(body_str, config))
+    thread.start()
+    
+    # Always return 200 OK instantly to Meta to prevent retry floods
+    return {"statusCode": 200, "body": "OK"}
 
 def process_sqs_record(record):
     """

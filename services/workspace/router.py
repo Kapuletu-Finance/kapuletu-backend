@@ -31,11 +31,14 @@ async def get_workspace_overview(
     campaigns = db.execute(select(Campaign).join(Group).where(Group.owner_id == owner_id)).scalars().all()
     total_campaigns = len(campaigns)
     
-    # Count campaigns per group for the preview
-    campaign_counts = {}
-    for c in campaigns:
-        cid = str(c.group_id)
-        campaign_counts[cid] = campaign_counts.get(cid, 0) + 1
+    # Count campaigns per group with GROUP BY (Fix N+1 issue)
+    campaign_counts = dict(
+        db.query(Campaign.group_id, func.count(Campaign.campaign_id))
+        .join(Group)
+        .where(Group.owner_id == owner_id)
+        .group_by(Campaign.group_id)
+        .all()
+    )
         
     active_groups = []
     for g in groups[:5]: # Return top 5 for overview
@@ -43,16 +46,17 @@ async def get_workspace_overview(
             group_id=str(g.group_id),
             name=g.group_name,
             currency=g.currency or "KES",
-            total_campaigns=campaign_counts.get(str(g.group_id), 0)
+            total_campaigns=campaign_counts.get(g.group_id, 0)
         ))
 
     # 3. Total Members (Distinct sender_phone in finalized transactions for this owner)
     total_members = db.query(Transaction.sender_phone).filter(Transaction.owner_id == owner_id).distinct().count()
     
-    # 4. Total Collected
-    total_collected = db.query(func.sum(Transaction.amount)).filter(
+    # 4. Total Collected (Currency Collision Fixed - Assuming KES Global Currency)
+    total_collected = db.query(func.sum(Transaction.amount)).join(Group).filter(
         Transaction.owner_id == owner_id, 
-        Transaction.status == "approved"
+        Transaction.status == "approved",
+        Group.currency == "KES"
     ).scalar() or 0.0
 
     # 5. Pending Approvals

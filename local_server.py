@@ -49,6 +49,15 @@ app = FastAPI(
     openapi_tags=openapi_tags
 )
 
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.middleware import SlowAPIMiddleware
+from services.auth.router import limiter
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
 from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
@@ -349,96 +358,7 @@ async def health_check(): return {"status": "healthy"}
 @health.get("/metrics", summary="Metrics")
 async def metrics_check(): return {"metrics": "..."}
 
-# 15. Admin Governance Suite
-admin = APIRouter(prefix="/admin/v1", tags=["14. Admin Governance Suite"], dependencies=[Depends(get_admin_user)])
 
-@admin.get("/overview", summary="Platform Overview Statistics", response_model=AdminOverviewOut)
-async def admin_overview():
-    return {
-        "total_treasurers": 1250,
-        "total_revenue_kes": 450000.0,
-        "active_subscriptions": 890,
-        "pending_tickets": 12,
-        "ai_accuracy_rate": 0.94
-    }
-
-@admin.get("/users", summary="List All Users")
-async def list_users(page: int = 1, limit: int = 50, status: str = None, db: Session = Depends(get_db)): 
-    return UserService(db).list_treasurers(page=page, limit=limit, status=status)
-
-@admin.post("/users", summary="Create User Manually")
-async def create_user(payload: AdminUserCreateIn, db: Session = Depends(get_db)):
-    if db.query(User).filter((User.email == payload.email) | (User.phone_number == payload.phone_number)).first():
-        raise HTTPException(status_code=400, detail="User with this email or phone already exists")
-    
-    hashed_pw = get_password_hash(payload.password)
-    new_user = User(
-        email=payload.email,
-        phone_number=payload.phone_number,
-        first_name=payload.first_name,
-        last_name=payload.last_name,
-        hashed_password=hashed_pw,
-        role=payload.role,
-        email_verified=True,
-        phone_number_verified=True
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return {"message": "User created successfully", "user_id": str(new_user.user_id)}
-
-@admin.delete("/users/{user_id}", summary="Delete User")
-async def delete_user(user_id: str, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.user_id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    db.delete(user)
-    db.commit()
-    return {"message": f"User {user_id} deleted successfully"}
-
-@admin.get("/users/{user_id}", summary="Get User Profile & Activity")
-async def get_treasurer_profile(user_id: str, db: Session = Depends(get_db)): 
-    details = UserService(db).get_treasurer_details(user_id)
-    if not details: raise HTTPException(status_code=404, detail="User not found")
-    return details
-
-@admin.post("/users/treasurers/{user_id}/status", summary="Update Account Status (Suspend/Active)")
-async def update_user_status(user_id: str, payload: TreasurerStatusIn): return await placeholder(None)
-
-@admin.post("/ai/parser/train", summary="Trigger AI Model Training")
-async def trigger_ai_training(payload: AITrainingParamsIn): return {"status": "accepted", "job_id": "job-123"}
-
-@admin.get("/ai/parser/knowledge", summary="Review AI Knowledge Base")
-async def review_ai_knowledge(): return await placeholder(None)
-
-@admin.get("/ai/parser/feedback-queue", summary="Manage AI Feedback Loop")
-async def ai_feedback_queue(): return await placeholder(None)
-
-@admin.post("/finance/plans", summary="Create Subscription Plan")
-async def create_plan(payload: SubscriptionPlanIn): return {"status": "created", "plan_id": "plan-xyz"}
-
-@admin.get("/finance/plans", summary="List Subscription Plans")
-async def list_plans(): return await placeholder(None)
-
-@admin.get("/finance/payments", summary="Global Payment Records")
-async def global_payments(): return await placeholder(None)
-
-@admin.post("/finance/payments/override", summary="Manual Subscription Override")
-async def manual_override(): return {"status": "success", "message": "Subscription updated"}
-
-@admin.post("/finance/trigger-reminders", summary="Trigger Subscription Reminders Manually")
-async def trigger_reminders():
-    import subprocess
-    import sys
-    subprocess.Popen([sys.executable, "services/subscriptions/expiry_worker.py"])
-    return {"status": "success", "message": "Expiry worker triggered in background"}
-
-@admin.post("/crm/broadcast", summary="Platform-Wide Broadcast")
-async def system_broadcast(payload: SystemBroadcastIn): return {"status": "sent", "recipient_count": 1250}
-
-@admin.get("/audit/logs", summary="Search Forensic Audit Trail")
-async def search_audit_logs(request: Request): return await placeholder(request)
 
 # --- Section 16: Finance & Subscriptions (Treasurer Facing) ---
 # Removed placeholder finance endpoints since they are now in native services/finance/checkout_router.py
@@ -464,7 +384,8 @@ from services.audit.router import router as audit_router
 app.include_router(audit_router) # 12
 app.include_router(notifications)
 app.include_router(health)
-app.include_router(admin)
+from services.admin.router import router as admin_router
+app.include_router(admin_router)
 
 app.include_router(checkout_router, tags=["6. Finance & Subscriptions"], prefix="/finance", dependencies=[Depends(get_verified_user)])
 
