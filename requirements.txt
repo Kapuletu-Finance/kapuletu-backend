@@ -83,3 +83,4 @@ wasabi==1.1.3
 weasel==1.0.0
 wrapt==2.1.2
 fpdf2==2.8.2
+slowapi
