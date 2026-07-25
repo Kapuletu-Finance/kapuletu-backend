@@ -1,17 +1,26 @@
 import uuid
+import random
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from models import Group, Campaign
 from models.transaction import Transaction
+from common.utils import generate_slug
 
 def create_group(db: Session, owner_id: str, name: str, description: str = None, currency: str = "KES"):
     """Creates a new community group."""
+    base_slug = generate_slug(name)
+    slug = base_slug
+    # Ensure slug uniqueness for this owner
+    while db.query(Group).filter(Group.owner_id == owner_id, Group.slug == slug).first():
+        slug = f"{base_slug}-{random.randint(1000, 9999)}"
+        
     new_group = Group(
         group_id=uuid.uuid4(),
         owner_id=owner_id,
         group_name=name,
         description=description,
-        currency=currency
+        currency=currency,
+        slug=slug
     )
     db.add(new_group)
     db.commit()

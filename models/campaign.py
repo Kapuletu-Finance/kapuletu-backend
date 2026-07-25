@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import UUID, Column, ForeignKey, Numeric, String, Boolean, DateTime
+from sqlalchemy import UUID, Column, ForeignKey, Numeric, String, Boolean, DateTime, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -13,6 +13,10 @@ class Campaign(Base):
     to track progress against a target amount.
     """
     __tablename__ = "campaigns"
+    __table_args__ = (
+        UniqueConstraint('group_id', 'slug', name='uq_campaign_group_slug'),
+        {'extend_existing': True}
+    )
 
     # Unique identifier for the campaign
     campaign_id = Column(UUID(as_uuid=True), primary_key=True)
@@ -28,6 +32,10 @@ class Campaign(Base):
     status = Column(String, default="active")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    slug = Column(String, index=True, nullable=True)
+    is_favorite = Column(Boolean, default=False)
+    end_date = Column(DateTime, nullable=True)
     
     from sqlalchemy import JSON
     settings_override = Column(JSON, default=dict)

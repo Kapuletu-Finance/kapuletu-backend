@@ -94,6 +94,23 @@ async def update_group(
     updated_group = group_repo.update_group(db=db, group_id=str(group_id), updates=updates)
     return updated_group
 
+@router.patch("/{group_id}/favorite", response_model=GroupOut, summary="Toggle Favorite Group")
+async def toggle_favorite_group(
+    group_id: UUID, 
+    db: Session = Depends(get_db), 
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Toggles the is_favorite status of a group for the current treasurer."""
+    group = group_repo.get_group(db=db, group_id=str(group_id))
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    
+    if str(group.owner_id) != current_user.get('sub'):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to modify this group.")
+        
+    updated_group = group_repo.update_group(db=db, group_id=str(group_id), updates={"is_favorite": not group.is_favorite})
+    return updated_group
+
 @router.delete("/{group_id}", response_model=GroupOut, summary="Archive Group")
 async def archive_group(
     group_id: UUID, 

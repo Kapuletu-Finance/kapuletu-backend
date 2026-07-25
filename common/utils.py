@@ -1,4 +1,11 @@
 import uuid
+import re
+
+def generate_slug(text: str) -> str:
+    """Generates a URL-friendly slug from a given string."""
+    text = text.lower()
+    text = re.sub(r'[^a-z0-9]+', '-', text)
+    return text.strip('-')
 
 
 def format_currency(amount):

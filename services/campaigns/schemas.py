@@ -13,12 +13,14 @@ class CampaignCreate(BaseModel):
     description: Optional[str] = Field(None, max_length=1000, json_schema_extra={"example": "Fundraising for hospital expenses."})
     target_amount: float = Field(0.0, ge=0, json_schema_extra={"example": 50000.0})
     payment_instructions: Optional[str] = Field(None, max_length=1000, json_schema_extra={"example": "Paybill 123456, Account: JANE"})
+    end_date: Optional[datetime] = Field(None)
 
 class CampaignUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=1000)
     target_amount: Optional[float] = Field(None, ge=0)
     payment_instructions: Optional[str] = Field(None, max_length=1000)
+    end_date: Optional[datetime] = Field(None)
 
 class CampaignOut(BaseModel):
     id: UUID = Field(validation_alias="campaign_id", json_schema_extra={"example": "123e4567-e89b-12d3-a456-426614174000"})
@@ -30,6 +32,9 @@ class CampaignOut(BaseModel):
     status: CampaignStatusEnum = Field(..., json_schema_extra={"example": "active"})
     is_active: bool = Field(..., json_schema_extra={"example": True})
     created_at: datetime
+    slug: Optional[str] = Field(None, json_schema_extra={"example": "medical-fund-jane-doe"})
+    is_favorite: bool = Field(False, json_schema_extra={"example": True})
+    end_date: Optional[datetime] = Field(None)
     
     # New Operational Metrics
     total_raised: float = Field(0.0, json_schema_extra={"example": 25000.0})

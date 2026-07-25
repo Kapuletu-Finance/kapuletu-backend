@@ -1,18 +1,27 @@
 import uuid
+import random
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from models.campaign import Campaign
 from models.transaction import Transaction
+from common.utils import generate_slug
 
 def create_campaign(db: Session, group_id: str, title: str, description: str = None, target_amount: float = 0.0, payment_instructions: str = None):
     """Creates a new campaign for a specific group with full reporting metadata."""
+    base_slug = generate_slug(title)
+    slug = base_slug
+    # Ensure slug uniqueness for this group
+    while db.query(Campaign).filter(Campaign.group_id == group_id, Campaign.slug == slug).first():
+        slug = f"{base_slug}-{random.randint(1000, 9999)}"
+
     new_campaign = Campaign(
         campaign_id=uuid.uuid4(),
         group_id=group_id,
         title=title,
         description=description,
         target_amount=target_amount,
-        payment_instructions=payment_instructions
+        payment_instructions=payment_instructions,
+        slug=slug
     )
     db.add(new_campaign)
     db.commit()

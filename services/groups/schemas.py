@@ -34,6 +34,8 @@ class GroupOut(BaseModel):
     status: GroupStatusEnum = Field(..., json_schema_extra={"example": "active"})
     is_active: bool = Field(..., json_schema_extra={"example": True})
     created_at: datetime
+    slug: Optional[str] = Field(None, json_schema_extra={"example": "st-peters-welfare"})
+    is_favorite: bool = Field(False, json_schema_extra={"example": True})
     
     # New Operational Metrics
     total_campaigns_count: int = Field(0, json_schema_extra={"example": 5})

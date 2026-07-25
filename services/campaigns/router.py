@@ -99,6 +99,22 @@ async def update_campaign(
     updated_campaign = campaign_repo.update_campaign(db=db, campaign_id=str(campaign_id), updates=updates)
     return updated_campaign
 
+@router.patch("/campaigns/{campaign_id}/favorite", response_model=CampaignOut, summary="Toggle Favorite Campaign")
+async def toggle_favorite_campaign(
+    campaign_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Toggles the is_favorite status of a campaign."""
+    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    if not campaign:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
+        
+    _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
+    
+    updated_campaign = campaign_repo.update_campaign(db=db, campaign_id=str(campaign_id), updates={"is_favorite": not campaign.is_favorite})
+    return updated_campaign
+
 @router.delete("/campaigns/{campaign_id}", response_model=CampaignOut, summary="Archive Campaign")
 async def archive_campaign(
     campaign_id: UUID,
