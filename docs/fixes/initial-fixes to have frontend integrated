@@ -1,7 +1,4 @@
-# Kapuletu Frontend Integration Guide
-
-
-
+# Fixes to solidify frontend
 ## 1. Single Resource Endpoints
 Instead of fetching the full list to find a single item, please use these dedicated endpoints:
 

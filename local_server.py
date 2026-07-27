@@ -66,7 +66,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:5173",
         "https://app.kapuletu.co.ke",
-        "https://dev.kapuletu.co.ke"
+        "https://dev.app.kapuletu.co.ke"
     ],
     allow_credentials=True,
     allow_methods=["*"],
