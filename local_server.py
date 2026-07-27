@@ -345,9 +345,7 @@ async def group_members(request: Request, group_id: str): return await lambda_ad
 # Removed audit placeholders since they are now in native services/audit/router.py
 
 # 13. Notifications
-notifications = APIRouter(prefix="/notifications", tags=["11. Notifications"], dependencies=[Depends(get_verified_user)])
-@notifications.post("/send", summary="Send Confirmation (After Approval)")
-async def send_notification(request: Request, payload: NotificationIn): return await placeholder(request)
+# Removed notifications endpoints since they are now in native services/notifications/router.py
 
 # 14. System Health
 health = APIRouter(tags=["15. System Health & Admin"])
@@ -382,7 +380,8 @@ app.include_router(reporting) # 10
 
 from services.audit.router import router as audit_router
 app.include_router(audit_router) # 12
-app.include_router(notifications)
+from services.notifications.router import router as notifications_router
+app.include_router(notifications_router) # 13
 app.include_router(health)
 from services.admin.router import router as admin_router
 app.include_router(admin_router)
