@@ -1,10 +1,6 @@
 # Frontend Integration Guide: Notifications Module
 
-The KapuLetu backend now fully supports a robust, end-to-end notifications system. This guide provides everything you need to hook up the `NotificationsDropdown.tsx` and Admin broadcast views to the live API.
-
-## 1. Endpoints Overview
-
-All endpoints are fully integrated into Swagger UI under **11. Notifications** and are protected by `get_verified_user` (except broadcast, which requires `get_admin_user`).
+ **11. Notifications** and are protected by `get_verified_user` (except broadcast, which requires `get_admin_user`).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -70,7 +66,7 @@ export const useNotificationsQuery = () => {
       const response = await apiClient.get("/notifications");
       return response.data;
     },
-    refetchInterval: 30000, // Poll every 30s
+    refetchInterval: 30000, // Poll every 30s - or the most seelmess approach could help
   });
 };
 ```

@@ -62,6 +62,6 @@ The backend has already been configured to allow:
 - `http://localhost:3000`
 - `http://localhost:5173`
 - `https://app.kapuletu.co.ke`
-- `https://dev.kapuletu.co.ke`
+- `https://dev-app.kapuletu.co.ke`
 
 If you are running the frontend on a different port locally (e.g. `localhost:8080`), you will get a CORS error. Please ask the backend team to whitelist your specific local port.
