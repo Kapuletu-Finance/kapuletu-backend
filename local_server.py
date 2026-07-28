@@ -329,13 +329,13 @@ async def manual_entry(request: Request, payload: ManualEntryIn, current_user: D
 # Removed ledger endpoints since they are now in native services/finance/ledger_router.py
 
 # 9. Members
-members = APIRouter(tags=["3. Members Management"], dependencies=[Depends(get_verified_user)])
-@members.get("/members/suggestions", summary="Auto-Suggest Members")
-async def suggest_members(request: Request): return await lambda_adapter(request, members_handler)
-@members.post("/members", summary="Create Member (Optional)")
-async def create_member(request: Request, payload: MemberIn): return await lambda_adapter(request, members_handler)
-@members.get("/groups/{group_id}/members", summary="Get Members")
-async def group_members(request: Request, group_id: str): return await lambda_adapter(request, members_handler)
+# members = APIRouter(tags=["3. Members Management"], dependencies=[Depends(get_verified_user)])
+# @members.get("/members/suggestions", summary="Auto-Suggest Members")
+# async def suggest_members(request: Request): return await lambda_adapter(request, members_handler)
+# @members.post("/members", summary="Create Member (Optional)")
+# async def create_member(request: Request, payload: MemberIn): return await lambda_adapter(request, members_handler)
+# @members.get("/groups/{group_id}/members", summary="Get Members")
+# async def group_members(request: Request, group_id: str): return await lambda_adapter(request, members_handler)
 
 # 10. Reporting
 # 11. Evidence
@@ -374,7 +374,7 @@ app.include_router(approval) # 6
 from services.finance.ledger_router import router as ledger
 app.include_router(ledger) # 8
 
-app.include_router(members) # 9
+# app.include_router(members) # 9
 app.include_router(reporting) # 10
 
 
