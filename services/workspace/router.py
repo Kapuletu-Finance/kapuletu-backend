@@ -62,12 +62,6 @@ async def get_workspace_overview(
     ).scalar() or 0.0
 
     # 5. Pending Approvals
-    pending_approvals = db.query(PendingTransaction).filter(
-        PendingTransaction.owner_id == owner_id, 
-        PendingTransaction.status == "pending" # or check is_processed == False depending on the model
-    ).count()
-    
-    # If the model uses is_processed instead of status == "pending", let's be safe and check both or rely on what repo does.
     # From transaction_repo, fetch_pending_transactions_by_owner uses is_processed == False.
     pending_approvals = db.query(PendingTransaction).filter(
         PendingTransaction.owner_id == owner_id,
