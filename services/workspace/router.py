@@ -21,7 +21,9 @@ async def get_workspace_overview(
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    owner_id = current_user.get("sub")
+    import uuid
+    owner_id_str = current_user.get("sub")
+    owner_id = uuid.UUID(owner_id_str) if owner_id_str else None
     
     # 1. Total Groups and Active Groups preview
     groups = db.execute(select(Group).where(Group.owner_id == owner_id, Group.is_active == True)).scalars().all()
@@ -84,7 +86,7 @@ async def get_workspace_overview(
         plan = db.execute(select(Plan).where(Plan.plan_id == sub.plan_id)).scalars().first()
         plan_name = plan.name if plan else "Unknown"
         status = "active"
-        days_left = (sub.current_period_end.replace(tzinfo=None) - datetime.utcnow()).days if sub.current_period_end else None
+        days_left = (sub.end_date.replace(tzinfo=None) - datetime.utcnow()).days if sub.end_date else None
     else:
         # Check Free Plan fallback
         plan_name = "Free Plan"

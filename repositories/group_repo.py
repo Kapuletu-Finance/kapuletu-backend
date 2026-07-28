@@ -8,10 +8,11 @@ from common.utils import generate_slug
 
 def create_group(db: Session, owner_id: str, name: str, description: str = None, currency: str = "KES"):
     """Creates a new community group."""
+    owner_id_uuid = owner_id if isinstance(owner_id, uuid.UUID) else uuid.UUID(owner_id)
     base_slug = generate_slug(name)
     slug = base_slug
     # Ensure slug uniqueness for this owner
-    while db.query(Group).filter(Group.owner_id == owner_id, Group.slug == slug).first():
+    while db.query(Group).filter(Group.owner_id == owner_id_uuid, Group.slug == slug).first():
         slug = f"{base_slug}-{random.randint(1000, 9999)}"
         
     new_group = Group(
@@ -33,7 +34,8 @@ def get_group(db: Session, group_id: str):
 
 def get_owner_groups(db: Session, owner_id: str, skip: int = 0, limit: int = 100, search: str = None, status: str = None):
     """Lists all groups belonging to a treasurer with pagination, search, and dynamic stats."""
-    query = db.query(Group).filter(Group.owner_id == owner_id)
+    owner_id_uuid = owner_id if isinstance(owner_id, uuid.UUID) else uuid.UUID(owner_id)
+    query = db.query(Group).filter(Group.owner_id == owner_id_uuid)
     
     if search:
         query = query.filter(Group.group_name.ilike(f"%{search}%"))

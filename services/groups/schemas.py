@@ -26,12 +26,11 @@ class GroupUpdate(BaseModel):
     # Currency is intentionally removed from GroupUpdate to enforce immutability
 
 class GroupOut(BaseModel):
-    # Map the DB's group_id to the API's id field to fix the 500 serialization error
-    id: UUID = Field(validation_alias="group_id", json_schema_extra={"example": "123e4567-e89b-12d3-a456-426614174000"})
-    name: str = Field(validation_alias="group_name", json_schema_extra={"example": "St. Peters Welfare"})
+    id: UUID = Field(alias="group_id", serialization_alias="id", json_schema_extra={"example": "123e4567-e89b-12d3-a456-426614174000"})
+    name: str = Field(alias="group_name", serialization_alias="name", json_schema_extra={"example": "St. Peters Welfare"})
     description: Optional[str] = Field(None, json_schema_extra={"example": "Community fund for emergencies"})
-    currency: CurrencyEnum = Field(..., json_schema_extra={"example": "KES"})
-    status: GroupStatusEnum = Field(..., json_schema_extra={"example": "active"})
+    currency: Optional[CurrencyEnum] = Field(CurrencyEnum.KES, json_schema_extra={"example": "KES"})
+    status: Optional[GroupStatusEnum] = Field(GroupStatusEnum.ACTIVE, json_schema_extra={"example": "active"})
     is_active: bool = Field(..., json_schema_extra={"example": True})
     created_at: datetime
     slug: Optional[str] = Field(None, json_schema_extra={"example": "st-peters-welfare"})
