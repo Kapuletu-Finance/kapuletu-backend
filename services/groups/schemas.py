@@ -31,10 +31,10 @@ class GroupOut(BaseModel):
     description: Optional[str] = Field(None, json_schema_extra={"example": "Community fund for emergencies"})
     currency: Optional[CurrencyEnum] = Field(CurrencyEnum.KES, json_schema_extra={"example": "KES"})
     status: Optional[GroupStatusEnum] = Field(GroupStatusEnum.ACTIVE, json_schema_extra={"example": "active"})
-    is_active: bool = Field(..., json_schema_extra={"example": True})
+    is_active: Optional[bool] = Field(True, json_schema_extra={"example": True})
     created_at: datetime
     slug: Optional[str] = Field(None, json_schema_extra={"example": "st-peters-welfare"})
-    is_favorite: bool = Field(False, json_schema_extra={"example": True})
+    is_favorite: Optional[bool] = Field(False, json_schema_extra={"example": True})
     
     # New Operational Metrics
     total_campaigns_count: int = Field(0, json_schema_extra={"example": 5})
