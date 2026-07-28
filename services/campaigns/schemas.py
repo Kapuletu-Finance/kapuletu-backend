@@ -41,11 +41,11 @@ class CampaignOut(BaseModel):
     description: Optional[str] = Field(None)
     target_amount: float = Field(..., json_schema_extra={"example": 50000.0})
     payment_instructions: Optional[str] = Field(None)
-    status: CampaignStatusEnum = Field(..., json_schema_extra={"example": "active"})
-    is_active: bool = Field(..., json_schema_extra={"example": True})
-    created_at: datetime
+    status: Optional[CampaignStatusEnum] = Field(CampaignStatusEnum.ACTIVE, json_schema_extra={"example": "active"})
+    is_active: Optional[bool] = Field(True, json_schema_extra={"example": True})
+    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
     slug: Optional[str] = Field(None, json_schema_extra={"example": "medical-fund-jane-doe"})
-    is_favorite: bool = Field(False, json_schema_extra={"example": True})
+    is_favorite: Optional[bool] = Field(False, json_schema_extra={"example": True})
     end_date: Optional[datetime] = Field(None)
     
     # New Operational Metrics
