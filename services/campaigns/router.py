@@ -1,13 +1,19 @@
 from typing import List, Dict, Any
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import select, func
+import random
+import io
 
 from common.database import get_db
 from common.auth_dependencies import get_verified_user
-from services.campaigns.schemas import CampaignCreate, CampaignUpdate, CampaignOut, PaginatedCampaignResponse
+from services.campaigns.schemas import CampaignCreate, CampaignUpdate, CampaignOut, PaginatedCampaignResponse, PaginatedTransactionResponse, CampaignActivity
 from services.auth.router import limiter
 from repositories import campaign_repo, group_repo
+from models.audit_log import AuditLog
+from models.transaction import Transaction
 
 router = APIRouter(prefix="", tags=["5. Campaigns Management"])
 
@@ -93,6 +99,13 @@ async def update_campaign(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot modify an archived campaign.")
         
     updates = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    
+    if "settings" in updates:
+        settings_update = updates.pop("settings")
+        current_settings = campaign.settings_override or {}
+        current_settings.update(settings_update)
+        updates["settings_override"] = current_settings
+        
     if not updates:
         return campaign
         
@@ -133,3 +146,224 @@ async def archive_campaign(
         
     archived_campaign = campaign_repo.archive_campaign(db=db, campaign_id=str(campaign_id))
     return archived_campaign
+
+@router.post("/campaigns/{campaign_id}/regenerate-pin", summary="Regenerate Access PIN")
+async def regenerate_campaign_pin(
+    campaign_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
+    
+    new_pin = str(random.randint(1000, 9999))
+    current_settings = campaign.settings_override or {}
+    current_settings["access_pin"] = new_pin
+    
+    updated_campaign = campaign_repo.update_campaign(db=db, campaign_id=str(campaign_id), updates={"settings_override": current_settings})
+    return {"access_pin": new_pin}
+
+@router.get("/campaigns/{campaign_id}/chart-data", summary="Get Contribution Chart Data")
+async def get_campaign_chart_data(
+    campaign_id: UUID,
+    filter: str = Query("this_month", description="this_week, this_month, this_year, all_time"),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
+    
+    transactions = db.execute(
+        select(Transaction).where(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved")
+        .order_by(Transaction.created_at.asc())
+    ).scalars().all()
+    
+    grouped = {}
+    for txn in transactions:
+        date_str = txn.created_at.strftime("%Y-%m-%d") if filter in ["this_week", "this_month"] else txn.created_at.strftime("%Y-%m")
+        grouped[date_str] = grouped.get(date_str, 0.0) + float(txn.amount)
+        
+    return [{"date": k, "amount": v} for k, v in grouped.items()]
+
+@router.get("/campaigns/{campaign_id}/transactions", response_model=PaginatedTransactionResponse, summary="List Campaign Transactions")
+async def get_campaign_transactions(
+    campaign_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    search: str = Query(None),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
+    
+    query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved")
+    if search:
+        query = query.filter(Transaction.sender_name.ilike(f"%{search}%"))
+        
+    total_items = query.count()
+    transactions = query.order_by(Transaction.created_at.desc()).offset(skip).limit(limit).all()
+    
+    return {
+        "items": transactions,
+        "total_items": total_items,
+        "total_pages": (total_items + limit - 1) // limit if limit > 0 else 0,
+        "page": (skip // limit) + 1 if limit > 0 else 1,
+        "limit": limit
+    }
+
+@router.get("/campaigns/{campaign_id}/activities", response_model=List[CampaignActivity], summary="Get Campaign Activities")
+async def get_campaign_activities(
+    campaign_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
+    
+    logs = db.execute(
+        select(AuditLog).where(AuditLog.entity_type == "campaign", AuditLog.entity_id == str(campaign_id))
+        .order_by(AuditLog.created_at.desc()).limit(10)
+    ).scalars().all()
+    
+    return logs
+
+@router.get("/campaigns/{campaign_id}/report-preview", summary="Generate WhatsApp Preview")
+async def get_campaign_report_preview(
+    campaign_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
+    
+    settings = campaign.settings_override or {}
+    title = settings.get("report_title", "Campaign Update")
+    footer = settings.get("report_footer", "")
+    indicator = settings.get("paid_indicator", "✔")
+    
+    # Calculate raised
+    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved").scalar() or 0.0
+    
+    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).limit(10).all()
+    
+    lines = []
+    lines.append(f"*{title}*")
+    if campaign.description:
+        lines.append(campaign.description)
+    lines.append("")
+    lines.append(f"Raised so far: Ksh {raised:,.2f} of Ksh {float(campaign.target_amount):,.2f}")
+    if campaign.payment_instructions:
+        lines.append(f"{campaign.payment_instructions}")
+    lines.append("")
+    
+    for i, txn in enumerate(transactions, 1):
+        name = txn.sender_name or "Anonymous"
+        lines.append(f"{i}. {name} - Ksh {float(txn.amount):,.2f} {indicator}")
+        
+    blank_slots = settings.get("blank_slots", 3)
+    start_idx = len(transactions) + 1
+    for i in range(blank_slots):
+        lines.append(f"{start_idx + i}.")
+        
+    lines.append("")
+    remaining = max(0, float(campaign.target_amount) - float(raised))
+    if footer:
+        lines.append(footer)
+    else:
+        lines.append(f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts.")
+        
+    lines.append(f"View the full report at: app.kapuletu.co.ke/report/{campaign.slug}")
+    if not settings.get("remove_watermark", False):
+        lines.append("\n*Powered by KapuLetu*")
+        
+    return {"preview_text": "\n".join(lines)}
+
+@router.get("/campaigns/{campaign_id}/export/excel", summary="Export Transactions to Excel")
+async def export_campaign_excel(
+    campaign_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
+    
+    try:
+        import openpyxl
+        from openpyxl.styles import Font
+    except ImportError:
+        raise HTTPException(status_code=500, detail="openpyxl is not installed. Please install it to export Excel files.")
+        
+    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).all()
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Contributions"
+    
+    headers = ["Date", "Name", "Phone", "Amount (KES)", "Payment Method"]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+        
+    for txn in transactions:
+        ws.append([
+            txn.created_at.strftime("%Y-%m-%d %H:%M"),
+            txn.sender_name or "Anonymous",
+            txn.sender_phone or "",
+            float(txn.amount),
+            txn.payment_method
+        ])
+        
+    # Auto-adjust column widths
+    for col in ws.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = (max_length + 2)
+        ws.column_dimensions[column].width = adjusted_width
+        
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=campaign_{campaign.slug}_contributions.xlsx"}
+    )
+
+@router.post("/public/campaigns/{campaign_id}/verify", response_model=CampaignOut, summary="Verify Public Access PIN")
+async def public_verify_campaign(
+    campaign_id: UUID,
+    pin: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+        
+    settings = campaign.settings_override or {}
+    if settings.get("require_pin", True):
+        access_pin = settings.get("access_pin")
+        if access_pin and pin != access_pin:
+            raise HTTPException(status_code=403, detail="Invalid PIN.")
+            
+    # If successful, we return the campaign details for the public view
+    return campaign

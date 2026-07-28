@@ -14,6 +14,17 @@ def create_campaign(db: Session, group_id: str, title: str, description: str = N
     while db.query(Campaign).filter(Campaign.group_id == group_id, Campaign.slug == slug).first():
         slug = f"{base_slug}-{random.randint(1000, 9999)}"
 
+    default_settings = {
+        "report_title": "Campaign Update",
+        "report_footer": "Thank you for your support.",
+        "blank_slots": 3,
+        "paid_indicator": "✔",
+        "require_pin": True,
+        "access_pin": str(random.randint(1000, 9999)),
+        "remove_watermark": False,
+        "auto_send_reports": False
+    }
+
     new_campaign = Campaign(
         campaign_id=uuid.uuid4(),
         group_id=group_id,
@@ -21,7 +32,8 @@ def create_campaign(db: Session, group_id: str, title: str, description: str = N
         description=description,
         target_amount=target_amount,
         payment_instructions=payment_instructions,
-        slug=slug
+        slug=slug,
+        settings_override=default_settings
     )
     db.add(new_campaign)
     db.commit()
