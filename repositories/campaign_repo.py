@@ -68,7 +68,7 @@ def get_group_campaigns(db: Session, group_id: str, skip: int = 0, limit: int = 
         c.total_raised = raised
         c.contributor_count = contrib_counts.get(c.campaign_id, 0)
         if c.target_amount and c.target_amount > 0:
-            c.progress_percentage = round((raised / c.target_amount) * 100, 2)
+            c.progress_percentage = round((raised / float(c.target_amount)) * 100, 2)
         else:
             c.progress_percentage = 0.0
             
