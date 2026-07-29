@@ -36,7 +36,7 @@ async def create_group(
             action="GROUP_CREATED",
             entity_type="group",
             entity_id=str(new_group.group_id),
-            details={"message": f"New group \"{new_group.name}\" created"}
+            details={"message": f"New group \"{new_group.group_name}\" created"}
         )
         
         return new_group
@@ -108,7 +108,7 @@ async def update_group(
         action="GROUP_UPDATED",
         entity_type="group",
         entity_id=str(group_id),
-        details={"message": f"Group \"{updated_group.name}\" settings updated"}
+        details={"message": f"Group \"{updated_group.group_name}\" settings updated"}
     )
     
     return updated_group
@@ -154,7 +154,7 @@ async def archive_group(
         action="GROUP_ARCHIVED",
         entity_type="group",
         entity_id=str(group_id),
-        details={"message": f"Group \"{archived_group.name}\" archived"}
+        details={"message": f"Group \"{archived_group.group_name}\" archived"}
     )
     
     return archived_group
