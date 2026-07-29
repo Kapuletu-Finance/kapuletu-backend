@@ -10,6 +10,8 @@ from models.group import Group
 from models.campaign import Campaign
 from services.ingestion.active_learner import log_for_active_learning
 from services.audit.service import AuditService
+from services.notifications.service import create_notification
+from sqlalchemy import func
 
 logger = get_logger(__name__)
 
@@ -138,6 +140,40 @@ class ApprovalService:
         )
         
         logger.info(f"Transaction {new_txn.transaction_id} successfully finalized and ledger-locked.")
+        
+        # --- Notification Hooks ---
+        sender_display = new_txn.sender_name or "Anonymous"
+        
+        # 1. Notify about the new contribution
+        create_notification(
+            db=self.db,
+            user_id=str(treasurer_id),
+            title="New contribution received",
+            message=f"Ksh. {float(new_txn.amount)} has been received from {sender_display} for {target_name}.",
+            type="transaction_approved",
+            related_entity_id=str(new_txn.transaction_id)
+        )
+        
+        # 2. Check Campaign Goal
+        if campaign_id and camp:
+            # Calculate total raised for this campaign so far
+            total_raised = self.db.query(func.sum(Transaction.amount)).filter(
+                Transaction.campaign_id == str(campaign_id),
+                Transaction.status == "approved"
+            ).scalar() or 0.0
+            
+            # If we crossed the threshold exactly with this transaction
+            # (To avoid spamming, we could check if total_raised - new_txn.amount < camp.target_amount)
+            if float(total_raised) >= float(camp.target_amount) and float(total_raised) - float(new_txn.amount) < float(camp.target_amount):
+                create_notification(
+                    db=self.db,
+                    user_id=str(treasurer_id),
+                    title="Campaign goal achieved.",
+                    message=f"You've reached your target amount for campaign {camp.title}.",
+                    type="campaign_goal_reached",
+                    related_entity_id=str(campaign_id)
+                )
+
         return new_txn
 
     def split_transaction(self, pending_txn_id, treasurer_id, group_id, allocations, campaign_id=None):

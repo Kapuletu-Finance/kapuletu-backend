@@ -21,6 +21,7 @@ from models.otp import OTP
 from models.token_blacklist import TokenBlacklist
 from common.config import get_config
 from services.audit.service import AuditService
+from services.notifications.service import create_notification
 
 logger = logging.getLogger(__name__)
 config = get_config()
@@ -502,6 +503,14 @@ class AuthService:
             action="PASSWORD_RESET",
             entity_type="USER",
             entity_id=str(user.user_id)
+        )
+        
+        create_notification(
+            db=db,
+            user_id=str(user.user_id),
+            title="Password reset successful",
+            message="Your password has been successfully reset. You can use your new password when logging in.",
+            type="security_alert"
         )
 
     def change_password(self, db: Session, user_id: str, old_password: str, new_password: str):

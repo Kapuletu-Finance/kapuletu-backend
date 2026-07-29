@@ -114,3 +114,20 @@ def broadcast_notification(db: Session, payload: BroadcastIn) -> dict:
             "total_targets": len(target_users)
         }
     }
+
+def create_notification(db: Session, user_id: str, title: str, message: str, type: str, related_entity_id: Optional[str] = None):
+    try:
+        new_notification = Notification(
+            user_id=user_id,
+            title=title,
+            message=message,
+            type=type,
+            related_entity_id=related_entity_id,
+            is_read=False
+        )
+        db.add(new_notification)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        import logging
+        logging.getLogger(__name__).error(f"Failed to create notification: {e}")
