@@ -18,6 +18,7 @@ class WorkspaceActivity(BaseModel):
     action: str
     entity_type: str
     created_at: datetime
+    details: Optional[dict] = None
 
 class WorkspaceOverviewOut(BaseModel):
     total_groups: int

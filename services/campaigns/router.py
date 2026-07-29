@@ -14,6 +14,7 @@ from services.auth.router import limiter
 from repositories import campaign_repo, group_repo
 from models.audit_log import AuditLog
 from models.transaction import Transaction
+from services.audit.service import AuditService
 
 router = APIRouter(prefix="", tags=["5. Campaigns Management"])
 
@@ -47,6 +48,15 @@ async def create_campaign(
         target_amount=payload.target_amount,
         payment_instructions=payload.payment_instructions
     )
+    
+    AuditService(db).log_action(
+        actor_id=current_user.get('sub'),
+        action="CAMPAIGN_CREATED",
+        entity_type="campaign",
+        entity_id=str(new_campaign.campaign_id),
+        details={"message": f"New campaign \"{new_campaign.title}\" created", "campaign_id": str(new_campaign.campaign_id)}
+    )
+    
     return new_campaign
 
 @router.get("/groups/{group_id}/campaigns", response_model=PaginatedCampaignResponse, summary="List Campaigns")
@@ -110,6 +120,15 @@ async def update_campaign(
         return campaign
         
     updated_campaign = campaign_repo.update_campaign(db=db, campaign_id=str(campaign_id), updates=updates)
+    
+    AuditService(db).log_action(
+        actor_id=current_user.get('sub'),
+        action="CAMPAIGN_UPDATED",
+        entity_type="campaign",
+        entity_id=str(campaign_id),
+        details={"message": f"Campaign \"{updated_campaign.title}\" updated", "campaign_id": str(campaign_id)}
+    )
+    
     return updated_campaign
 
 @router.patch("/campaigns/{campaign_id}/favorite", response_model=CampaignOut, summary="Toggle Favorite Campaign")
@@ -145,6 +164,15 @@ async def archive_campaign(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign is already archived.")
         
     archived_campaign = campaign_repo.archive_campaign(db=db, campaign_id=str(campaign_id))
+    
+    AuditService(db).log_action(
+        actor_id=current_user.get('sub'),
+        action="CAMPAIGN_ARCHIVED",
+        entity_type="campaign",
+        entity_id=str(campaign_id),
+        details={"message": f"Campaign \"{archived_campaign.title}\" archived", "campaign_id": str(campaign_id)}
+    )
+    
     return archived_campaign
 
 @router.post("/campaigns/{campaign_id}/regenerate-pin", summary="Regenerate Access PIN")
@@ -230,8 +258,14 @@ async def get_campaign_activities(
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
     
     logs = db.execute(
-        select(AuditLog).where(AuditLog.entity_type == "campaign", AuditLog.entity_id == str(campaign_id))
-        .order_by(AuditLog.created_at.desc()).limit(10)
+        select(AuditLog).where(
+            (
+                (AuditLog.entity_type == "campaign") & 
+                (AuditLog.entity_id == str(campaign_id))
+            ) | (
+                AuditLog.details["campaign_id"].astext == str(campaign_id)
+            )
+        ).order_by(AuditLog.created_at.desc()).limit(10)
     ).scalars().all()
     
     return logs

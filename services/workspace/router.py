@@ -101,7 +101,8 @@ async def get_workspace_overview(
             log_id=str(log.log_id),
             action=log.action,
             entity_type=log.entity_type,
-            created_at=log.created_at
+            created_at=log.created_at,
+            details=log.details
         ))
         
     return WorkspaceOverviewOut(

@@ -9,6 +9,7 @@ from common.auth_dependencies import get_verified_user
 from services.groups.schemas import GroupCreate, GroupUpdate, GroupOut, PaginatedGroupResponse
 from services.auth.router import limiter
 from repositories import group_repo
+from services.audit.service import AuditService
 
 router = APIRouter(prefix="/groups", tags=["4. Groups Management"])
 
@@ -29,6 +30,15 @@ async def create_group(
             description=payload.description,
             currency=payload.currency.value
         )
+        
+        AuditService(db).log_action(
+            actor_id=current_user.get('sub'),
+            action="GROUP_CREATED",
+            entity_type="group",
+            entity_id=str(new_group.group_id),
+            details={"message": f"New group \"{new_group.name}\" created"}
+        )
+        
         return new_group
     except IntegrityError:
         db.rollback()
@@ -92,6 +102,15 @@ async def update_group(
         return group
         
     updated_group = group_repo.update_group(db=db, group_id=str(group_id), updates=updates)
+    
+    AuditService(db).log_action(
+        actor_id=current_user.get('sub'),
+        action="GROUP_UPDATED",
+        entity_type="group",
+        entity_id=str(group_id),
+        details={"message": f"Group \"{updated_group.name}\" settings updated"}
+    )
+    
     return updated_group
 
 @router.patch("/{group_id}/favorite", response_model=GroupOut, summary="Toggle Favorite Group")
@@ -129,4 +148,13 @@ async def archive_group(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group is already archived.")
         
     archived_group = group_repo.archive_group(db=db, group_id=str(group_id))
+    
+    AuditService(db).log_action(
+        actor_id=current_user.get('sub'),
+        action="GROUP_ARCHIVED",
+        entity_type="group",
+        entity_id=str(group_id),
+        details={"message": f"Group \"{archived_group.name}\" archived"}
+    )
+    
     return archived_group

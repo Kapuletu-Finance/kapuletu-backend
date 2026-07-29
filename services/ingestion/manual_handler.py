@@ -58,7 +58,11 @@ def handler(event, context):
             action="MANUAL_ENTRY",
             entity_type="PENDING_TRANSACTION",
             entity_id=str(saved_txn.pending_id),
-            details={"amount": float(body["amount"])}
+            details={
+                "amount": float(body["amount"]),
+                "message": f"Manual contribution of Ksh. {float(body['amount'])} added",
+                "campaign_id": body.get("campaign_id") # Assuming body might pass it, otherwise None
+            }
         )
         
         db.close()

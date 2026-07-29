@@ -6,6 +6,8 @@ import json
 from models.pending_transaction import PendingTransaction
 from models.transaction import Transaction
 from models.users import User
+from models.group import Group
+from models.campaign import Campaign
 from services.ingestion.active_learner import log_for_active_learning
 from services.audit.service import AuditService
 
@@ -113,12 +115,26 @@ class ApprovalService:
         
         self.db.commit()
         
+        target_name = "Unknown"
+        if campaign_id:
+            camp = self.db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+            if camp:
+                target_name = camp.title
+        else:
+            grp = self.db.query(Group).filter(Group.group_id == group_id).first()
+            if grp:
+                target_name = grp.group_name
+
         AuditService(self.db).log_action(
             actor_id=treasurer_id,
             action="TXN_APPROVED",
             entity_type="TRANSACTION",
             entity_id=str(new_txn.transaction_id),
-            details={"amount": float(new_txn.amount)}
+            details={
+                "amount": float(new_txn.amount),
+                "message": f"Ksh. {float(new_txn.amount)} for {target_name} approved",
+                "campaign_id": str(campaign_id) if campaign_id else None
+            }
         )
         
         logger.info(f"Transaction {new_txn.transaction_id} successfully finalized and ledger-locked.")
@@ -182,12 +198,26 @@ class ApprovalService:
         
         self.db.commit()
 
+        target_name = "Unknown"
+        if campaign_id:
+            camp = self.db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+            if camp:
+                target_name = camp.title
+        else:
+            grp = self.db.query(Group).filter(Group.group_id == group_id).first()
+            if grp:
+                target_name = grp.group_name
+
         AuditService(self.db).log_action(
             actor_id=treasurer_id,
             action="TXN_SPLIT_APPROVED",
             entity_type="TRANSACTION",
             entity_id=str(new_txn.transaction_id),
-            details={"splits": len(allocations)}
+            details={
+                "splits": len(allocations),
+                "message": f"Ksh. {float(new_txn.amount)} split across {len(allocations)} members for {target_name}",
+                "campaign_id": str(campaign_id) if campaign_id else None
+            }
         )
 
         return new_txn
@@ -222,7 +252,11 @@ class ApprovalService:
             actor_id=treasurer_id,
             action="TXN_REJECTED",
             entity_type="PENDING_TRANSACTION",
-            entity_id=str(pending_txn_id)
+            entity_id=str(pending_txn_id),
+            details={
+                "message": "Transaction rejected",
+                "campaign_id": str(pending.campaign_id) if hasattr(pending, 'campaign_id') and pending.campaign_id else None
+            }
         )
         
         logger.info(f"Transaction {pending_txn_id} rejected by treasurer {treasurer_id}.")
