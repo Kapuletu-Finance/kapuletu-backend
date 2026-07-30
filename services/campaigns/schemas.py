@@ -64,12 +64,25 @@ class PaginatedCampaignResponse(BaseModel):
     page: int = Field(..., json_schema_extra={"example": 1})
     limit: int = Field(..., json_schema_extra={"example": 10})
 
+from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
+import zoneinfo
+from datetime import timezone
+
 class TransactionOut(BaseModel):
     transaction_id: UUID
-    date: datetime = Field(alias="created_at", serialization_alias="date")
+    date: str = Field(alias="created_at", serialization_alias="date")
     amount: float
     name: Optional[str] = Field(None, alias="sender_name", serialization_alias="name")
     payment_method: str
+    
+    @field_validator('date', mode='before')
+    def format_date(cls, v):
+        if isinstance(v, datetime):
+            if v.tzinfo is None:
+                v = v.replace(tzinfo=timezone.utc)
+            v = v.astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+            return v.strftime("%Y-%m-%d %I:%M %p")
+        return v
     
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
@@ -83,8 +96,17 @@ class PaginatedTransactionResponse(BaseModel):
 class CampaignActivity(BaseModel):
     log_id: UUID
     action: str
-    date: datetime = Field(alias="created_at", serialization_alias="date")
+    date: str = Field(alias="created_at", serialization_alias="date")
     details: Optional[Dict[str, Any]] = None
+    
+    @field_validator('date', mode='before')
+    def format_date(cls, v):
+        if isinstance(v, datetime):
+            if v.tzinfo is None:
+                v = v.replace(tzinfo=timezone.utc)
+            v = v.astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+            return v.strftime("%Y-%m-%d %I:%M %p")
+        return v
     
     @model_validator(mode='after')
     def format_action_message(self) -> 'CampaignActivity':

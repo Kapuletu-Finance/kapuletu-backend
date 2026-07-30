@@ -93,7 +93,7 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
                 
         table_data.append([
             str(idx),
-            txn_time.strftime("%Y-%m-%d %H:%M"),
+            txn_time.strftime("%Y-%m-%d %I:%M %p"),
             name[:30],
             txn.sender_phone or "-",
             f"{float(txn.amount):,.2f}",

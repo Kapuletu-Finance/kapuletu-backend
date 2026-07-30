@@ -93,7 +93,7 @@ def generate_excel_report(title: str, total_raised: float, target_amount: float,
                 
         ws.append([
             idx,
-            txn_time.strftime("%Y-%m-%d %H:%M"),
+            txn_time.strftime("%Y-%m-%d %I:%M %p"),
             name[:50],
             txn.sender_phone or "-",
             float(txn.amount),
