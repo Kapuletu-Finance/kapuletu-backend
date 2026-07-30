@@ -54,7 +54,11 @@ class TemplateEngine:
         total_collected = sum(float(t.amount) for t in txns)
         target = float(campaign.target_amount) if campaign.target_amount else 0.0
         deficit = max(0, target - total_collected)
-        date_str = datetime.utcnow().strftime("%A %d %B, %Y")
+        
+        from datetime import timezone
+        import zoneinfo
+        now_eat = datetime.now(timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+        date_str = now_eat.strftime("%A %d %B, %Y")
 
         # 3. Default KapuLetu Standard Templates
         default_header = (

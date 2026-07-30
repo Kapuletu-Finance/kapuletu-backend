@@ -136,23 +136,26 @@ async def dashboard_summary(
     recent_activity = recent_activity[:10]
         
     # 4. Daily Collections (Last 7 Days)
-    today = datetime.utcnow().date()
+    from datetime import timezone
+    import zoneinfo
+    now_eat = datetime.now(timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+    today = now_eat.date()
     daily_totals = { (today - timedelta(days=i)).strftime("%Y-%m-%d"): 0.0 for i in range(6, -1, -1) }
     
-    from sqlalchemy import cast, Date
-    daily_stmt = select(
-        cast(Transaction.created_at, Date),
-        func.sum(Transaction.amount)
-    ).where(
+    cutoff_eat = datetime.combine(today - timedelta(days=6), datetime.min.time(), tzinfo=zoneinfo.ZoneInfo("Africa/Nairobi"))
+    cutoff_utc = cutoff_eat.astimezone(timezone.utc).replace(tzinfo=None)
+    
+    daily_txns = db.query(Transaction).filter(
         Transaction.owner_id == owner_id,
         Transaction.status == "approved",
-        Transaction.created_at >= (today - timedelta(days=6))
-    ).group_by(cast(Transaction.created_at, Date))
+        Transaction.created_at >= cutoff_utc
+    ).all()
     
-    for row in db.execute(daily_stmt).all():
-        dt_str = row[0].strftime("%Y-%m-%d")
+    for txn in daily_txns:
+        txn_eat = txn.created_at.replace(tzinfo=timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+        dt_str = txn_eat.strftime("%Y-%m-%d")
         if dt_str in daily_totals:
-            daily_totals[dt_str] = float(row[1])
+            daily_totals[dt_str] += float(txn.amount)
             
     daily_collections = [DailyCollection(date=k, amount=v) for k, v in daily_totals.items()]
     

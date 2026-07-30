@@ -20,14 +20,12 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
     # Process timezone
     from datetime import datetime, timezone
     now_utc = datetime.now(timezone.utc)
-    if tz:
-        try:
-            from zoneinfo import ZoneInfo
-            now_local = now_utc.astimezone(ZoneInfo(tz))
-            time_str = now_local.strftime('%d %B %Y at %I:%M %p') + f" ({tz})"
-        except Exception:
-            time_str = now_utc.strftime('%Y-%m-%d %H:%M:%S UTC')
-    else:
+    tz = tz or "Africa/Nairobi"
+    try:
+        from zoneinfo import ZoneInfo
+        now_local = now_utc.astimezone(ZoneInfo(tz))
+        time_str = now_local.strftime('%d %B %Y at %I:%M %p') + f" ({tz})"
+    except Exception:
         time_str = now_utc.strftime('%Y-%m-%d %H:%M:%S UTC')
         
     stream = io.BytesIO()
@@ -81,11 +79,21 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
     
     # 3. Financial Table
     table_data = [["#", "Date", "Name", "Phone", "Amount (KES)", "Method"]]
+    from zoneinfo import ZoneInfo
     for idx, txn in enumerate(entries, 1):
         name = txn.sender_name or (f"Member {txn.sender_phone[-4:]}" if txn.sender_phone else "Anonymous")
+        
+        # Shift transaction time to target timezone
+        txn_time = txn.created_at
+        if hasattr(txn_time, 'replace'):
+            try:
+                txn_time = txn_time.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(tz))
+            except Exception:
+                pass
+                
         table_data.append([
             str(idx),
-            txn.created_at.strftime("%Y-%m-%d %H:%M"),
+            txn_time.strftime("%Y-%m-%d %H:%M"),
             name[:30],
             txn.sender_phone or "-",
             f"{float(txn.amount):,.2f}",

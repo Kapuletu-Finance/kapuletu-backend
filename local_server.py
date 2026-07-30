@@ -6,7 +6,14 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, FastAPI, Request, Response, Depends
 
 # Ensure all logger.info() messages (like OTP codes) are printed to the console
-logging.basicConfig(level=logging.INFO, format="%(levelname)s:\t  %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:\t  %(message)s", datefmt='%Y-%m-%d %H:%M:%S %Z')
+
+# Override logging time converter to EAT
+from datetime import datetime, timezone
+import zoneinfo
+def custom_time(*args):
+    return datetime.now(timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi")).timetuple()
+logging.Formatter.converter = custom_time
 
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field

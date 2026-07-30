@@ -29,7 +29,10 @@ class MpesaProvider(PaymentProvider):
 
     def initiate_checkout(self, user_id: str, plan_id: str, amount: float, metadata: Dict[str, Any]) -> Dict[str, Any]:
         token = self._get_access_token()
-        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+        from datetime import timezone
+        import zoneinfo
+        now_eat = datetime.datetime.now(timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+        timestamp = now_eat.strftime('%Y%m%d%H%M%S')
         password = base64.b64encode(f"{self.shortcode}{self.passkey}{timestamp}".encode()).decode()
         
         payload = {

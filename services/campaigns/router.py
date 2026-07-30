@@ -212,8 +212,11 @@ async def get_campaign_chart_data(
     ).scalars().all()
     
     grouped = {}
+    from datetime import timezone
+    import zoneinfo
     for txn in transactions:
-        date_str = txn.created_at.strftime("%Y-%m-%d") if filter in ["this_week", "this_month"] else txn.created_at.strftime("%Y-%m")
+        txn_eat = txn.created_at.replace(tzinfo=timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+        date_str = txn_eat.strftime("%Y-%m-%d") if filter in ["this_week", "this_month"] else txn_eat.strftime("%Y-%m")
         grouped[date_str] = grouped.get(date_str, 0.0) + float(txn.amount)
         
     return [{"date": k, "amount": v} for k, v in grouped.items()]
