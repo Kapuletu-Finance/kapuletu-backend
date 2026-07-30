@@ -302,16 +302,33 @@ async def get_campaign_report_preview(
         lines.append(f"{campaign.payment_instructions}")
     lines.append("")
     
-    for i, txn in enumerate(transactions, 1):
-        name = txn.sender_name or "Anonymous"
-        lines.append(f"{i}. {name} - Ksh {float(txn.amount):,.2f} {indicator}")
+    if not transactions:
+        dummy_contributors = [
+            {"name": "Contributor A", "amount": 1000.0},
+            {"name": "Contributor B", "amount": 2500.0},
+            {"name": "Contributor C", "amount": 500.0},
+            {"name": "Contributor D", "amount": 1500.0},
+            {"name": "Contributor E", "amount": 2000.0},
+            {"name": "Contributor F", "amount": 3000.0},
+        ]
+        for i, c in enumerate(dummy_contributors, 1):
+            lines.append(f"{i}. {c['name']} - Ksh {c['amount']:,.2f} {indicator}")
+        contributors_list = dummy_contributors
+        start_idx = 7
+    else:
+        contributors_list = []
+        for i, txn in enumerate(transactions, 1):
+            name = txn.sender_name or "Anonymous"
+            amount = float(txn.amount)
+            contributors_list.append({"name": name, "amount": amount})
+            lines.append(f"{i}. {name} - Ksh {amount:,.2f} {indicator}")
+        start_idx = len(transactions) + 1
         
     try:
         blank_slots = int(settings.get("blank_slots", 3))
     except (ValueError, TypeError):
         blank_slots = 3
         
-    start_idx = len(transactions) + 1
     for i in range(blank_slots):
         lines.append(f"{start_idx + i}.")
         
@@ -323,7 +340,7 @@ async def get_campaign_report_preview(
         lines.append(f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts.")
         
     frontend_url = get_config().FRONTEND_URL.rstrip('/')
-    public_url = f"{frontend_url}/report/groups/{campaign.group.slug}/{campaign.slug}"
+    public_url = f"{frontend_url}/report/w/{campaign.group.owner_id}/g/{campaign.group.slug or campaign.group_id}/c/{campaign.slug or campaign.campaign_id}"
     
     lines.append(f"View the full report at: {public_url}")
     if not settings.get("remove_watermark", False):
@@ -335,7 +352,7 @@ async def get_campaign_report_preview(
         "description": campaign.description,
         "raised": float(raised),
         "target": float(campaign.target_amount),
-        "contributors": [{"name": txn.sender_name or "Anonymous", "amount": float(txn.amount)} for txn in transactions],
+        "contributors": contributors_list,
         "payment_instructions": campaign.payment_instructions,
         "footer": footer,
         "public_url": public_url
@@ -499,16 +516,23 @@ async def export_campaign_pdf(
         headers={"Content-Disposition": f"attachment; filename=campaign_{campaign.slug}_contributions.pdf"}
     )
 
-@router.post("/public/groups/{group_id}/campaigns/{campaign_id}/verify", response_model=CampaignReportPreview, summary="Verify Public Access PIN")
+@router.post("/public/workspaces/{workspace_id}/groups/{group_id}/campaigns/{campaign_id}/verify", response_model=CampaignReportPreview, summary="Verify Public Access PIN")
 async def public_verify_campaign(
+    workspace_id: str,
     group_id: str,
     campaign_id: str,
     req: PublicVerifyRequest,
     db: Session = Depends(get_db)
 ):
     campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
-    if not campaign or (str(campaign.group_id) != group_id and campaign.group.slug != group_id):
+    if not campaign or not campaign.group:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+        
+    if str(campaign.group_id) != group_id and campaign.group.slug != group_id:
         raise HTTPException(status_code=404, detail="Campaign not found in this group.")
+        
+    if str(campaign.group.owner_id) != workspace_id:
+        raise HTTPException(status_code=404, detail="Campaign not found in this workspace.")
         
     settings = campaign.settings_override or {}
     if settings.get("require_pin", True):
@@ -556,7 +580,7 @@ async def public_verify_campaign(
         lines.append(f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts.")
         
     frontend_url = get_config().FRONTEND_URL.rstrip('/')
-    public_url = f"{frontend_url}/report/groups/{campaign.group.slug}/{campaign.slug}"
+    public_url = f"{frontend_url}/report/w/{campaign.group.owner_id}/g/{campaign.group.slug or campaign.group_id}/c/{campaign.slug or campaign.campaign_id}"
     
     lines.append(f"View the full report at: {public_url}")
     if not settings.get("remove_watermark", False):

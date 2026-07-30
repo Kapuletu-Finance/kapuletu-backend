@@ -130,10 +130,11 @@ class TemplateEngine:
         frontend_url = config.FRONTEND_URL.rstrip('/')
         group_id = campaign.group.slug or campaign.group_id
         camp_id = campaign.slug or campaign.campaign_id
+        workspace_id = campaign.group.owner_id
         report += (
             f"====================================\n"
             f" View organized live report online:\n"
-            f"{frontend_url}/report/groups/{group_id}/{camp_id}\n"
+            f"{frontend_url}/report/w/{workspace_id}/g/{group_id}/c/{camp_id}\n"
             f"Access Code: {settings.public_access_pin}\n"
             f"===================================="
         )
