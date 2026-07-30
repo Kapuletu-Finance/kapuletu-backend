@@ -33,17 +33,17 @@ def _verify_group_ownership(db: Session, group_id: str, owner_id: str):
 @limiter.limit("50/minute")
 async def create_campaign(
     request: Request,
-    group_id: UUID,
+    group_id: str,
     payload: CampaignCreate,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Creates a new campaign for a specific group."""
-    _verify_group_ownership(db, str(group_id), current_user.get('sub'))
+    group = _verify_group_ownership(db, str(group_id), current_user.get('sub'))
     
     new_campaign = campaign_repo.create_campaign(
         db=db,
-        group_id=str(group_id),
+        group_id=str(group.group_id),
         title=payload.title,
         description=payload.description,
         target_amount=payload.target_amount,
@@ -73,9 +73,9 @@ async def list_campaigns(
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Lists all campaigns for a specific group with pagination, search, and dynamic stats."""
-    _verify_group_ownership(db, str(group_id), current_user.get('sub'))
+    group = _verify_group_ownership(db, str(group_id), current_user.get('sub'))
     
-    campaigns = campaign_repo.get_group_campaigns(db=db, group_id=str(group_id), skip=skip, limit=limit, search=search, status=campaign_status)
+    campaigns = campaign_repo.get_group_campaigns(db=db, group_id=str(group.group_id), skip=skip, limit=limit, search=search, status=campaign_status)
     return campaigns
 
 @router.get("/campaigns/{campaign_id}", response_model=CampaignOut, summary="Get Campaign")
@@ -283,7 +283,10 @@ async def get_campaign_report_preview(
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
     
     settings = campaign.settings_override or {}
-    title = settings.get("report_title") or campaign.title
+    title = settings.get("report_title")
+    if not title or title == "Campaign Update":
+        title = f"{campaign.title} Update"
+        
     footer = settings.get("report_footer", "")
     indicator = settings.get("paid_indicator", "✔")
     
@@ -325,9 +328,9 @@ async def get_campaign_report_preview(
         start_idx = len(transactions) + 1
         
     try:
-        blank_slots = int(settings.get("blank_slots", 3))
+        blank_slots = int(settings.get("blank_slots", 3)) + 3
     except (ValueError, TypeError):
-        blank_slots = 3
+        blank_slots = 6
         
     for i in range(blank_slots):
         lines.append(f"{start_idx + i}.")
