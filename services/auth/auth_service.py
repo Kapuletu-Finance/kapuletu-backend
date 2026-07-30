@@ -265,7 +265,8 @@ class AuthService:
             actor_id=str(user.user_id),
             action="USER_LOGIN",
             entity_type="USER",
-            entity_id=str(user.user_id)
+            entity_id=str(user.user_id),
+            details={"message": "You successfully logged in."}
         )
         
         return {
