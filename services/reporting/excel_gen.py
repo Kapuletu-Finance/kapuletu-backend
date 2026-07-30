@@ -20,17 +20,17 @@ def generate_excel_report(title: str, total_raised: float, target_amount: float,
     currency_style.number_format = '#,##0.00'
     
     # ---------------------------------------------------------
-    # SHEET 1: Summary Sheet
+    # SHEET: Campaign Report (Summary + Transactions)
     # ---------------------------------------------------------
-    ws_summary = wb.active
-    ws_summary.title = "Summary"
+    ws = wb.active
+    ws.title = "Contributions Report"
     
     # Letterhead
-    ws_summary.append([title, "OFFICIAL CAMPAIGN REPORT"])
-    ws_summary.cell(row=1, column=1).font = Font(bold=True, color="1A5D1A", size=16)
-    ws_summary.cell(row=1, column=2).font = Font(bold=True, size=12, color="555555")
-    ws_summary.append([f"Generated on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"])
-    ws_summary.append([])
+    ws.append([title, "OFFICIAL CAMPAIGN REPORT"])
+    ws.cell(row=1, column=1).font = Font(bold=True, color="1A5D1A", size=16)
+    ws.cell(row=1, column=2).font = Font(bold=True, size=12, color="555555")
+    ws.append([f"Generated on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"])
+    ws.append([])
     
     # Summary Data
     progress = min((float(total_raised) / float(target_amount) * 100), 100.0) if target_amount and float(target_amount) > 0 else 0.0
@@ -43,37 +43,33 @@ def generate_excel_report(title: str, total_raised: float, target_amount: float,
     ]
     
     for row_idx, row_data in enumerate(summary_data, start=5):
-        ws_summary.append(row_data)
-        ws_summary.cell(row=row_idx, column=1).font = Font(bold=True)
+        ws.append(row_data)
+        ws.cell(row=row_idx, column=1).font = Font(bold=True)
         # Format Currency
         if "KES" in row_data[0]:
-            ws_summary.cell(row=row_idx, column=2).style = currency_style
+            ws.cell(row=row_idx, column=2).style = currency_style
         # Format Percentage
         if "(%)" in row_data[0]:
-            ws_summary.cell(row=row_idx, column=2).number_format = '0.00'
+            ws.cell(row=row_idx, column=2).number_format = '0.00'
             
-    # Auto-width
-    ws_summary.column_dimensions['A'].width = 25
-    ws_summary.column_dimensions['B'].width = 40
+    ws.append([])
+    ws.append([])
     
-    # ---------------------------------------------------------
-    # SHEET 2: Transactions
-    # ---------------------------------------------------------
-    ws_tx = wb.create_sheet(title="Transactions")
-    
+    # Transactions Table Header
     headers = ["#", "Transaction Date", "Contributor Name", "Phone Number", "Amount (KES)", "Payment Method"]
-    ws_tx.append(headers)
+    ws.append(headers)
     
-    # Style headers
+    header_row = ws.max_row
     green_fill = PatternFill(start_color="1A5D1A", end_color="1A5D1A", fill_type="solid")
-    for cell in ws_tx[1]:
+    for cell in ws[header_row]:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = green_fill
         cell.alignment = Alignment(horizontal="center")
         
+    # Transactions Data
     for idx, txn in enumerate(entries, 1):
         name = txn.sender_name or (f"Member {txn.sender_phone[-4:]}" if txn.sender_phone else "Anonymous")
-        ws_tx.append([
+        ws.append([
             idx,
             txn.created_at.strftime("%Y-%m-%d %H:%M"),
             name[:50],
@@ -83,12 +79,12 @@ def generate_excel_report(title: str, total_raised: float, target_amount: float,
         ])
         
         # Apply currency format
-        ws_tx.cell(row=idx+1, column=5).style = currency_style
+        ws.cell(row=ws.max_row, column=5).style = currency_style
         
     # Auto-width
-    column_widths = {'A': 5, 'B': 20, 'C': 35, 'D': 15, 'E': 15, 'F': 15}
+    column_widths = {'A': 20, 'B': 25, 'C': 35, 'D': 15, 'E': 15, 'F': 15}
     for col, width in column_widths.items():
-        ws_tx.column_dimensions[col].width = width
+        ws.column_dimensions[col].width = width
         
     # ---------------------------------------------------------
     # Finalize
