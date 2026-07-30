@@ -118,3 +118,28 @@ class PinResponse(BaseModel):
 
 class PublicVerifyRequest(BaseModel):
     pin: Optional[str] = None
+
+class PublicContributor(BaseModel):
+    name: str
+    amount: float
+    date: datetime
+
+class PublicWebReportOut(BaseModel):
+    # Core Data
+    campaign_title: str
+    campaign_description: Optional[str] = None
+    raised_amount: float
+    target_amount: float
+    progress_percentage: float
+    
+    # Contributors
+    total_contributors: int
+    contributors: List[PublicContributor]
+    
+    # Visual/Document Addons
+    blank_slots_count: int
+    payment_instructions: Optional[str] = None
+    remaining_message: str
+    footer_message: Optional[str] = None
+    watermark: Optional[str] = None
+    public_url: str
