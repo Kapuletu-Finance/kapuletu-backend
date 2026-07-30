@@ -53,8 +53,10 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
         spaceAfter=12
     )
     
+    display_title = settings.get("report_title") or title
+    
     # 1. Letterhead
-    elements.append(Paragraph(f"<b>{title}</b>", title_style))
+    elements.append(Paragraph(f"<b>{display_title}</b>", title_style))
     elements.append(Paragraph("OFFICIAL CAMPAIGN REPORT", subtitle_style))
     elements.append(Paragraph(f"Generated on {time_str}", subtitle_style))
     elements.append(Spacer(1, 12))
@@ -62,7 +64,7 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
     # 2. Summary Block
     progress = min((float(total_raised) / float(target_amount) * 100), 100.0) if target_amount and float(target_amount) > 0 else 0.0
     summary_data = [
-        [Paragraph("<b>Campaign:</b>", styles['Normal']), title],
+        [Paragraph("<b>Campaign:</b>", styles['Normal']), display_title],
         [Paragraph("<b>Total Raised:</b>", styles['Normal']), f"KES {float(total_raised):,.2f}"],
         [Paragraph("<b>Target Amount:</b>", styles['Normal']), f"KES {float(target_amount):,.2f}"],
         [Paragraph("<b>Progress:</b>", styles['Normal']), f"{progress:.1f}%"]
@@ -100,6 +102,14 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
             txn.payment_method or "-"
         ])
         
+    try:
+        blank_slots = int(settings.get("blank_slots", 0))
+    except (ValueError, TypeError):
+        blank_slots = 0
+        
+    for _ in range(blank_slots):
+        table_data.append([str(len(table_data)), "", "", "", "", ""])
+        
     t = Table(table_data, colWidths=[30, 90, 150, 90, 90, 80])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1A5D1A")), # KapuLetu Green
@@ -118,6 +128,11 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
             t.setStyle(TableStyle([('BACKGROUND', (0, i), (-1, i), colors.white)]))
             
     elements.append(t)
+    
+    report_footer = settings.get("report_footer")
+    if report_footer:
+        elements.append(Spacer(1, 24))
+        elements.append(Paragraph(report_footer, styles['Normal']))
     
     # 4. Footer Branding
     if not settings.get("remove_watermark", False):

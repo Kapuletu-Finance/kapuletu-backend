@@ -350,7 +350,7 @@ async def get_campaign_report_preview(
     
     lines.append(f"View the full report at: {public_url}")
     if not settings.get("remove_watermark", False):
-        lines.append("\n*Powered by KapuLetu*")
+        lines.append("\n*Generated via KapuLetu*")
         
     return {
         "preview_text": "\n".join(lines),
@@ -483,7 +483,7 @@ async def public_verify_campaign(
     remaining_message = f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts."
     
     footer_message = settings.get("report_footer", None)
-    watermark = "Powered by KapuLetu" if not settings.get("remove_watermark", False) else None
+    watermark = "Generated via KapuLetu" if not settings.get("remove_watermark", False) else None
     
     frontend_url = get_config().FRONTEND_URL.rstrip('/')
     public_url = f"{frontend_url}/report/w/{campaign.group.owner_id}/g/{campaign.group.slug or campaign.group_id}/c/{campaign.slug or campaign.campaign_id}"
