@@ -119,7 +119,7 @@ async def update_campaign(
     if not updates:
         return campaign
         
-    updated_campaign = campaign_repo.update_campaign(db=db, campaign_id=str(campaign_id), updates=updates)
+    updated_campaign = campaign_repo.update_campaign(db=db, campaign_id=str(campaign.campaign_id), updates=updates)
     
     AuditService(db).log_action(
         actor_id=current_user.get('sub'),
@@ -144,7 +144,7 @@ async def toggle_favorite_campaign(
         
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
     
-    updated_campaign = campaign_repo.update_campaign(db=db, campaign_id=str(campaign_id), updates={"is_favorite": not campaign.is_favorite})
+    updated_campaign = campaign_repo.update_campaign(db=db, campaign_id=str(campaign.campaign_id), updates={"is_favorite": not campaign.is_favorite})
     return updated_campaign
 
 @router.delete("/campaigns/{campaign_id}", response_model=CampaignOut, summary="Archive Campaign")
@@ -163,7 +163,7 @@ async def archive_campaign(
     if not campaign.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign is already archived.")
         
-    archived_campaign = campaign_repo.archive_campaign(db=db, campaign_id=str(campaign_id))
+    archived_campaign = campaign_repo.archive_campaign(db=db, campaign_id=str(campaign.campaign_id))
     
     AuditService(db).log_action(
         actor_id=current_user.get('sub'),
@@ -190,7 +190,7 @@ async def regenerate_campaign_pin(
     current_settings = campaign.settings_override or {}
     current_settings["access_pin"] = new_pin
     
-    updated_campaign = campaign_repo.update_campaign(db=db, campaign_id=str(campaign_id), updates={"settings_override": current_settings})
+    updated_campaign = campaign_repo.update_campaign(db=db, campaign_id=str(campaign.campaign_id), updates={"settings_override": current_settings})
     return {"access_pin": new_pin}
 
 @router.get("/campaigns/{campaign_id}/chart-data", summary="Get Contribution Chart Data")

@@ -101,7 +101,7 @@ async def update_group(
     if not updates:
         return group
         
-    updated_group = group_repo.update_group(db=db, group_id=str(group_id), updates=updates)
+    updated_group = group_repo.update_group(db=db, group_id=str(group.group_id), updates=updates)
     
     AuditService(db).log_action(
         actor_id=current_user.get('sub'),
@@ -127,7 +127,7 @@ async def toggle_favorite_group(
     if str(group.owner_id) != current_user.get('sub'):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to modify this group.")
         
-    updated_group = group_repo.update_group(db=db, group_id=str(group_id), updates={"is_favorite": not group.is_favorite})
+    updated_group = group_repo.update_group(db=db, group_id=str(group.group_id), updates={"is_favorite": not group.is_favorite})
     return updated_group
 
 @router.delete("/{group_id}", response_model=GroupOut, summary="Archive Group")
@@ -147,7 +147,7 @@ async def archive_group(
     if not group.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group is already archived.")
         
-    archived_group = group_repo.archive_group(db=db, group_id=str(group_id))
+    archived_group = group_repo.archive_group(db=db, group_id=str(group.group_id))
     
     AuditService(db).log_action(
         actor_id=current_user.get('sub'),
