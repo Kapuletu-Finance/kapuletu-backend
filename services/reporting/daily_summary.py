@@ -52,7 +52,7 @@ def generate_campaign_whatsapp_report(db: Session, campaign_id: str, manual_inst
     instructions = manual_instructions or campaign.payment_instructions or "Pay via M-Pesa to the Treasury Number"
 
     # 4. Build the Hyper-Clean Structured Message
-    report = f"KAPULETU TREASURY: {campaign.title.upper()}\n"
+    report = f"TREASURY REPORT: {campaign.title.upper()}\n"
     report += f"STATUS REPORT AS OF {date_str.upper()}\n"
     report += f"====================================\n\n"
     

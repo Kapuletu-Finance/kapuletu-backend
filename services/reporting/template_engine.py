@@ -65,8 +65,7 @@ class TemplateEngine:
             f"KAPULETU TREASURY UPDATE\n"
             f"*{campaign.title.upper()}*\n"
             f"As of {date_str}\n\n"
-            f"We continue to thank everyone for the overwhelming love, prayers, and financial support. "
-            f"As the treasurer, I say thank you all and God bless you abundantly!\n\n"
+            f"Thank you for your continued support and contributions.\n\n"
             f"CONTRIBUTOR LIST:\n"
             f"------------------------------------"
         )

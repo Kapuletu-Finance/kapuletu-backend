@@ -402,29 +402,19 @@ class AuthService:
                     </div>
                     <div class="content">
                         <h2>Welcome to KapuLetu, {user.first_name}.</h2>
-                        <p>We are writing to formally confirm that your account has been successfully verified and activated. You now have full access to our comprehensive suite of treasury management tools.</p>
+                        <p>Your account is verified and ready to go. You can now easily track contributions, manage your campaigns, and generate official reports.</p>
                         
-                        <div class="value-prop">
-                            <h3>Your Financial Infrastructure is Ready</h3>
-                            <ul class="feature-list">
-                                <li><strong>Transparent Tracking:</strong> Automatically log and audit every community contribution.</li>
-                                <li><strong>Institutional Reporting:</strong> Generate clear, professional financial statements on demand.</li>
-                                <li><strong>Secure Governance:</strong> Maintain complete administrative oversight with robust security protocols.</li>
-                            </ul>
-                        </div>
-                        
-                        <p>To begin structuring your organization's finances, please log in to your secure administrative dashboard and invite your executive team.</p>
+                        <p>To begin managing your community's finances, please log in to your dashboard and invite your members.</p>
                         
                         <div class="button-container">
-                            <a href="{dashboard_url}" class="button">Access Secure Dashboard</a>
+                            <a href="{dashboard_url}" class="button">Access Dashboard</a>
                         </div>
                         
-                        <p>Thank you for choosing KapuLetu. We are committed to providing you with an enterprise-grade platform to manage your community's wealth with absolute transparency and integrity.</p>
+                        <p>Thank you for joining us!</p>
                     </div>
                     <div class="footer">
-                        <p>If you require administrative assistance or technical support, please reach out to our dedicated operations team at <strong>{support_email}</strong>.</p>
-                        <p>&copy; 2026 KapuLetu Systems. All rights reserved.</p>
-                        <p class="legal">This email contains secure, transactional information relating to your KapuLetu account. Please do not reply directly to this automated message.</p>
+                        <p>If you require support, please reach out to our team at <strong>{support_email}</strong>.</p>
+                        <p>&copy; 2026 KapuLetu. All rights reserved.</p>
                     </div>
                 </div>
             </div>

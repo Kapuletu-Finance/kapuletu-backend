@@ -179,14 +179,14 @@ def process_ingestion(body_str: str, config):
         
         # Determine reply text
         if result["status"] == "ignored":
-            reply_text = "Notice: You have already submitted this transaction. It is currently pending review in your KapuLetu dashboard."
+            reply_text = "You have already submitted this transaction. It is currently pending review."
         elif result["status"] == "error":
             reply_text = f"Unauthorized: Your phone number is not registered as a treasurer for any KapuLetu group. Please contact an admin or visit {config.FRONTEND_URL.rstrip('/')}/signup to create an account."
         else:
             parsed = result.get("parsed_data", {})
             amt = f"KES {parsed.get('amount', 0.0):,.2f}" if parsed.get('amount') else "the transaction"
             name = parsed.get("sender_name") or parsed.get("provider") or "the sender"
-            reply_text = f"Success! We received {amt} from {name}. It is now pending your approval in the KapuLetu dashboard."
+            reply_text = f"Success! We received {amt} from {name}. It is now awaiting for your approval in your kapuletu workspace"
 
         # 5. Send Reply via Meta Graph API
         send_meta_reply(sender_phone, reply_text, config)
