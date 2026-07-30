@@ -140,6 +140,8 @@ class PinResponse(BaseModel):
 
 class PublicVerifyRequest(BaseModel):
     pin: Optional[str] = None
+    page: int = Field(1, ge=1)
+    limit: int = Field(100, ge=1, le=500)
 
 class PublicContributor(BaseModel):
     name: str
@@ -156,6 +158,8 @@ class PublicWebReportOut(BaseModel):
     
     # Contributors
     total_contributors: int
+    page: int
+    total_pages: int
     contributors: List[PublicContributor]
     
     # Visual/Document Addons

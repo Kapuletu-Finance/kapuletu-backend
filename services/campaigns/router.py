@@ -381,8 +381,12 @@ async def export_campaign_excel(
     from services.reporting.excel_gen import generate_excel_report
     import base64
     
-    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).all()
-    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").scalar() or 0.0
+    txn_query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved")
+    if txn_query.count() > 20000:
+        raise HTTPException(status_code=400, detail="This campaign exceeds the 20,000 transaction limit for synchronous Excel export. Please contact support for a bulk export.")
+        
+    transactions = txn_query.order_by(Transaction.created_at.desc()).all()
+    raised = txn_query.with_entities(func.sum(Transaction.amount)).scalar() or 0.0
     
     b64_excel = generate_excel_report(
         title=campaign.title,
@@ -419,8 +423,12 @@ async def export_campaign_pdf(
     from services.reporting.pdf_gen import generate_pdf_report
     import base64
     
-    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).all()
-    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").scalar() or 0.0
+    txn_query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved")
+    if txn_query.count() > 5000:
+        raise HTTPException(status_code=400, detail="This campaign exceeds the 5,000 transaction limit for synchronous PDF export. Please contact support for a bulk export.")
+        
+    transactions = txn_query.order_by(Transaction.created_at.desc()).all()
+    raised = txn_query.with_entities(func.sum(Transaction.amount)).scalar() or 0.0
     
     b64_pdf = generate_pdf_report(
         title=campaign.title,
@@ -440,7 +448,7 @@ async def export_campaign_pdf(
         headers={"Content-Disposition": f"attachment; filename=campaign_{campaign.slug}_contributions.pdf"}
     )
 
-@router.post("/public/workspaces/{workspace_id}/groups/{group_id}/campaigns/{campaign_id}/verify", response_model=PublicWebReportOut, summary="Fetch Secure Public Web Report", description="Authenticates the PIN (if required) and returns a structured, professional JSON payload for rendering the public campaign web report.", tags=["Public Web View"])
+@router.post("/public/workspaces/{workspace_id}/groups/{group_id}/campaigns/{campaign_id}/verify", response_model=PublicWebReportOut, summary="Fetch Secure Public Web Report", description="Authenticates the PIN (if required) and returns a structured, professional JSON payload for rendering the public campaign web report.")
 async def public_verify_campaign(
     workspace_id: str,
     group_id: str,
@@ -469,7 +477,13 @@ async def public_verify_campaign(
     
     transactions_query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc())
     total_contributors = transactions_query.count()
-    transactions = transactions_query.limit(100).all()
+    
+    page = req.page
+    limit = req.limit
+    offset = (page - 1) * limit
+    total_pages = (total_contributors + limit - 1) // limit if total_contributors > 0 else 1
+    
+    transactions = transactions_query.offset(offset).limit(limit).all()
     
     target_amount = float(campaign.target_amount)
     progress_percentage = min((float(raised) / target_amount * 100), 100.0) if target_amount > 0 else 0.0
@@ -495,6 +509,8 @@ async def public_verify_campaign(
         "target_amount": target_amount,
         "progress_percentage": round(progress_percentage, 2),
         "total_contributors": total_contributors,
+        "page": page,
+        "total_pages": total_pages,
         "contributors": [{"name": txn.sender_name or "Anonymous", "amount": float(txn.amount), "date": txn.created_at} for txn in transactions],
         "blank_slots_count": blank_slots,
         "payment_instructions": campaign.payment_instructions,
