@@ -306,7 +306,11 @@ async def get_campaign_report_preview(
         name = txn.sender_name or "Anonymous"
         lines.append(f"{i}. {name} - Ksh {float(txn.amount):,.2f} {indicator}")
         
-    blank_slots = settings.get("blank_slots", 3)
+    try:
+        blank_slots = int(settings.get("blank_slots", 3))
+    except (ValueError, TypeError):
+        blank_slots = 3
+        
     start_idx = len(transactions) + 1
     for i in range(blank_slots):
         lines.append(f"{start_idx + i}.")
