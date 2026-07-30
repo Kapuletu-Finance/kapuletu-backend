@@ -8,11 +8,25 @@ try:
 except ImportError:
     pass
 
-def generate_excel_report(title: str, total_raised: float, target_amount: float, entries: list, settings: dict = None) -> str:
+def generate_excel_report(title: str, total_raised: float, target_amount: float, entries: list, settings: dict = None, tz: str = None) -> str:
     """
     Generates an Enterprise-Grade Excel file using openpyxl and returns it as a Base64 string.
     """
     settings = settings or {}
+    
+    # Process timezone
+    from datetime import datetime, timezone
+    now_utc = datetime.now(timezone.utc)
+    if tz:
+        try:
+            from zoneinfo import ZoneInfo
+            now_local = now_utc.astimezone(ZoneInfo(tz))
+            time_str = now_local.strftime('%d %B %Y at %I:%M %p') + f" ({tz})"
+        except Exception:
+            time_str = now_utc.strftime('%Y-%m-%d %H:%M:%S UTC')
+    else:
+        time_str = now_utc.strftime('%Y-%m-%d %H:%M:%S UTC')
+
     wb = openpyxl.Workbook()
     
     # Define currency style
@@ -29,7 +43,7 @@ def generate_excel_report(title: str, total_raised: float, target_amount: float,
     ws.append([title, "OFFICIAL CAMPAIGN REPORT"])
     ws.cell(row=1, column=1).font = Font(bold=True, color="1A5D1A", size=16)
     ws.cell(row=1, column=2).font = Font(bold=True, size=12, color="555555")
-    ws.append([f"Generated on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"])
+    ws.append([f"Generated on {time_str}"])
     ws.append([])
     
     # Summary Data

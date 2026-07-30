@@ -214,6 +214,7 @@ async def update_settings(
 async def export_excel(
     campaign_id: str,
     background_tasks: BackgroundTasks,
+    tz: str = None,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
@@ -244,7 +245,7 @@ async def export_excel(
         total = ledger.summary.total_raised if ledger.summary else 0.0
 
         # Simulate upload
-        b64_excel = generate_excel_report(title=title, total_raised=total, target_amount=target, entries=flattened_entries, settings={})
+        b64_excel = generate_excel_report(title=title, total_raised=total, target_amount=target, entries=flattened_entries, settings={}, tz=tz)
         import logging
         logging.getLogger(__name__).info(f"Excel Export Background Task Complete for Campaign {campaign_id}")
 
@@ -255,6 +256,7 @@ async def export_excel(
 async def export_pdf(
     campaign_id: str,
     background_tasks: BackgroundTasks,
+    tz: str = None,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
@@ -282,7 +284,7 @@ async def export_pdf(
         target = ledger.summary.target_amount if ledger.summary else 0.0
         total = ledger.summary.total_raised if ledger.summary else 0.0
         
-        b64_pdf = generate_pdf_report(title=title, total_raised=total, target_amount=target, entries=flattened_entries, settings={})
+        b64_pdf = generate_pdf_report(title=title, total_raised=total, target_amount=target, entries=flattened_entries, settings={}, tz=tz)
         import logging
         logging.getLogger(__name__).info(f"PDF Export Background Task Complete for Campaign {campaign_id}")
 

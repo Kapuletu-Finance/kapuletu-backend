@@ -364,6 +364,7 @@ async def get_campaign_report_preview(
 @router.get("/campaigns/{campaign_id}/export/excel", responses={200: {"content": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}}}}, summary="Export Transactions to Excel")
 async def export_campaign_excel(
     campaign_id: str,
+    tz: str = None,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
@@ -385,7 +386,8 @@ async def export_campaign_excel(
         total_raised=float(raised),
         target_amount=float(campaign.target_amount),
         entries=transactions,
-        settings=settings
+        settings=settings,
+        tz=tz
     )
     
     excel_bytes = base64.b64decode(b64_excel)
@@ -400,6 +402,7 @@ async def export_campaign_excel(
 @router.get("/campaigns/{campaign_id}/export/pdf", responses={200: {"content": {"application/pdf": {}}}}, summary="Export Transactions to PDF")
 async def export_campaign_pdf(
     campaign_id: str,
+    tz: str = None,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
@@ -421,7 +424,8 @@ async def export_campaign_pdf(
         total_raised=float(raised),
         target_amount=float(campaign.target_amount),
         entries=transactions,
-        settings=settings
+        settings=settings,
+        tz=tz
     )
     
     pdf_bytes = base64.b64decode(b64_pdf)

@@ -11,11 +11,25 @@ try:
 except ImportError:
     pass
 
-def generate_pdf_report(title: str, total_raised: float, target_amount: float, entries: list, settings: dict = None) -> str:
+def generate_pdf_report(title: str, total_raised: float, target_amount: float, entries: list, settings: dict = None, tz: str = None) -> str:
     """
     Generates an Enterprise-Grade PDF using ReportLab and returns it as a Base64 string.
     """
     settings = settings or {}
+    
+    # Process timezone
+    from datetime import datetime, timezone
+    now_utc = datetime.now(timezone.utc)
+    if tz:
+        try:
+            from zoneinfo import ZoneInfo
+            now_local = now_utc.astimezone(ZoneInfo(tz))
+            time_str = now_local.strftime('%d %B %Y at %I:%M %p') + f" ({tz})"
+        except Exception:
+            time_str = now_utc.strftime('%Y-%m-%d %H:%M:%S UTC')
+    else:
+        time_str = now_utc.strftime('%Y-%m-%d %H:%M:%S UTC')
+        
     stream = io.BytesIO()
     doc = SimpleDocTemplate(stream, pagesize=letter)
     elements = []
@@ -44,7 +58,7 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
     # 1. Letterhead
     elements.append(Paragraph(f"<b>{title}</b>", title_style))
     elements.append(Paragraph("OFFICIAL CAMPAIGN REPORT", subtitle_style))
-    elements.append(Paragraph(f"Generated on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC", subtitle_style))
+    elements.append(Paragraph(f"Generated on {time_str}", subtitle_style))
     elements.append(Spacer(1, 12))
     
     # 2. Summary Block

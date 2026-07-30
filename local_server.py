@@ -41,12 +41,25 @@ openapi_tags = [
     {"name": "15. System Health & Admin", "description": "Service health checks and metrics."}
 ]
 
+import orjson
+from fastapi.responses import JSONResponse
+
+class CustomORJSONResponse(JSONResponse):
+    media_type = "application/json"
+
+    def render(self, content: Any) -> bytes:
+        return orjson.dumps(
+            content,
+            option=orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_NUMPY | orjson.OPT_NAIVE_UTC,
+        )
+
 app = FastAPI(
     title="KapuLetu Treasury API — Full Specification",
     description="Local development bridge mapping every endpoint from the technical specification (v1).",
     version="1.0.0",
     swagger_ui_parameters={"persistAuthorization": True},
-    openapi_tags=openapi_tags
+    openapi_tags=openapi_tags,
+    default_response_class=CustomORJSONResponse
 )
 
 from slowapi.errors import RateLimitExceeded
