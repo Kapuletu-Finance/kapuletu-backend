@@ -4,7 +4,6 @@ import logging
 from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, FastAPI, Request, Response, Depends
-from common.config import get_config
 
 # Ensure all logger.info() messages (like OTP codes) are printed to the console
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:\t  %(message)s")
@@ -66,6 +65,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:5173",
+        "https://app.kapuletu.co.ke",
+        "https://dev.app.kapuletu.co.ke",
         get_config().FRONTEND_URL.rstrip('/')
     ],
     allow_credentials=True,
