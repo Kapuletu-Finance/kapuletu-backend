@@ -45,6 +45,22 @@ def generate_excel_report(title: str, total_raised: float, target_amount: float,
     ws.append([display_title, "OFFICIAL CAMPAIGN REPORT"])
     ws.cell(row=1, column=1).font = Font(bold=True, color="1A5D1A", size=16)
     ws.cell(row=1, column=2).font = Font(bold=True, size=12, color="555555")
+    
+    # Add Logo
+    import os
+    try:
+        from openpyxl.drawing.image import Image as OpenPyXLImage
+        logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "logos", "primary logo.png")
+        if os.path.exists(logo_path):
+            img = OpenPyXLImage(logo_path)
+            target_height = 50
+            aspect_ratio = img.width / img.height
+            img.height = target_height
+            img.width = int(target_height * aspect_ratio)
+            ws.add_image(img, 'D1')
+    except Exception:
+        pass
+        
     ws.append([f"Generated on {time_str}"])
     ws.append([])
     
