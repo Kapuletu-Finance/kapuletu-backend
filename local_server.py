@@ -50,13 +50,29 @@ openapi_tags = [
 
 import orjson
 from fastapi.responses import JSONResponse
+import re
+
+def fix_datetime_strings(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        return {k: fix_datetime_strings(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [fix_datetime_strings(v) for v in obj]
+    elif isinstance(obj, str):
+        # Match ISO8601 naive datetime strings (YYYY-MM-DDTHH:MM:SS or with microseconds)
+        if re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$', obj):
+            return obj + 'Z'
+    return obj
 
 class CustomORJSONResponse(JSONResponse):
     media_type = "application/json"
 
     def render(self, content: Any) -> bytes:
+        # Fast API / Pydantic stringifies naive datetimes before they reach here.
+        # We must recursively inject 'Z' (UTC offset) so the frontend browser
+        # correctly localizes the timestamp (e.g. into EAT).
+        fixed_content = fix_datetime_strings(content)
         return orjson.dumps(
-            content,
+            fixed_content,
             option=orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_NUMPY | orjson.OPT_NAIVE_UTC,
         )
 
