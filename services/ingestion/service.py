@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from models.pending_transaction import PendingTransaction
 from repositories.transaction_repo import TransactionRepository
 from services.ingestion.parser_engine import parse_message
+from services.notifications.service import create_notification
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,15 @@ class IngestionService:
         
         logger.info(f"Ingestion Successful: ID {saved_txn.pending_id} created with {saved_txn.confidence_score*100}% AI confidence.")
         
+        # Notify the Treasurer
+        create_notification(
+            db=self.db,
+            user_id=str(owner.user_id),
+            title="New Pending Transaction",
+            message=f"A transaction of {saved_txn.currency} {saved_txn.amount} from {saved_txn.sender_name or 'a member'} is awaiting your approval.",
+            type="transaction_pending",
+            related_entity_id=str(saved_txn.pending_id)
+        )
         # Log the parsed output for developer visibility
         import json
         logger.info(f"Parsed Output:\n{json.dumps(parsed_data, indent=2)}")

@@ -244,6 +244,14 @@ class AuthService:
         code = self._save_otp(db, new_user.user_id, new_user.phone_number, "registration")
         self._send_whatsapp_with_fallback(new_user.phone_number, code)
         
+        create_notification(
+            db=db,
+            user_id=str(new_user.user_id),
+            title=f"Welcome to KapuLetu, {first_name}!",
+            message="Your account has been created. Please complete the verification process.",
+            type="account_created"
+        )
+        
         return str(new_user.user_id)
 
     def _get_user_by_identifier(self, db: Session, identifier: str) -> User:
@@ -302,6 +310,14 @@ class AuthService:
             action="ACCOUNT_VERIFIED",
             entity_type="USER",
             entity_id=str(user.user_id)
+        )
+        
+        create_notification(
+            db=db,
+            user_id=str(user.user_id),
+            title="Account Verified Successfully",
+            message="Your account has been fully verified. You can now create campaigns and manage funds.",
+            type="account_verified"
         )
         
         # Fire the post-confirmation welcome messages!
