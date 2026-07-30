@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Text, Boolean, DateTime, ForeignKey, Index
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from models.base import Base
@@ -9,7 +10,7 @@ class Notification(Base):
     __tablename__ = "notifications"
 
     notification_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.user_id"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
     title = Column(String, nullable=False)
     message = Column(Text, nullable=False)
     type = Column(String, nullable=False, default="system_alert")
