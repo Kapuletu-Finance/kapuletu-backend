@@ -4,7 +4,7 @@ from datetime import datetime
 
 try:
     from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.enums import TA_CENTER, TA_RIGHT
@@ -56,6 +56,15 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
     display_title = settings.get("report_title")
     if not display_title or display_title in ["Campaign Update", "OFFICIAL CAMPAIGN REPORT"]:
         display_title = title
+        
+    import os
+    logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "logos", "primary logo.png")
+    if os.path.exists(logo_path):
+        from reportlab.lib.units import inch
+        logo = Image(logo_path, width=2*inch, height=0.6*inch, kind='proportional')
+        logo.hAlign = 'CENTER'
+        elements.append(logo)
+        elements.append(Spacer(1, 12))
     
     # 1. Letterhead
     elements.append(Paragraph(f"<b>{display_title}</b>", title_style))
