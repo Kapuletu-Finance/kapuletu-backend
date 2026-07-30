@@ -37,7 +37,9 @@ def generate_excel_report(title: str, total_raised: float, target_amount: float,
     ws = wb.active
     ws.title = "Contributions Report"
     
-    display_title = settings.get("report_title") or title
+    display_title = settings.get("report_title")
+    if not display_title or display_title in ["Campaign Update", "OFFICIAL CAMPAIGN REPORT"]:
+        display_title = title
     
     # Letterhead
     ws.append([display_title, "OFFICIAL CAMPAIGN REPORT"])
@@ -50,7 +52,7 @@ def generate_excel_report(title: str, total_raised: float, target_amount: float,
     progress = min((float(total_raised) / float(target_amount) * 100), 100.0) if target_amount and float(target_amount) > 0 else 0.0
     
     summary_data = [
-        ["Campaign Title", display_title],
+        ["Campaign Title", title],
         ["Total Raised (KES)", float(total_raised)],
         ["Target Amount (KES)", float(target_amount)],
         ["Progress (%)", progress]

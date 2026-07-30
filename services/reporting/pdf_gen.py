@@ -53,7 +53,9 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
         spaceAfter=12
     )
     
-    display_title = settings.get("report_title") or title
+    display_title = settings.get("report_title")
+    if not display_title or display_title in ["Campaign Update", "OFFICIAL CAMPAIGN REPORT"]:
+        display_title = title
     
     # 1. Letterhead
     elements.append(Paragraph(f"<b>{display_title}</b>", title_style))
@@ -64,7 +66,7 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
     # 2. Summary Block
     progress = min((float(total_raised) / float(target_amount) * 100), 100.0) if target_amount and float(target_amount) > 0 else 0.0
     summary_data = [
-        [Paragraph("<b>Campaign:</b>", styles['Normal']), display_title],
+        [Paragraph("<b>Campaign:</b>", styles['Normal']), title],
         [Paragraph("<b>Total Raised:</b>", styles['Normal']), f"KES {float(total_raised):,.2f}"],
         [Paragraph("<b>Target Amount:</b>", styles['Normal']), f"KES {float(target_amount):,.2f}"],
         [Paragraph("<b>Progress:</b>", styles['Normal']), f"{progress:.1f}%"]
