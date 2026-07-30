@@ -59,6 +59,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
 from fastapi.middleware.cors import CORSMiddleware
+from common.config import get_config
 
 app.add_middleware(
     CORSMiddleware,
