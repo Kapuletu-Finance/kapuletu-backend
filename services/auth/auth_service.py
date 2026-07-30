@@ -309,7 +309,7 @@ class AuthService:
 
     def _send_welcome_messages(self, user: User):
         """Replaces the old Cognito post_confirmation hook logic."""
-        dashboard_url = os.environ.get('DASHBOARD_URL', 'https://app.kapuletu.co.ke')
+        dashboard_url = config.FRONTEND_URL.rstrip('/')
         
         # 1. WhatsApp Welcome Template
         if config.META_ACCESS_TOKEN and config.META_PHONE_NUMBER_ID and user.phone_number:

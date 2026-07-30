@@ -208,46 +208,7 @@ async def update_settings(
     
     return settings
 
-@router.post("/public/{campaign_id}", response_model=PublicReportOut, summary="Secure Public Ledger Access")
-async def public_web_report(
-    campaign_id: str,
-    req: PublicReportRequest,
-    db: Session = Depends(get_db)
-):
-    """
-    The endpoint for the Public Web Report link. Requires the PIN.
-    Strips out sensitive information like phone numbers.
-    """
-    settings = db.execute(select(CampaignReportSettings).where(CampaignReportSettings.campaign_id == campaign_id)).scalars().first()
-    if not settings or settings.public_access_pin != req.pin:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Access PIN")
-        
-    ledger_service = LedgerService(db)
-    # Note: Using public bypass means we don't have owner_id, so we temporarily fetch owner_id from campaign
-    from models.campaign import Campaign
-    campaign = db.execute(select(Campaign).where(Campaign.campaign_id == campaign_id)).scalars().first()
-    if not campaign:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-        
-    ledger = ledger_service.get_campaign_ledger(campaign_id=campaign_id, owner_id=str(campaign.group.owner_id))
-    
-    contributors = []
-    for e in ledger.entries:
-        if not e.is_tampered:
-            if e.allocations:
-                for alloc in e.allocations:
-                    name = alloc.member_name or "Anonymous Member"
-                    contributors.append(PublicContributorOut(name=name, amount=alloc.allocated_amount))
-            else:
-                name = e.sender_name or "Anonymous Member"
-                contributors.append(PublicContributorOut(name=name, amount=e.amount))
-            
-    return PublicReportOut(
-        campaign_title=campaign.title,
-        target_amount=ledger.summary.target_amount if ledger.summary else 0.0,
-        total_raised=ledger.summary.total_raised if ledger.summary else 0.0,
-        contributors=contributors
-    )
+
 
 @router.get("/export/excel/{campaign_id}", status_code=status.HTTP_202_ACCEPTED, summary="Export Ledger (Excel)")
 async def export_excel(

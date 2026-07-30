@@ -10,7 +10,7 @@ import io
 from common.database import get_db
 from common.config import get_config
 from common.auth_dependencies import get_verified_user
-from services.campaigns.schemas import CampaignCreate, CampaignUpdate, CampaignOut, PaginatedCampaignResponse, PaginatedTransactionResponse, CampaignActivity, ChartDataPoint, CampaignReportPreview, PinResponse
+from services.campaigns.schemas import CampaignCreate, CampaignUpdate, CampaignOut, PaginatedCampaignResponse, PaginatedTransactionResponse, CampaignActivity, ChartDataPoint, CampaignReportPreview, PinResponse, PublicVerifyRequest
 from services.auth.router import limiter
 from repositories import campaign_repo, group_repo
 from models.audit_log import AuditLog
@@ -283,7 +283,7 @@ async def get_campaign_report_preview(
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
     
     settings = campaign.settings_override or {}
-    title = settings.get("report_title", "Campaign Update")
+    title = settings.get("report_title") or campaign.title
     footer = settings.get("report_footer", "")
     indicator = settings.get("paid_indicator", "✔")
     
@@ -499,10 +499,10 @@ async def export_campaign_pdf(
         headers={"Content-Disposition": f"attachment; filename=campaign_{campaign.slug}_contributions.pdf"}
     )
 
-@router.post("/public/campaigns/{campaign_id}/verify", response_model=CampaignOut, summary="Verify Public Access PIN")
+@router.post("/public/campaigns/{campaign_id}/verify", response_model=CampaignReportPreview, summary="Verify Public Access PIN")
 async def public_verify_campaign(
-    campaign_id: UUID,
-    pin: str = Query(...),
+    campaign_id: str,
+    req: PublicVerifyRequest,
     db: Session = Depends(get_db)
 ):
     campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
@@ -512,8 +512,63 @@ async def public_verify_campaign(
     settings = campaign.settings_override or {}
     if settings.get("require_pin", True):
         access_pin = settings.get("access_pin")
-        if access_pin and pin != access_pin:
+        if access_pin and req.pin != access_pin:
             raise HTTPException(status_code=403, detail="Invalid PIN.")
             
-    # If successful, we return the campaign details for the public view
-    return campaign
+    title = settings.get("report_title") or campaign.title
+    footer = settings.get("report_footer", "")
+    indicator = settings.get("paid_indicator", "✔")
+    
+    # Calculate raised
+    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").scalar() or 0.0
+    
+    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).limit(10).all()
+    
+    lines = []
+    lines.append(f"*{title}*")
+    if campaign.description:
+        lines.append(campaign.description)
+    lines.append("")
+    lines.append(f"Raised so far: Ksh {raised:,.2f} of Ksh {float(campaign.target_amount):,.2f}")
+    if campaign.payment_instructions:
+        lines.append(f"{campaign.payment_instructions}")
+    lines.append("")
+    
+    for i, txn in enumerate(transactions, 1):
+        name = txn.sender_name or "Anonymous"
+        lines.append(f"{i}. {name} - Ksh {float(txn.amount):,.2f} {indicator}")
+        
+    try:
+        blank_slots = int(settings.get("blank_slots", 3))
+    except (ValueError, TypeError):
+        blank_slots = 3
+        
+    start_idx = len(transactions) + 1
+    for i in range(blank_slots):
+        lines.append(f"{start_idx + i}.")
+        
+    lines.append("")
+    remaining = max(0, float(campaign.target_amount) - float(raised))
+    if footer:
+        lines.append(footer)
+    else:
+        lines.append(f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts.")
+        
+    frontend_url = get_config().FRONTEND_URL.rstrip('/')
+    public_url = f"{frontend_url}/report/{campaign.slug}"
+    
+    lines.append(f"View the full report at: {public_url}")
+    if not settings.get("remove_watermark", False):
+        lines.append("\n*Powered by KapuLetu*")
+        
+    return {
+        "preview_text": "\n".join(lines),
+        "title": title,
+        "description": campaign.description,
+        "raised": float(raised),
+        "target": float(campaign.target_amount),
+        "contributors": [{"name": txn.sender_name or "Anonymous", "amount": float(txn.amount)} for txn in transactions],
+        "payment_instructions": campaign.payment_instructions,
+        "footer": footer,
+        "public_url": public_url
+    }

@@ -181,7 +181,7 @@ def process_ingestion(body_str: str, config):
         if result["status"] == "ignored":
             reply_text = "Notice: You have already submitted this transaction. It is currently pending review in your KapuLetu dashboard."
         elif result["status"] == "error":
-            reply_text = "Unauthorized: Your phone number is not registered as a treasurer for any KapuLetu group. Please contact an admin or visit https://app.kapuletu.co.ke/signup to create an account."
+            reply_text = f"Unauthorized: Your phone number is not registered as a treasurer for any KapuLetu group. Please contact an admin or visit {config.FRONTEND_URL.rstrip('/')}/signup to create an account."
         else:
             parsed = result.get("parsed_data", {})
             amt = f"KES {parsed.get('amount', 0.0):,.2f}" if parsed.get('amount') else "the transaction"

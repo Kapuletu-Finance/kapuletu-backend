@@ -9,7 +9,7 @@ class CampaignStatusEnum(str, Enum):
     ARCHIVED = "archived"
 
 class CampaignSettings(BaseModel):
-    report_title: str = Field("Campaign Update")
+    report_title: Optional[str] = Field(None, description="Overrides the default campaign title on reports if set")
     report_footer: str = Field("Thank you for your support.")
     blank_slots: int = Field(3, ge=0)
     paid_indicator: str = Field("✔")
@@ -116,3 +116,5 @@ class CampaignReportPreview(BaseModel):
 class PinResponse(BaseModel):
     pin: str
 
+class PublicVerifyRequest(BaseModel):
+    pin: Optional[str] = None

@@ -6,6 +6,7 @@ from sqlalchemy import select
 from models.campaign import Campaign
 from models.transaction import Transaction
 from models.report_settings import CampaignReportSettings
+from common.config import get_config
 
 class TemplateEngine:
     """
@@ -125,8 +126,8 @@ class TemplateEngine:
         report += "\n" + footer + "\n\n"
 
         # 6. Append Public Web Link CTA
-        import os
-        frontend_url = os.environ.get("FRONTEND_URL", "https://app.kapuletu.co.ke")
+        config = get_config()
+        frontend_url = config.FRONTEND_URL.rstrip('/')
         report += (
             f"====================================\n"
             f" View organized live report online:\n"
