@@ -53,7 +53,7 @@ class CampaignOut(BaseModel):
     progress_percentage: float = Field(0.0, json_schema_extra={"example": 50.0})
     contributor_count: int = Field(0, json_schema_extra={"example": 12})
     
-    settings: Optional[CampaignSettings] = Field(None, alias="settings_override")
+    settings_override: Optional[CampaignSettings] = None
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
@@ -87,3 +87,26 @@ class CampaignActivity(BaseModel):
     details: Optional[Dict[str, Any]] = None
     
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+class ChartDataPoint(BaseModel):
+    date: str
+    amount: float
+
+class ContributorPreview(BaseModel):
+    name: str
+    amount: float
+    
+class CampaignReportPreview(BaseModel):
+    preview_text: str
+    title: str
+    description: Optional[str] = None
+    raised: float
+    target: float
+    contributors: List[ContributorPreview]
+    payment_instructions: Optional[str] = None
+    footer: Optional[str] = None
+    public_url: str
+
+class PinResponse(BaseModel):
+    pin: str
+

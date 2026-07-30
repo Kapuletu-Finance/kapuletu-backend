@@ -8,8 +8,9 @@ import random
 import io
 
 from common.database import get_db
+from common.config import get_config
 from common.auth_dependencies import get_verified_user
-from services.campaigns.schemas import CampaignCreate, CampaignUpdate, CampaignOut, PaginatedCampaignResponse, PaginatedTransactionResponse, CampaignActivity
+from services.campaigns.schemas import CampaignCreate, CampaignUpdate, CampaignOut, PaginatedCampaignResponse, PaginatedTransactionResponse, CampaignActivity, ChartDataPoint, CampaignReportPreview, PinResponse
 from services.auth.router import limiter
 from repositories import campaign_repo, group_repo
 from models.audit_log import AuditLog
@@ -175,7 +176,7 @@ async def archive_campaign(
     
     return archived_campaign
 
-@router.post("/campaigns/{campaign_id}/regenerate-pin", summary="Regenerate Access PIN")
+@router.post("/campaigns/{campaign_id}/regenerate-pin", response_model=PinResponse, summary="Regenerate Access PIN")
 async def regenerate_campaign_pin(
     campaign_id: str,
     db: Session = Depends(get_db),
@@ -191,9 +192,9 @@ async def regenerate_campaign_pin(
     current_settings["access_pin"] = new_pin
     
     updated_campaign = campaign_repo.update_campaign(db=db, campaign_id=str(campaign.campaign_id), updates={"settings_override": current_settings})
-    return {"access_pin": new_pin}
+    return {"pin": new_pin}
 
-@router.get("/campaigns/{campaign_id}/chart-data", summary="Get Contribution Chart Data")
+@router.get("/campaigns/{campaign_id}/chart-data", response_model=List[ChartDataPoint], summary="Get Contribution Chart Data")
 async def get_campaign_chart_data(
     campaign_id: str,
     filter: str = Query("this_month", description="this_week, this_month, this_year, all_time"),
@@ -270,7 +271,7 @@ async def get_campaign_activities(
     
     return logs
 
-@router.get("/campaigns/{campaign_id}/report-preview", summary="Generate WhatsApp Preview")
+@router.get("/campaigns/{campaign_id}/report-preview", response_model=CampaignReportPreview, summary="Generate WhatsApp Preview")
 async def get_campaign_report_preview(
     campaign_id: str,
     db: Session = Depends(get_db),
@@ -317,15 +318,28 @@ async def get_campaign_report_preview(
     else:
         lines.append(f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts.")
         
-    lines.append(f"View the full report at: app.kapuletu.co.ke/report/{campaign.slug}")
+    frontend_url = get_config().FRONTEND_URL.rstrip('/')
+    public_url = f"{frontend_url}/report/{campaign.slug}"
+    
+    lines.append(f"View the full report at: {public_url}")
     if not settings.get("remove_watermark", False):
         lines.append("\n*Powered by KapuLetu*")
         
-    return {"preview_text": "\n".join(lines)}
+    return {
+        "preview_text": "\n".join(lines),
+        "title": title,
+        "description": campaign.description,
+        "raised": float(raised),
+        "target": float(campaign.target_amount),
+        "contributors": [{"name": txn.sender_name or "Anonymous", "amount": float(txn.amount)} for txn in transactions],
+        "payment_instructions": campaign.payment_instructions,
+        "footer": footer,
+        "public_url": public_url
+    }
 
-@router.get("/campaigns/{campaign_id}/export/excel", summary="Export Transactions to Excel")
+@router.get("/campaigns/{campaign_id}/export/excel", responses={200: {"content": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}}}}, summary="Export Transactions to Excel")
 async def export_campaign_excel(
-    campaign_id: UUID,
+    campaign_id: str,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
@@ -403,9 +417,9 @@ async def export_campaign_excel(
         headers={"Content-Disposition": f"attachment; filename=campaign_{campaign.slug}_contributions.xlsx"}
     )
 
-@router.get("/campaigns/{campaign_id}/export/pdf", summary="Export Transactions to PDF")
+@router.get("/campaigns/{campaign_id}/export/pdf", responses={200: {"content": {"application/pdf": {}}}}, summary="Export Transactions to PDF")
 async def export_campaign_pdf(
-    campaign_id: UUID,
+    campaign_id: str,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
