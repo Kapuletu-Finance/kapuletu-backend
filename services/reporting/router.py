@@ -226,31 +226,25 @@ async def export_excel(
         ledger_service = LedgerService(db)
         ledger = ledger_service.get_campaign_ledger(campaign_id=campaign_id, owner_id=current_user.get("sub"))
         
-        data = []
+        # Flatten allocations for the Excel generator
+        flattened_entries = []
+        import copy
         for e in ledger.entries:
             if e.allocations:
                 for alloc in e.allocations:
-                    data.append({
-                        "Transaction ID": e.transaction_id,
-                        "Code": e.transaction_code,
-                        "Name": alloc.member_name or e.sender_name,
-                        "Phone": e.sender_phone,
-                        "Amount": alloc.allocated_amount,
-                        "Date": e.created_at.strftime("%Y-%m-%d"),
-                        "Tampered": e.is_tampered
-                    })
+                    new_e = copy.deepcopy(e)
+                    new_e.sender_name = alloc.member_name or e.sender_name
+                    new_e.amount = float(alloc.allocated_amount)
+                    flattened_entries.append(new_e)
             else:
-                data.append({
-                    "Transaction ID": e.transaction_id,
-                    "Code": e.transaction_code,
-                    "Name": e.sender_name,
-                    "Phone": e.sender_phone,
-                    "Amount": e.amount,
-                    "Date": e.created_at.strftime("%Y-%m-%d"),
-                    "Tampered": e.is_tampered
-                })
+                flattened_entries.append(e)
+                
+        title = ledger.summary.title if ledger.summary else "KapuLetu Campaign"
+        target = ledger.summary.target_amount if ledger.summary else 0.0
+        total = ledger.summary.total_raised if ledger.summary else 0.0
+
         # Simulate upload
-        b64_excel = generate_excel_report(data)
+        b64_excel = generate_excel_report(title=title, group_name="", total_raised=total, target_amount=target, entries=flattened_entries, settings={})
         import logging
         logging.getLogger(__name__).info(f"Excel Export Background Task Complete for Campaign {campaign_id}")
 
@@ -288,7 +282,7 @@ async def export_pdf(
         target = ledger.summary.target_amount if ledger.summary else 0.0
         total = ledger.summary.total_raised if ledger.summary else 0.0
         
-        b64_pdf = generate_pdf_report(title, total, target, flattened_entries)
+        b64_pdf = generate_pdf_report(title=title, group_name="", total_raised=total, target_amount=target, entries=flattened_entries, settings={})
         import logging
         logging.getLogger(__name__).info(f"PDF Export Background Task Complete for Campaign {campaign_id}")
 

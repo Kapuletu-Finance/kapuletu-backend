@@ -1,68 +1,111 @@
 import base64
-import os
-from fpdf import FPDF
+import io
 from datetime import datetime
 
-class KapuletuPDF(FPDF):
-    def header(self):
-        # Arial bold 15
-        self.set_font('Arial', 'B', 15)
-        # Title
-        self.cell(0, 10, 'KAPULETU TREASURY REPORT', 0, 1, 'C')
-        self.set_font('Arial', '', 10)
-        self.cell(0, 10, f'Generated on {datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")}', 0, 1, 'C')
-        self.ln(10)
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+except ImportError:
+    pass
 
-    def footer(self):
-        # Position at 1.5 cm from bottom
-        self.set_y(-15)
-        # Arial italic 8
-        self.set_font('Arial', 'I', 8)
-        # Page number
-        self.cell(0, 10, 'Page ' + str(self.page_no()) + ' / {nb}', 0, 0, 'C')
-
-def generate_pdf_report(campaign_title: str, total_raised: float, target_amount: float, entries: list) -> str:
+def generate_pdf_report(title: str, group_name: str, total_raised: float, target_amount: float, entries: list, settings: dict = None) -> str:
     """
-    Generates a PDF using FPDF and returns it as a Base64 string.
-    Note: Requires `fpdf2` or `fpdf` package.
+    Generates an Enterprise-Grade PDF using ReportLab and returns it as a Base64 string.
     """
-    pdf = KapuletuPDF()
-    pdf.alias_nb_pages()
-    pdf.add_page()
+    settings = settings or {}
+    stream = io.BytesIO()
+    doc = SimpleDocTemplate(stream, pagesize=letter)
+    elements = []
     
-    # Campaign Summary
-    pdf.set_font('Arial', 'B', 12)
-    pdf.cell(0, 10, f'Campaign: {campaign_title}', 0, 1)
+    styles = getSampleStyleSheet()
     
-    pdf.set_font('Arial', '', 12)
-    pdf.cell(0, 10, f'Total Raised: KSh. {total_raised:,.2f}', 0, 1)
-    if target_amount > 0:
-        pdf.cell(0, 10, f'Target Amount: KSh. {target_amount:,.2f}', 0, 1)
+    # Custom styles
+    title_style = ParagraphStyle(
+        'MainTitle',
+        parent=styles['Title'],
+        fontName='Helvetica-Bold',
+        fontSize=18,
+        textColor=colors.HexColor("#1A5D1A"),
+        spaceAfter=6
+    )
+    subtitle_style = ParagraphStyle(
+        'Subtitle',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=12,
+        textColor=colors.dimgrey,
+        alignment=TA_CENTER,
+        spaceAfter=12
+    )
+    
+    # 1. Letterhead
+    elements.append(Paragraph(f"<b>{title}</b>", title_style))
+    elements.append(Paragraph("OFFICIAL CAMPAIGN REPORT", subtitle_style))
+    elements.append(Paragraph(f"Generated on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC", subtitle_style))
+    elements.append(Spacer(1, 12))
+    
+    # 2. Summary Block
+    progress = min((float(total_raised) / float(target_amount) * 100), 100.0) if target_amount and float(target_amount) > 0 else 0.0
+    summary_data = [
+        [Paragraph("<b>Campaign:</b>", styles['Normal']), title],
+        [Paragraph("<b>Total Raised:</b>", styles['Normal']), f"KES {float(total_raised):,.2f}"],
+        [Paragraph("<b>Target Amount:</b>", styles['Normal']), f"KES {float(target_amount):,.2f}"],
+        [Paragraph("<b>Progress:</b>", styles['Normal']), f"{progress:.1f}%"]
+    ]
+    summary_table = Table(summary_data, colWidths=[120, 300])
+    summary_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8F9FA")),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#DDDDDD")),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#EEEEEE")),
+        ('PADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(summary_table)
+    elements.append(Spacer(1, 24))
+    
+    # 3. Financial Table
+    table_data = [["#", "Date", "Name", "Phone", "Amount (KES)", "Method"]]
+    for idx, txn in enumerate(entries, 1):
+        name = txn.sender_name or (f"Member {txn.sender_phone[-4:]}" if txn.sender_phone else "Anonymous")
+        table_data.append([
+            str(idx),
+            txn.created_at.strftime("%Y-%m-%d %H:%M"),
+            name[:30],
+            txn.sender_phone or "-",
+            f"{float(txn.amount):,.2f}",
+            txn.payment_method or "-"
+        ])
         
-    pdf.ln(10)
+    t = Table(table_data, colWidths=[30, 90, 150, 90, 90, 80])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1A5D1A")), # KapuLetu Green
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (4, 1), (4, -1), 'RIGHT'), # STRICT RIGHT ALIGN FOR CURRENCY
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#F0FDF4")), # Zebra stripe 1
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#DDDDDD"))
+    ]))
     
-    # Table Header
-    pdf.set_font('Arial', 'B', 10)
-    pdf.cell(10, 10, '#', 1)
-    pdf.cell(80, 10, 'Name', 1)
-    pdf.cell(50, 10, 'Amount (KSh)', 1)
-    pdf.cell(40, 10, 'Date', 1)
-    pdf.ln()
+    # Zebra striping logic
+    for i in range(1, len(table_data)):
+        if i % 2 == 0:
+            t.setStyle(TableStyle([('BACKGROUND', (0, i), (-1, i), colors.white)]))
+            
+    elements.append(t)
     
-    # Table Data
-    pdf.set_font('Arial', '', 10)
-    counter = 1
-    for entry in entries:
-        name = entry.sender_name or (f"Member {entry.sender_phone[-4:]}" if entry.sender_phone else "Member")
-        pdf.cell(10, 10, str(counter), 1)
-        pdf.cell(80, 10, name[:35], 1)
-        pdf.cell(50, 10, f"{entry.amount:,.2f}", 1)
-        pdf.cell(40, 10, entry.created_at.strftime("%Y-%m-%d"), 1)
-        pdf.ln()
-        counter += 1
+    # 4. Footer Branding
+    if not settings.get("remove_watermark", False):
+        elements.append(Spacer(1, 30))
+        branding = Paragraph("<i>Report securely generated by KapuLetu - The ultimate community fund manager.</i>", styles['Italic'])
+        elements.append(branding)
         
-    # Output to a byte string
-    # FPDF output(dest='S') returns a latin1 string in fpdf1, or bytearray in fpdf2.
-    pdf_bytes = pdf.output(dest='S').encode('latin1')
+    doc.build(elements)
+    
+    stream.seek(0)
+    pdf_bytes = stream.getvalue()
     
     return base64.b64encode(pdf_bytes).decode('utf-8')
