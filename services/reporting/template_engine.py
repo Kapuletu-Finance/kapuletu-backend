@@ -128,10 +128,12 @@ class TemplateEngine:
         # 6. Append Public Web Link CTA
         config = get_config()
         frontend_url = config.FRONTEND_URL.rstrip('/')
+        group_id = campaign.group.slug or campaign.group_id
+        camp_id = campaign.slug or campaign.campaign_id
         report += (
             f"====================================\n"
             f" View organized live report online:\n"
-            f"{frontend_url}/report/{campaign_id}\n"
+            f"{frontend_url}/report/groups/{group_id}/{camp_id}\n"
             f"Access Code: {settings.public_access_pin}\n"
             f"===================================="
         )

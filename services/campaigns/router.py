@@ -323,7 +323,7 @@ async def get_campaign_report_preview(
         lines.append(f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts.")
         
     frontend_url = get_config().FRONTEND_URL.rstrip('/')
-    public_url = f"{frontend_url}/report/{campaign.slug}"
+    public_url = f"{frontend_url}/report/groups/{campaign.group.slug}/{campaign.slug}"
     
     lines.append(f"View the full report at: {public_url}")
     if not settings.get("remove_watermark", False):
@@ -499,15 +499,16 @@ async def export_campaign_pdf(
         headers={"Content-Disposition": f"attachment; filename=campaign_{campaign.slug}_contributions.pdf"}
     )
 
-@router.post("/public/campaigns/{campaign_id}/verify", response_model=CampaignReportPreview, summary="Verify Public Access PIN")
+@router.post("/public/groups/{group_id}/campaigns/{campaign_id}/verify", response_model=CampaignReportPreview, summary="Verify Public Access PIN")
 async def public_verify_campaign(
+    group_id: str,
     campaign_id: str,
     req: PublicVerifyRequest,
     db: Session = Depends(get_db)
 ):
     campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found.")
+    if not campaign or (str(campaign.group_id) != group_id and campaign.group.slug != group_id):
+        raise HTTPException(status_code=404, detail="Campaign not found in this group.")
         
     settings = campaign.settings_override or {}
     if settings.get("require_pin", True):
@@ -555,7 +556,7 @@ async def public_verify_campaign(
         lines.append(f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts.")
         
     frontend_url = get_config().FRONTEND_URL.rstrip('/')
-    public_url = f"{frontend_url}/report/{campaign.slug}"
+    public_url = f"{frontend_url}/report/groups/{campaign.group.slug}/{campaign.slug}"
     
     lines.append(f"View the full report at: {public_url}")
     if not settings.get("remove_watermark", False):
