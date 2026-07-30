@@ -1,5 +1,5 @@
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from datetime import datetime
 from uuid import UUID
 from enum import Enum
@@ -85,6 +85,12 @@ class CampaignActivity(BaseModel):
     action: str
     date: datetime = Field(alias="created_at", serialization_alias="date")
     details: Optional[Dict[str, Any]] = None
+    
+    @model_validator(mode='after')
+    def format_action_message(self) -> 'CampaignActivity':
+        if self.details and self.details.get("message"):
+            self.action = self.details.get("message")
+        return self
     
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
