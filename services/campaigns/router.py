@@ -207,7 +207,7 @@ async def get_campaign_chart_data(
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
     
     transactions = db.execute(
-        select(Transaction).where(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved")
+        select(Transaction).where(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved")
         .order_by(Transaction.created_at.asc())
     ).scalars().all()
     
@@ -232,7 +232,7 @@ async def get_campaign_transactions(
         raise HTTPException(status_code=404, detail="Campaign not found.")
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
     
-    query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved")
+    query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved")
     if search:
         query = query.filter(Transaction.sender_name.ilike(f"%{search}%"))
         
@@ -262,9 +262,9 @@ async def get_campaign_activities(
         select(AuditLog).where(
             (
                 (AuditLog.entity_type == "campaign") & 
-                (AuditLog.entity_id == str(campaign_id))
+                (AuditLog.entity_id == str(campaign.campaign_id))
             ) | (
-                AuditLog.details["campaign_id"].astext == str(campaign_id)
+                AuditLog.details["campaign_id"].astext == str(campaign.campaign_id)
             )
         ).order_by(AuditLog.created_at.desc()).limit(10)
     ).scalars().all()
@@ -288,9 +288,9 @@ async def get_campaign_report_preview(
     indicator = settings.get("paid_indicator", "✔")
     
     # Calculate raised
-    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved").scalar() or 0.0
+    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").scalar() or 0.0
     
-    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).limit(10).all()
+    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).limit(10).all()
     
     lines = []
     lines.append(f"*{title}*")
@@ -356,7 +356,7 @@ async def export_campaign_excel(
     except ImportError:
         raise HTTPException(status_code=500, detail="openpyxl is not installed. Please install it to export Excel files.")
         
-    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).all()
+    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).all()
     
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -438,7 +438,7 @@ async def export_campaign_pdf(
     except ImportError:
         raise HTTPException(status_code=500, detail="reportlab is not installed. Please install it to export PDF files.")
         
-    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).all()
+    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).all()
     
     stream = io.BytesIO()
     doc = SimpleDocTemplate(stream, pagesize=letter)
