@@ -40,9 +40,13 @@ def create_campaign(db: Session, group_id: str, title: str, description: str = N
     db.refresh(new_campaign)
     return new_campaign
 
-def get_campaign(db: Session, campaign_id: str):
-    """Fetches a single campaign by its ID."""
-    return db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+def get_campaign(db: Session, identifier: str):
+    """Fetches a single campaign by its ID or slug."""
+    try:
+        valid_uuid = uuid.UUID(identifier)
+        return db.query(Campaign).filter(Campaign.campaign_id == valid_uuid).first()
+    except ValueError:
+        return db.query(Campaign).filter(Campaign.slug == identifier).first()
 
 def get_group_campaigns(db: Session, group_id: str, skip: int = 0, limit: int = 100, search: str = None, status: str = None):
     """Returns all campaigns belonging to a specific group with pagination, search, and dynamic stats."""

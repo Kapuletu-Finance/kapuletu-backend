@@ -20,7 +20,7 @@ router = APIRouter(prefix="", tags=["5. Campaigns Management"])
 
 def _verify_group_ownership(db: Session, group_id: str, owner_id: str):
     """Helper to verify that the group exists and belongs to the current user."""
-    group = group_repo.get_group(db=db, group_id=group_id)
+    group = group_repo.get_group(db=db, identifier=str(group_id))
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
     if str(group.owner_id) != owner_id:
@@ -63,7 +63,7 @@ async def create_campaign(
 @limiter.limit("50/minute")
 async def list_campaigns(
     request: Request,
-    group_id: UUID,
+    group_id: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
     search: str = Query(None, description="Search by title"),
@@ -79,12 +79,12 @@ async def list_campaigns(
 
 @router.get("/campaigns/{campaign_id}", response_model=CampaignOut, summary="Get Campaign")
 async def get_campaign(
-    campaign_id: UUID,
+    campaign_id: str,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Retrieves details of a specific campaign."""
-    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
     if not campaign:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
         
@@ -93,13 +93,13 @@ async def get_campaign(
 
 @router.patch("/campaigns/{campaign_id}", response_model=CampaignOut, summary="Update Campaign")
 async def update_campaign(
-    campaign_id: UUID,
+    campaign_id: str,
     payload: CampaignUpdate,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Updates campaign details."""
-    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
     if not campaign:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
         
@@ -133,12 +133,12 @@ async def update_campaign(
 
 @router.patch("/campaigns/{campaign_id}/favorite", response_model=CampaignOut, summary="Toggle Favorite Campaign")
 async def toggle_favorite_campaign(
-    campaign_id: UUID,
+    campaign_id: str,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Toggles the is_favorite status of a campaign."""
-    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
     if not campaign:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
         
@@ -149,12 +149,12 @@ async def toggle_favorite_campaign(
 
 @router.delete("/campaigns/{campaign_id}", response_model=CampaignOut, summary="Archive Campaign")
 async def archive_campaign(
-    campaign_id: UUID,
+    campaign_id: str,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Safely archives (soft deletes) a campaign."""
-    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
     if not campaign:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
         
@@ -177,11 +177,11 @@ async def archive_campaign(
 
 @router.post("/campaigns/{campaign_id}/regenerate-pin", summary="Regenerate Access PIN")
 async def regenerate_campaign_pin(
-    campaign_id: UUID,
+    campaign_id: str,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found.")
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
@@ -195,12 +195,12 @@ async def regenerate_campaign_pin(
 
 @router.get("/campaigns/{campaign_id}/chart-data", summary="Get Contribution Chart Data")
 async def get_campaign_chart_data(
-    campaign_id: UUID,
+    campaign_id: str,
     filter: str = Query("this_month", description="this_week, this_month, this_year, all_time"),
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found.")
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
@@ -219,14 +219,14 @@ async def get_campaign_chart_data(
 
 @router.get("/campaigns/{campaign_id}/transactions", response_model=PaginatedTransactionResponse, summary="List Campaign Transactions")
 async def get_campaign_transactions(
-    campaign_id: UUID,
+    campaign_id: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
     search: str = Query(None),
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found.")
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
@@ -248,11 +248,11 @@ async def get_campaign_transactions(
 
 @router.get("/campaigns/{campaign_id}/activities", response_model=List[CampaignActivity], summary="Get Campaign Activities")
 async def get_campaign_activities(
-    campaign_id: UUID,
+    campaign_id: str,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found.")
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
@@ -272,11 +272,11 @@ async def get_campaign_activities(
 
 @router.get("/campaigns/{campaign_id}/report-preview", summary="Generate WhatsApp Preview")
 async def get_campaign_report_preview(
-    campaign_id: UUID,
+    campaign_id: str,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found.")
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
@@ -329,7 +329,7 @@ async def export_campaign_excel(
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found.")
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
@@ -409,7 +409,7 @@ async def export_campaign_pdf(
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found.")
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
@@ -487,7 +487,7 @@ async def public_verify_campaign(
     pin: str = Query(...),
     db: Session = Depends(get_db)
 ):
-    campaign = campaign_repo.get_campaign(db=db, campaign_id=str(campaign_id))
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found.")
         

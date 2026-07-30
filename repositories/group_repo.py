@@ -28,9 +28,13 @@ def create_group(db: Session, owner_id: str, name: str, description: str = None,
     db.refresh(new_group)
     return new_group
 
-def get_group(db: Session, group_id: str):
-    """Retrieves a single group by ID."""
-    return db.query(Group).filter(Group.group_id == group_id).first()
+def get_group(db: Session, identifier: str):
+    """Retrieves a single group by ID or slug."""
+    try:
+        valid_uuid = uuid.UUID(identifier)
+        return db.query(Group).filter(Group.group_id == valid_uuid).first()
+    except ValueError:
+        return db.query(Group).filter(Group.slug == identifier).first()
 
 def get_owner_groups(db: Session, owner_id: str, skip: int = 0, limit: int = 100, search: str = None, status: str = None):
     """Lists all groups belonging to a treasurer with pagination, search, and dynamic stats."""

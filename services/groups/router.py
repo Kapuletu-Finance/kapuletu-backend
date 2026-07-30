@@ -64,12 +64,12 @@ async def list_groups(
 
 @router.get("/{group_id}", response_model=GroupOut, summary="Get Single Group")
 async def get_group(
-    group_id: UUID, 
+    group_id: str, 
     db: Session = Depends(get_db), 
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Retrieves specific details of a group."""
-    group = group_repo.get_group(db=db, group_id=str(group_id))
+    group = group_repo.get_group(db=db, identifier=str(group_id))
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     
@@ -81,13 +81,13 @@ async def get_group(
 
 @router.patch("/{group_id}", response_model=GroupOut, summary="Update Group")
 async def update_group(
-    group_id: UUID, 
+    group_id: str, 
     payload: GroupUpdate, 
     db: Session = Depends(get_db), 
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Updates group properties (Name, Description). Currency is immutable."""
-    group = group_repo.get_group(db=db, group_id=str(group_id))
+    group = group_repo.get_group(db=db, identifier=str(group_id))
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     
@@ -115,12 +115,12 @@ async def update_group(
 
 @router.patch("/{group_id}/favorite", response_model=GroupOut, summary="Toggle Favorite Group")
 async def toggle_favorite_group(
-    group_id: UUID, 
+    group_id: str, 
     db: Session = Depends(get_db), 
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Toggles the is_favorite status of a group for the current treasurer."""
-    group = group_repo.get_group(db=db, group_id=str(group_id))
+    group = group_repo.get_group(db=db, identifier=str(group_id))
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     
@@ -132,12 +132,12 @@ async def toggle_favorite_group(
 
 @router.delete("/{group_id}", response_model=GroupOut, summary="Archive Group")
 async def archive_group(
-    group_id: UUID, 
+    group_id: str, 
     db: Session = Depends(get_db), 
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Safely archives (soft deletes) a group, preserving historical ledger data."""
-    group = group_repo.get_group(db=db, group_id=str(group_id))
+    group = group_repo.get_group(db=db, identifier=str(group_id))
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
         
