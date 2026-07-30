@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func
+from sqlalchemy import select, func, cast, String
 import random
 import io
 
@@ -264,7 +264,7 @@ async def get_campaign_activities(
                 (AuditLog.entity_type == "campaign") & 
                 (AuditLog.entity_id == str(campaign.campaign_id))
             ) | (
-                AuditLog.details["campaign_id"].astext == str(campaign.campaign_id)
+                cast(AuditLog.details["campaign_id"], String).ilike(f'%{str(campaign.campaign_id)}%')
             )
         ).order_by(AuditLog.created_at.desc()).limit(10)
     ).scalars().all()
