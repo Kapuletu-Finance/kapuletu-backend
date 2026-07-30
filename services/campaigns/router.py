@@ -382,7 +382,6 @@ async def export_campaign_excel(
     
     b64_excel = generate_excel_report(
         title=campaign.title,
-        group_name=campaign.group.name if campaign.group else "N/A",
         total_raised=float(raised),
         target_amount=float(campaign.target_amount),
         entries=transactions,
@@ -419,7 +418,6 @@ async def export_campaign_pdf(
     
     b64_pdf = generate_pdf_report(
         title=campaign.title,
-        group_name=campaign.group.name if campaign.group else "N/A",
         total_raised=float(raised),
         target_amount=float(campaign.target_amount),
         entries=transactions,

@@ -8,7 +8,7 @@ try:
 except ImportError:
     pass
 
-def generate_excel_report(title: str, group_name: str, total_raised: float, target_amount: float, entries: list, settings: dict = None) -> str:
+def generate_excel_report(title: str, total_raised: float, target_amount: float, entries: list, settings: dict = None) -> str:
     """
     Generates an Enterprise-Grade Excel file using openpyxl and returns it as a Base64 string.
     """
