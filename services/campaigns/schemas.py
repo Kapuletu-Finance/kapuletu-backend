@@ -33,6 +33,8 @@ class CampaignUpdate(BaseModel):
     payment_instructions: Optional[str] = Field(None, max_length=1000)
     end_date: Optional[datetime] = Field(None)
     settings: Optional[CampaignSettings] = Field(None, alias="settings_override")
+    
+    model_config = ConfigDict(populate_by_name=True)
 
 class CampaignOut(BaseModel):
     id: UUID = Field(alias="campaign_id", serialization_alias="id", json_schema_extra={"example": "123e4567-e89b-12d3-a456-426614174000"})
