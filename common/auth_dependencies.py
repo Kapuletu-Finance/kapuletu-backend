@@ -80,6 +80,8 @@ def get_verified_user(request: Request, token: str = Depends(oauth2_scheme), db:
     """
     user_data = get_current_user(request, token, db)
     if user_data.get('phone_number_verified') != 'true' and user_data.get('email_verified') != 'true':
+        import logging
+        logging.warning(f"get_verified_user 403: User {user_data.get('sub')} is NOT verified (Phone: {user_data.get('phone_number_verified')}, Email: {user_data.get('email_verified')})")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account not verified. Please verify your phone or email to access this feature."

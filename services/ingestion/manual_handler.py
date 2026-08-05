@@ -31,6 +31,7 @@ def handler(event, context):
         from models.group import Group
         group = db.query(Group).filter(Group.group_id == body["group_id"], Group.owner_id == event["user_id"]).first()
         if not group:
+            logger.warning(f"manual_handler 403: User {event['user_id']} does not own group {body.get('group_id')}")
             db.close()
             return {"statusCode": 403, "body": json.dumps({"error": "Forbidden: You do not have permission to add transactions to this group."})}
             

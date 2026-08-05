@@ -37,12 +37,16 @@ def with_auth(role_required: str = None):
             if role_required:
                 allowed_roles = [role_required] if isinstance(role_required, str) else role_required
                 if payload.get("role") not in allowed_roles:
+                    import logging
+                    logging.warning(f"with_auth 403: Role mismatch. Required: {allowed_roles}, Got: {payload.get('role')}")
                     return {"statusCode": 403, "body": json.dumps({"error": "Forbidden: Insufficient permissions for this operation"})}
             
             # Context Injection: Allows the handler to know who is making the request
             event["user_id"] = payload.get("sub")
             event["role"] = payload.get("role")
             
+            import logging
+            logging.info(f"with_auth SUCCESS: Authorized user_id={event['user_id']} with role={event['role']}")
             return handler(event, context)
         return wrapper
     return decorator
