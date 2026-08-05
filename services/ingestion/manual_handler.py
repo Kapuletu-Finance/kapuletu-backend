@@ -9,7 +9,7 @@ from services.audit.service import AuditService
 
 logger = logging.getLogger(__name__)
 
-@with_auth(role_required="treasurer")
+@with_auth(role_required=["treasurer", "admin", "super_admin"])
 def handler(event, context):
     """
     Manual Transaction Entry Handler.
