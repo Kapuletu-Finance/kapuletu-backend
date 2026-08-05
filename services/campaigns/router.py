@@ -3,13 +3,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func
+from sqlalchemy import select, func, cast, String
 import random
 import io
 
 from common.database import get_db
+from common.config import get_config
 from common.auth_dependencies import get_verified_user
-from services.campaigns.schemas import CampaignCreate, CampaignUpdate, CampaignOut, PaginatedCampaignResponse, PaginatedTransactionResponse, CampaignActivity
+from services.campaigns.schemas import CampaignCreate, CampaignUpdate, CampaignOut, PaginatedCampaignResponse, PaginatedTransactionResponse, CampaignActivity, ChartDataPoint, CampaignReportPreview, PinResponse, PublicVerifyRequest, PublicWebReportOut
 from services.auth.router import limiter
 from repositories import campaign_repo, group_repo
 from models.audit_log import AuditLog
@@ -32,17 +33,17 @@ def _verify_group_ownership(db: Session, group_id: str, owner_id: str):
 @limiter.limit("50/minute")
 async def create_campaign(
     request: Request,
-    group_id: UUID,
+    group_id: str,
     payload: CampaignCreate,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Creates a new campaign for a specific group."""
-    _verify_group_ownership(db, str(group_id), current_user.get('sub'))
+    group = _verify_group_ownership(db, str(group_id), current_user.get('sub'))
     
     new_campaign = campaign_repo.create_campaign(
         db=db,
-        group_id=str(group_id),
+        group_id=str(group.group_id),
         title=payload.title,
         description=payload.description,
         target_amount=payload.target_amount,
@@ -72,9 +73,9 @@ async def list_campaigns(
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Lists all campaigns for a specific group with pagination, search, and dynamic stats."""
-    _verify_group_ownership(db, str(group_id), current_user.get('sub'))
+    group = _verify_group_ownership(db, str(group_id), current_user.get('sub'))
     
-    campaigns = campaign_repo.get_group_campaigns(db=db, group_id=str(group_id), skip=skip, limit=limit, search=search, status=campaign_status)
+    campaigns = campaign_repo.get_group_campaigns(db=db, group_id=str(group.group_id), skip=skip, limit=limit, search=search, status=campaign_status)
     return campaigns
 
 @router.get("/campaigns/{campaign_id}", response_model=CampaignOut, summary="Get Campaign")
@@ -175,7 +176,7 @@ async def archive_campaign(
     
     return archived_campaign
 
-@router.post("/campaigns/{campaign_id}/regenerate-pin", summary="Regenerate Access PIN")
+@router.post("/campaigns/{campaign_id}/regenerate-pin", response_model=PinResponse, summary="Regenerate Access PIN")
 async def regenerate_campaign_pin(
     campaign_id: str,
     db: Session = Depends(get_db),
@@ -191,9 +192,9 @@ async def regenerate_campaign_pin(
     current_settings["access_pin"] = new_pin
     
     updated_campaign = campaign_repo.update_campaign(db=db, campaign_id=str(campaign.campaign_id), updates={"settings_override": current_settings})
-    return {"access_pin": new_pin}
+    return {"pin": new_pin}
 
-@router.get("/campaigns/{campaign_id}/chart-data", summary="Get Contribution Chart Data")
+@router.get("/campaigns/{campaign_id}/chart-data", response_model=List[ChartDataPoint], summary="Get Contribution Chart Data")
 async def get_campaign_chart_data(
     campaign_id: str,
     filter: str = Query("this_month", description="this_week, this_month, this_year, all_time"),
@@ -206,13 +207,16 @@ async def get_campaign_chart_data(
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
     
     transactions = db.execute(
-        select(Transaction).where(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved")
+        select(Transaction).where(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved")
         .order_by(Transaction.created_at.asc())
     ).scalars().all()
     
     grouped = {}
+    from datetime import timezone
+    import zoneinfo
     for txn in transactions:
-        date_str = txn.created_at.strftime("%Y-%m-%d") if filter in ["this_week", "this_month"] else txn.created_at.strftime("%Y-%m")
+        txn_eat = txn.created_at.replace(tzinfo=timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+        date_str = txn_eat.strftime("%Y-%m-%d") if filter in ["this_week", "this_month"] else txn_eat.strftime("%Y-%m")
         grouped[date_str] = grouped.get(date_str, 0.0) + float(txn.amount)
         
     return [{"date": k, "amount": v} for k, v in grouped.items()]
@@ -231,7 +235,7 @@ async def get_campaign_transactions(
         raise HTTPException(status_code=404, detail="Campaign not found.")
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
     
-    query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved")
+    query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved")
     if search:
         query = query.filter(Transaction.sender_name.ilike(f"%{search}%"))
         
@@ -261,16 +265,16 @@ async def get_campaign_activities(
         select(AuditLog).where(
             (
                 (AuditLog.entity_type == "campaign") & 
-                (AuditLog.entity_id == str(campaign_id))
+                (AuditLog.entity_id == str(campaign.campaign_id))
             ) | (
-                AuditLog.details["campaign_id"].astext == str(campaign_id)
+                cast(AuditLog.details["campaign_id"], String).ilike(f'%{str(campaign.campaign_id)}%')
             )
         ).order_by(AuditLog.created_at.desc()).limit(10)
     ).scalars().all()
     
     return logs
 
-@router.get("/campaigns/{campaign_id}/report-preview", summary="Generate WhatsApp Preview")
+@router.get("/campaigns/{campaign_id}/report-preview", response_model=CampaignReportPreview, summary="Generate WhatsApp Preview")
 async def get_campaign_report_preview(
     campaign_id: str,
     db: Session = Depends(get_db),
@@ -282,14 +286,17 @@ async def get_campaign_report_preview(
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
     
     settings = campaign.settings_override or {}
-    title = settings.get("report_title", "Campaign Update")
+    title = settings.get("report_title")
+    if not title or title == "Campaign Update":
+        title = f"{campaign.title} Update"
+        
     footer = settings.get("report_footer", "")
     indicator = settings.get("paid_indicator", "✔")
     
     # Calculate raised
-    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved").scalar() or 0.0
+    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").scalar() or 0.0
     
-    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).limit(10).all()
+    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).limit(10).all()
     
     lines = []
     lines.append(f"*{title}*")
@@ -301,12 +308,33 @@ async def get_campaign_report_preview(
         lines.append(f"{campaign.payment_instructions}")
     lines.append("")
     
-    for i, txn in enumerate(transactions, 1):
-        name = txn.sender_name or "Anonymous"
-        lines.append(f"{i}. {name} - Ksh {float(txn.amount):,.2f} {indicator}")
+    if not transactions:
+        dummy_contributors = [
+            {"name": "Contributor A", "amount": 1000.0},
+            {"name": "Contributor B", "amount": 2500.0},
+            {"name": "Contributor C", "amount": 500.0},
+            {"name": "Contributor D", "amount": 1500.0},
+            {"name": "Contributor E", "amount": 2000.0},
+            {"name": "Contributor F", "amount": 3000.0},
+        ]
+        for i, c in enumerate(dummy_contributors, 1):
+            lines.append(f"{i}. {c['name']} - Ksh {c['amount']:,.2f} {indicator}")
+        contributors_list = dummy_contributors
+        start_idx = 7
+    else:
+        contributors_list = []
+        for i, txn in enumerate(transactions, 1):
+            name = txn.sender_name or "Anonymous"
+            amount = float(txn.amount)
+            contributors_list.append({"name": name, "amount": amount})
+            lines.append(f"{i}. {name} - Ksh {amount:,.2f} {indicator}")
+        start_idx = len(transactions) + 1
         
-    blank_slots = settings.get("blank_slots", 3)
-    start_idx = len(transactions) + 1
+    try:
+        blank_slots = int(settings.get("blank_slots", 3)) + 3
+    except (ValueError, TypeError):
+        blank_slots = 6
+        
     for i in range(blank_slots):
         lines.append(f"{start_idx + i}.")
         
@@ -317,15 +345,29 @@ async def get_campaign_report_preview(
     else:
         lines.append(f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts.")
         
-    lines.append(f"View the full report at: app.kapuletu.co.ke/report/{campaign.slug}")
+    frontend_url = get_config().FRONTEND_URL.rstrip('/')
+    public_url = f"{frontend_url}/report/w/{campaign.group.owner_id}/g/{campaign.group.slug or campaign.group_id}/c/{campaign.slug or campaign.campaign_id}"
+    
+    lines.append(f"View the full report at: {public_url}")
     if not settings.get("remove_watermark", False):
-        lines.append("\n*Powered by KapuLetu*")
+        lines.append("\n*Generated via KapuLetu*")
         
-    return {"preview_text": "\n".join(lines)}
+    return {
+        "preview_text": "\n".join(lines),
+        "title": title,
+        "description": campaign.description,
+        "raised": float(raised),
+        "target": float(campaign.target_amount),
+        "contributors": contributors_list,
+        "payment_instructions": campaign.payment_instructions,
+        "footer": footer,
+        "public_url": public_url
+    }
 
-@router.get("/campaigns/{campaign_id}/export/excel", summary="Export Transactions to Excel")
+@router.get("/campaigns/{campaign_id}/export/excel", responses={200: {"content": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}}}}, summary="Export Transactions to Excel")
 async def export_campaign_excel(
-    campaign_id: UUID,
+    campaign_id: str,
+    tz: str = None,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
@@ -336,66 +378,27 @@ async def export_campaign_excel(
     
     settings = campaign.settings_override or {}
     
-    try:
-        import openpyxl
-        from openpyxl.styles import Font, PatternFill
-    except ImportError:
-        raise HTTPException(status_code=500, detail="openpyxl is not installed. Please install it to export Excel files.")
-        
-    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).all()
+    from services.reporting.excel_gen import generate_excel_report
+    import base64
     
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Contributions"
+    txn_query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved")
+    if txn_query.count() > 20000:
+        raise HTTPException(status_code=400, detail="This campaign exceeds the 20,000 transaction limit for synchronous Excel export. Please contact support for a bulk export.")
+        
+    transactions = txn_query.order_by(Transaction.created_at.desc()).all()
+    raised = txn_query.with_entities(func.sum(Transaction.amount)).scalar() or 0.0
     
-    # Header Branding
-    start_row = 1
-    if not settings.get("remove_watermark", False):
-        ws.append(["KapuLetu Campaigns Report"])
-        ws.cell(row=1, column=1).font = Font(bold=True, color="1A5D1A", size=14)
-        ws.append([])
-        start_row = 3
+    b64_excel = generate_excel_report(
+        title=campaign.title,
+        total_raised=float(raised),
+        target_amount=float(campaign.target_amount),
+        entries=transactions,
+        settings=settings,
+        tz=tz
+    )
     
-    headers = ["Date", "Name", "Phone", "Amount (KES)", "Payment Method"]
-    ws.append(headers)
-    
-    # Style the headers
-    green_fill = PatternFill(start_color="1A5D1A", end_color="1A5D1A", fill_type="solid")
-    for cell in ws[start_row]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = green_fill
-        
-    for txn in transactions:
-        ws.append([
-            txn.created_at.strftime("%Y-%m-%d %H:%M"),
-            txn.sender_name or "Anonymous",
-            txn.sender_phone or "",
-            float(txn.amount),
-            txn.payment_method
-        ])
-        
-    # Footer Branding
-    if not settings.get("remove_watermark", False):
-        ws.append([])
-        ws.append(["Report securely generated by KapuLetu"])
-        ws.cell(row=ws.max_row, column=1).font = Font(italic=True, color="808080")
-        
-    # Auto-adjust column widths
-    for col in ws.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except:
-                pass
-        adjusted_width = (max_length + 2)
-        ws.column_dimensions[column].width = adjusted_width
-        
-    stream = io.BytesIO()
-    wb.save(stream)
-    stream.seek(0)
+    excel_bytes = base64.b64decode(b64_excel)
+    stream = io.BytesIO(excel_bytes)
     
     return StreamingResponse(
         stream,
@@ -403,9 +406,10 @@ async def export_campaign_excel(
         headers={"Content-Disposition": f"attachment; filename=campaign_{campaign.slug}_contributions.xlsx"}
     )
 
-@router.get("/campaigns/{campaign_id}/export/pdf", summary="Export Transactions to PDF")
+@router.get("/campaigns/{campaign_id}/export/pdf", responses={200: {"content": {"application/pdf": {}}}}, summary="Export Transactions to PDF")
 async def export_campaign_pdf(
-    campaign_id: UUID,
+    campaign_id: str,
+    tz: str = None,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
@@ -416,64 +420,27 @@ async def export_campaign_pdf(
     
     settings = campaign.settings_override or {}
     
-    try:
-        from reportlab.lib.pagesizes import letter
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-        from reportlab.lib import colors
-        from reportlab.lib.styles import getSampleStyleSheet
-    except ImportError:
-        raise HTTPException(status_code=500, detail="reportlab is not installed. Please install it to export PDF files.")
+    from services.reporting.pdf_gen import generate_pdf_report
+    import base64
+    
+    txn_query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved")
+    if txn_query.count() > 5000:
+        raise HTTPException(status_code=400, detail="This campaign exceeds the 5,000 transaction limit for synchronous PDF export. Please contact support for a bulk export.")
         
-    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).all()
+    transactions = txn_query.order_by(Transaction.created_at.desc()).all()
+    raised = txn_query.with_entities(func.sum(Transaction.amount)).scalar() or 0.0
     
-    stream = io.BytesIO()
-    doc = SimpleDocTemplate(stream, pagesize=letter)
-    elements = []
+    b64_pdf = generate_pdf_report(
+        title=campaign.title,
+        total_raised=float(raised),
+        target_amount=float(campaign.target_amount),
+        entries=transactions,
+        settings=settings,
+        tz=tz
+    )
     
-    styles = getSampleStyleSheet()
-    
-    # Header with KapuLetu Branding if not removed
-    if not settings.get("remove_watermark", False):
-        branding_header = Paragraph("<font color='green'><b>KapuLetu Campaigns</b></font>", styles['Normal'])
-        elements.append(branding_header)
-        elements.append(Spacer(1, 6))
-        
-    title = Paragraph(f"<b>{campaign.title} - Contributions Report</b>", styles['Title'])
-    elements.append(title)
-    elements.append(Spacer(1, 12))
-    
-    data = [["Date", "Name", "Phone", "Amount (KES)", "Payment Method"]]
-    for txn in transactions:
-        data.append([
-            txn.created_at.strftime("%Y-%m-%d %H:%M"),
-            txn.sender_name or "Anonymous",
-            txn.sender_phone or "",
-            f"{float(txn.amount):,.2f}",
-            txn.payment_method
-        ])
-        
-    t = Table(data)
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1A5D1A")), # Kapuletu Green-ish
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#F0FDF4")), # Light green tint
-        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor("#DDDDDD"))
-    ]))
-    
-    elements.append(t)
-    
-    # Footer Branding
-    if not settings.get("remove_watermark", False):
-        elements.append(Spacer(1, 24))
-        branding = Paragraph("<i>Report securely generated by KapuLetu - The ultimate community fund manager.</i>", styles['Italic'])
-        elements.append(branding)
-        
-    doc.build(elements)
-    
-    stream.seek(0)
+    pdf_bytes = base64.b64decode(b64_pdf)
+    stream = io.BytesIO(pdf_bytes)
     
     return StreamingResponse(
         stream,
@@ -481,21 +448,74 @@ async def export_campaign_pdf(
         headers={"Content-Disposition": f"attachment; filename=campaign_{campaign.slug}_contributions.pdf"}
     )
 
-@router.post("/public/campaigns/{campaign_id}/verify", response_model=CampaignOut, summary="Verify Public Access PIN")
+@router.post("/public/workspaces/{workspace_id}/groups/{group_id}/campaigns/{campaign_id}/verify", response_model=PublicWebReportOut, summary="Fetch Secure Public Web Report", description="Authenticates the PIN (if required) and returns a structured, professional JSON payload for rendering the public campaign web report.")
 async def public_verify_campaign(
+    workspace_id: str,
+    group_id: str,
     campaign_id: str,
-    pin: str = Query(...),
+    req: PublicVerifyRequest,
     db: Session = Depends(get_db)
 ):
     campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
-    if not campaign:
+    if not campaign or not campaign.group:
         raise HTTPException(status_code=404, detail="Campaign not found.")
+        
+    if str(campaign.group_id) != group_id and campaign.group.slug != group_id:
+        raise HTTPException(status_code=404, detail="Campaign not found in this group.")
+        
+    if str(campaign.group.owner_id) != workspace_id:
+        raise HTTPException(status_code=404, detail="Campaign not found in this workspace.")
         
     settings = campaign.settings_override or {}
     if settings.get("require_pin", True):
         access_pin = settings.get("access_pin")
-        if access_pin and pin != access_pin:
+        if access_pin and req.pin != access_pin:
             raise HTTPException(status_code=403, detail="Invalid PIN.")
             
-    # If successful, we return the campaign details for the public view
-    return campaign
+    # Calculate raised
+    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").scalar() or 0.0
+    
+    transactions_query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc())
+    total_contributors = transactions_query.count()
+    
+    page = req.page
+    limit = req.limit
+    offset = (page - 1) * limit
+    total_pages = (total_contributors + limit - 1) // limit if total_contributors > 0 else 1
+    
+    transactions = transactions_query.offset(offset).limit(limit).all()
+    
+    target_amount = float(campaign.target_amount)
+    progress_percentage = min((float(raised) / target_amount * 100), 100.0) if target_amount > 0 else 0.0
+    
+    try:
+        blank_slots = int(settings.get("blank_slots", 3)) + 3
+    except (ValueError, TypeError):
+        blank_slots = 6
+        
+    remaining = max(0, target_amount - float(raised))
+    remaining_message = f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts."
+    
+    footer_message = settings.get("report_footer", None)
+    watermark = "Generated via KapuLetu" if not settings.get("remove_watermark", False) else None
+    
+    frontend_url = get_config().FRONTEND_URL.rstrip('/')
+    public_url = f"{frontend_url}/report/w/{campaign.group.owner_id}/g/{campaign.group.slug or campaign.group_id}/c/{campaign.slug or campaign.campaign_id}"
+    
+    return {
+        "campaign_title": campaign.title,
+        "campaign_description": campaign.description,
+        "raised_amount": float(raised),
+        "target_amount": target_amount,
+        "progress_percentage": round(progress_percentage, 2),
+        "total_contributors": total_contributors,
+        "page": page,
+        "total_pages": total_pages,
+        "contributors": [{"name": txn.sender_name or "Anonymous", "amount": float(txn.amount), "date": txn.created_at} for txn in transactions],
+        "blank_slots_count": blank_slots,
+        "payment_instructions": campaign.payment_instructions,
+        "remaining_message": remaining_message,
+        "footer_message": footer_message,
+        "watermark": watermark,
+        "public_url": public_url
+    }

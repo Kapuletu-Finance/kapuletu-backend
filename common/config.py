@@ -31,6 +31,9 @@ class Config:
     
     # JWT Secret Key for signing custom tokens
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "your-super-secret-local-dev-key")
+    
+    # Frontend URL for generating public links
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://app.kapuletu.co.ke")
 
 def get_config() -> Config:
     """

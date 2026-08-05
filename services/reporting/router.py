@@ -136,23 +136,26 @@ async def dashboard_summary(
     recent_activity = recent_activity[:10]
         
     # 4. Daily Collections (Last 7 Days)
-    today = datetime.utcnow().date()
+    from datetime import timezone
+    import zoneinfo
+    now_eat = datetime.now(timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+    today = now_eat.date()
     daily_totals = { (today - timedelta(days=i)).strftime("%Y-%m-%d"): 0.0 for i in range(6, -1, -1) }
     
-    from sqlalchemy import cast, Date
-    daily_stmt = select(
-        cast(Transaction.created_at, Date),
-        func.sum(Transaction.amount)
-    ).where(
+    cutoff_eat = datetime.combine(today - timedelta(days=6), datetime.min.time(), tzinfo=zoneinfo.ZoneInfo("Africa/Nairobi"))
+    cutoff_utc = cutoff_eat.astimezone(timezone.utc).replace(tzinfo=None)
+    
+    daily_txns = db.query(Transaction).filter(
         Transaction.owner_id == owner_id,
         Transaction.status == "approved",
-        Transaction.created_at >= (today - timedelta(days=6))
-    ).group_by(cast(Transaction.created_at, Date))
+        Transaction.created_at >= cutoff_utc
+    ).all()
     
-    for row in db.execute(daily_stmt).all():
-        dt_str = row[0].strftime("%Y-%m-%d")
+    for txn in daily_txns:
+        txn_eat = txn.created_at.replace(tzinfo=timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+        dt_str = txn_eat.strftime("%Y-%m-%d")
         if dt_str in daily_totals:
-            daily_totals[dt_str] = float(row[1])
+            daily_totals[dt_str] += float(txn.amount)
             
     daily_collections = [DailyCollection(date=k, amount=v) for k, v in daily_totals.items()]
     
@@ -208,51 +211,13 @@ async def update_settings(
     
     return settings
 
-@router.post("/public/{campaign_id}", response_model=PublicReportOut, summary="Secure Public Ledger Access")
-async def public_web_report(
-    campaign_id: str,
-    req: PublicReportRequest,
-    db: Session = Depends(get_db)
-):
-    """
-    The endpoint for the Public Web Report link. Requires the PIN.
-    Strips out sensitive information like phone numbers.
-    """
-    settings = db.execute(select(CampaignReportSettings).where(CampaignReportSettings.campaign_id == campaign_id)).scalars().first()
-    if not settings or settings.public_access_pin != req.pin:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Access PIN")
-        
-    ledger_service = LedgerService(db)
-    # Note: Using public bypass means we don't have owner_id, so we temporarily fetch owner_id from campaign
-    from models.campaign import Campaign
-    campaign = db.execute(select(Campaign).where(Campaign.campaign_id == campaign_id)).scalars().first()
-    if not campaign:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-        
-    ledger = ledger_service.get_campaign_ledger(campaign_id=campaign_id, owner_id=str(campaign.group.owner_id))
-    
-    contributors = []
-    for e in ledger.entries:
-        if not e.is_tampered:
-            if e.allocations:
-                for alloc in e.allocations:
-                    name = alloc.member_name or "Anonymous Member"
-                    contributors.append(PublicContributorOut(name=name, amount=alloc.allocated_amount))
-            else:
-                name = e.sender_name or "Anonymous Member"
-                contributors.append(PublicContributorOut(name=name, amount=e.amount))
-            
-    return PublicReportOut(
-        campaign_title=campaign.title,
-        target_amount=ledger.summary.target_amount if ledger.summary else 0.0,
-        total_raised=ledger.summary.total_raised if ledger.summary else 0.0,
-        contributors=contributors
-    )
+
 
 @router.get("/export/excel/{campaign_id}", status_code=status.HTTP_202_ACCEPTED, summary="Export Ledger (Excel)")
 async def export_excel(
     campaign_id: str,
     background_tasks: BackgroundTasks,
+    tz: str = None,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
@@ -265,31 +230,25 @@ async def export_excel(
         ledger_service = LedgerService(db)
         ledger = ledger_service.get_campaign_ledger(campaign_id=campaign_id, owner_id=current_user.get("sub"))
         
-        data = []
+        # Flatten allocations for the Excel generator
+        flattened_entries = []
+        import copy
         for e in ledger.entries:
             if e.allocations:
                 for alloc in e.allocations:
-                    data.append({
-                        "Transaction ID": e.transaction_id,
-                        "Code": e.transaction_code,
-                        "Name": alloc.member_name or e.sender_name,
-                        "Phone": e.sender_phone,
-                        "Amount": alloc.allocated_amount,
-                        "Date": e.created_at.strftime("%Y-%m-%d"),
-                        "Tampered": e.is_tampered
-                    })
+                    new_e = copy.deepcopy(e)
+                    new_e.sender_name = alloc.member_name or e.sender_name
+                    new_e.amount = float(alloc.allocated_amount)
+                    flattened_entries.append(new_e)
             else:
-                data.append({
-                    "Transaction ID": e.transaction_id,
-                    "Code": e.transaction_code,
-                    "Name": e.sender_name,
-                    "Phone": e.sender_phone,
-                    "Amount": e.amount,
-                    "Date": e.created_at.strftime("%Y-%m-%d"),
-                    "Tampered": e.is_tampered
-                })
+                flattened_entries.append(e)
+                
+        title = ledger.summary.title if ledger.summary else "KapuLetu Campaign"
+        target = ledger.summary.target_amount if ledger.summary else 0.0
+        total = ledger.summary.total_raised if ledger.summary else 0.0
+
         # Simulate upload
-        b64_excel = generate_excel_report(data)
+        b64_excel = generate_excel_report(title=title, total_raised=total, target_amount=target, entries=flattened_entries, settings={}, tz=tz)
         import logging
         logging.getLogger(__name__).info(f"Excel Export Background Task Complete for Campaign {campaign_id}")
 
@@ -300,6 +259,7 @@ async def export_excel(
 async def export_pdf(
     campaign_id: str,
     background_tasks: BackgroundTasks,
+    tz: str = None,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
@@ -327,7 +287,7 @@ async def export_pdf(
         target = ledger.summary.target_amount if ledger.summary else 0.0
         total = ledger.summary.total_raised if ledger.summary else 0.0
         
-        b64_pdf = generate_pdf_report(title, total, target, flattened_entries)
+        b64_pdf = generate_pdf_report(title=title, total_raised=total, target_amount=target, entries=flattened_entries, settings={}, tz=tz)
         import logging
         logging.getLogger(__name__).info(f"PDF Export Background Task Complete for Campaign {campaign_id}")
 

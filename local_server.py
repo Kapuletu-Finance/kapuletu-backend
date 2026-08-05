@@ -6,7 +6,14 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, FastAPI, Request, Response, Depends
 
 # Ensure all logger.info() messages (like OTP codes) are printed to the console
-logging.basicConfig(level=logging.INFO, format="%(levelname)s:\t  %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:\t  %(message)s", datefmt='%Y-%m-%d %H:%M:%S %Z')
+
+# Override logging time converter to EAT
+from datetime import datetime, timezone
+import zoneinfo
+def custom_time(*args):
+    return datetime.now(timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi")).timetuple()
+logging.Formatter.converter = custom_time
 
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -41,12 +48,41 @@ openapi_tags = [
     {"name": "15. System Health & Admin", "description": "Service health checks and metrics."}
 ]
 
+import orjson
+from fastapi.responses import JSONResponse
+import re
+
+def fix_datetime_strings(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        return {k: fix_datetime_strings(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [fix_datetime_strings(v) for v in obj]
+    elif isinstance(obj, str):
+        # Match ISO8601 naive datetime strings (YYYY-MM-DDTHH:MM:SS or with microseconds)
+        if re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$', obj):
+            return obj + 'Z'
+    return obj
+
+class CustomORJSONResponse(JSONResponse):
+    media_type = "application/json"
+
+    def render(self, content: Any) -> bytes:
+        # Fast API / Pydantic stringifies naive datetimes before they reach here.
+        # We must recursively inject 'Z' (UTC offset) so the frontend browser
+        # correctly localizes the timestamp (e.g. into EAT).
+        fixed_content = fix_datetime_strings(content)
+        return orjson.dumps(
+            fixed_content,
+            option=orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_NUMPY | orjson.OPT_NAIVE_UTC,
+        )
+
 app = FastAPI(
     title="KapuLetu Treasury API — Full Specification",
     description="Local development bridge mapping every endpoint from the technical specification (v1).",
     version="1.0.0",
     swagger_ui_parameters={"persistAuthorization": True},
-    openapi_tags=openapi_tags
+    openapi_tags=openapi_tags,
+    default_response_class=CustomORJSONResponse
 )
 
 from slowapi.errors import RateLimitExceeded
@@ -59,6 +95,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
 from fastapi.middleware.cors import CORSMiddleware
+from common.config import get_config
 
 app.add_middleware(
     CORSMiddleware,
@@ -66,7 +103,8 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:5173",
         "https://app.kapuletu.co.ke",
-        "https://dev.app.kapuletu.co.ke"
+        "https://dev.app.kapuletu.co.ke",
+        get_config().FRONTEND_URL.rstrip('/')
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -365,6 +403,7 @@ async def metrics_check(): return {"metrics": "..."}
 app.include_router(auth) # 2
 app.include_router(groups) # 3
 from services.campaigns.router import router as campaigns_router
+from common.config import get_config
 app.include_router(campaigns_router) # 4
 app.include_router(ingestion) # 5
 

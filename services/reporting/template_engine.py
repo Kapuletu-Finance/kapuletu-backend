@@ -6,6 +6,7 @@ from sqlalchemy import select
 from models.campaign import Campaign
 from models.transaction import Transaction
 from models.report_settings import CampaignReportSettings
+from common.config import get_config
 
 class TemplateEngine:
     """
@@ -53,15 +54,18 @@ class TemplateEngine:
         total_collected = sum(float(t.amount) for t in txns)
         target = float(campaign.target_amount) if campaign.target_amount else 0.0
         deficit = max(0, target - total_collected)
-        date_str = datetime.utcnow().strftime("%A %d %B, %Y")
+        
+        from datetime import timezone
+        import zoneinfo
+        now_eat = datetime.now(timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+        date_str = now_eat.strftime("%A %d %B, %Y")
 
         # 3. Default KapuLetu Standard Templates
         default_header = (
             f"KAPULETU TREASURY UPDATE\n"
             f"*{campaign.title.upper()}*\n"
             f"As of {date_str}\n\n"
-            f"We continue to thank everyone for the overwhelming love, prayers, and financial support. "
-            f"As the treasurer, I say thank you all and God bless you abundantly!\n\n"
+            f"Thank you for your continued support and contributions.\n\n"
             f"CONTRIBUTOR LIST:\n"
             f"------------------------------------"
         )
@@ -125,12 +129,15 @@ class TemplateEngine:
         report += "\n" + footer + "\n\n"
 
         # 6. Append Public Web Link CTA
-        import os
-        frontend_url = os.environ.get("FRONTEND_URL", "https://app.kapuletu.co.ke")
+        config = get_config()
+        frontend_url = config.FRONTEND_URL.rstrip('/')
+        group_id = campaign.group.slug or campaign.group_id
+        camp_id = campaign.slug or campaign.campaign_id
+        workspace_id = campaign.group.owner_id
         report += (
             f"====================================\n"
             f" View organized live report online:\n"
-            f"{frontend_url}/report/{campaign_id}\n"
+            f"{frontend_url}/report/w/{workspace_id}/g/{group_id}/c/{camp_id}\n"
             f"Access Code: {settings.public_access_pin}\n"
             f"===================================="
         )

@@ -1,5 +1,5 @@
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from datetime import datetime
 from uuid import UUID
 from enum import Enum
@@ -9,7 +9,7 @@ class CampaignStatusEnum(str, Enum):
     ARCHIVED = "archived"
 
 class CampaignSettings(BaseModel):
-    report_title: str = Field("Campaign Update")
+    report_title: Optional[str] = Field(None, description="Overrides the default campaign title on reports if set")
     report_footer: str = Field("Thank you for your support.")
     blank_slots: int = Field(3, ge=0)
     paid_indicator: str = Field("✔")
@@ -53,7 +53,7 @@ class CampaignOut(BaseModel):
     progress_percentage: float = Field(0.0, json_schema_extra={"example": 50.0})
     contributor_count: int = Field(0, json_schema_extra={"example": 12})
     
-    settings: Optional[CampaignSettings] = Field(None, alias="settings_override")
+    settings_override: Optional[CampaignSettings] = None
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
@@ -64,12 +64,25 @@ class PaginatedCampaignResponse(BaseModel):
     page: int = Field(..., json_schema_extra={"example": 1})
     limit: int = Field(..., json_schema_extra={"example": 10})
 
+from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
+import zoneinfo
+from datetime import timezone
+
 class TransactionOut(BaseModel):
     transaction_id: UUID
-    date: datetime = Field(alias="created_at", serialization_alias="date")
+    date: str = Field(alias="created_at", serialization_alias="date")
     amount: float
     name: Optional[str] = Field(None, alias="sender_name", serialization_alias="name")
     payment_method: str
+    
+    @field_validator('date', mode='before')
+    def format_date(cls, v):
+        if isinstance(v, datetime):
+            if v.tzinfo is None:
+                v = v.replace(tzinfo=timezone.utc)
+            v = v.astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+            return v.strftime("%Y-%m-%d %I:%M %p")
+        return v
     
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
@@ -83,7 +96,76 @@ class PaginatedTransactionResponse(BaseModel):
 class CampaignActivity(BaseModel):
     log_id: UUID
     action: str
-    date: datetime = Field(alias="created_at", serialization_alias="date")
+    date: str = Field(alias="created_at", serialization_alias="date")
     details: Optional[Dict[str, Any]] = None
     
+    @field_validator('date', mode='before')
+    def format_date(cls, v):
+        if isinstance(v, datetime):
+            if v.tzinfo is None:
+                v = v.replace(tzinfo=timezone.utc)
+            v = v.astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+            return v.strftime("%Y-%m-%d %I:%M %p")
+        return v
+    
+    @model_validator(mode='after')
+    def format_action_message(self) -> 'CampaignActivity':
+        if self.details and self.details.get("message"):
+            self.action = self.details.get("message")
+        return self
+    
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+class ChartDataPoint(BaseModel):
+    date: str
+    amount: float
+
+class ContributorPreview(BaseModel):
+    name: str
+    amount: float
+    
+class CampaignReportPreview(BaseModel):
+    preview_text: str
+    title: str
+    description: Optional[str] = None
+    raised: float
+    target: float
+    contributors: List[ContributorPreview]
+    payment_instructions: Optional[str] = None
+    footer: Optional[str] = None
+    public_url: str
+
+class PinResponse(BaseModel):
+    pin: str
+
+class PublicVerifyRequest(BaseModel):
+    pin: Optional[str] = None
+    page: int = Field(1, ge=1)
+    limit: int = Field(100, ge=1, le=500)
+
+class PublicContributor(BaseModel):
+    name: str
+    amount: float
+    date: datetime
+
+class PublicWebReportOut(BaseModel):
+    # Core Data
+    campaign_title: str
+    campaign_description: Optional[str] = None
+    raised_amount: float
+    target_amount: float
+    progress_percentage: float
+    
+    # Contributors
+    total_contributors: int
+    page: int
+    total_pages: int
+    contributors: List[PublicContributor]
+    
+    # Visual/Document Addons
+    blank_slots_count: int
+    payment_instructions: Optional[str] = None
+    remaining_message: str
+    footer_message: Optional[str] = None
+    watermark: Optional[str] = None
+    public_url: str
