@@ -3,9 +3,9 @@ import logging
 import uuid
 from common.database import SessionLocal
 from common.decorators import with_auth
-from models.pending_transaction import PendingTransaction
-from repositories.transaction_repo import TransactionRepository
+from models.transaction import Transaction
 from services.audit.service import AuditService
+from services.approval.service import ApprovalService
 
 logger = logging.getLogger(__name__)
 
@@ -29,53 +29,62 @@ def handler(event, context):
         
         # Security: Verify group ownership (IDOR prevention)
         from models.group import Group
+        from repositories.group_repo import get_group
+        from repositories.campaign_repo import get_campaign
         import uuid
+        
         try:
-            group_uuid = uuid.UUID(body["group_id"])
             owner_uuid = uuid.UUID(event["user_id"])
         except ValueError:
-            return {"statusCode": 400, "body": json.dumps({"error": "Invalid UUID format for group_id or user_id"})}
+            return {"statusCode": 400, "body": json.dumps({"error": "Invalid UUID format for user_id"})}
             
-        group = db.query(Group).filter(Group.group_id == group_uuid, Group.owner_id == owner_uuid).first()
-        if not group:
-            logger.warning(f"manual_handler 403: User {owner_uuid} does not own group {group_uuid}")
+        # Resolve identifiers (can be UUIDs or slugs)
+        group = get_group(db, body["group_id"])
+        if not group or group.owner_id != owner_uuid:
+            logger.warning(f"manual_handler 403: User {owner_uuid} does not own group {body.get('group_id')}")
             db.close()
             return {"statusCode": 403, "body": json.dumps({"error": "Forbidden: You do not have permission to add transactions to this group."})}
             
-        repo = TransactionRepository(db)
-        
-        # 3. Create Pending Transaction record
+        campaign = get_campaign(db, body["campaign_id"])
+        if not campaign:
+            db.close()
+            return {"statusCode": 404, "body": json.dumps({"error": "Campaign not found"})}
+            
+        # 3. Create Finalized Transaction record
         # Note: We generate a 'MANUAL-' transaction code for idempotency
         txn_code = body.get("transaction_code") or f"MANUAL-{uuid.uuid4().hex[:12].upper()}"
         
-        # Check for duplicates even in manual entry
-        if repo.check_duplicate_transaction_code(txn_code, event["user_id"]):
+        # Check for duplicates
+        from models.pending_transaction import PendingTransaction
+        pending_exists = db.query(PendingTransaction).filter(PendingTransaction.transaction_code == txn_code, PendingTransaction.owner_id == owner_uuid).first()
+        txn_exists = db.query(Transaction).filter(Transaction.transaction_code == txn_code, Transaction.owner_id == owner_uuid).first()
+        if pending_exists or txn_exists:
             return {"statusCode": 409, "body": json.dumps({"error": "Transaction code already exists"})}
 
-        pending_txn = PendingTransaction(
-            owner_id=event["user_id"],
-            group_id=body["group_id"],
-            campaign_id=body["campaign_id"],
-            raw_message="MANUAL_ENTRY",
-            sender_name=body["sender_name"],
-            amount=body["amount"],
-            currency=body.get("currency", "KES"),
+        new_txn = Transaction(
+            owner_id=owner_uuid,
+            group_id=group.group_id,
+            campaign_id=campaign.campaign_id,
             transaction_code=txn_code,
+            amount=body["amount"],
             sender_phone=body.get("sender_phone"),
-            purpose=body.get("purpose", "Manual Entry"),
-            confidence_score=1.0, # Manual entry is 100% confident
-            workflow_status="pending",
-            payment_method="Cash",
-            source_evidence="Manually entered by treasurer"
+            sender_name=body["sender_name"],
+            payment_method=body.get("payment_method", "Cash"),
+            source_evidence="Manually entered by treasurer",
+            status="approved"
         )
+        db.add(new_txn)
+        db.flush()
         
-        saved_txn = repo.insert_pending_transaction(pending_txn)
+        # Write Integrity Seal
+        ApprovalService(db)._write_to_ledger(new_txn)
+        db.commit()
         
         AuditService(db).log_action(
             actor_id=event["user_id"],
             action="MANUAL_ENTRY",
-            entity_type="PENDING_TRANSACTION",
-            entity_id=str(saved_txn.pending_id),
+            entity_type="TRANSACTION",
+            entity_id=str(new_txn.transaction_id),
             details={
                 "amount": float(body["amount"]),
                 "message": f"Manual contribution of Ksh. {float(body['amount'])} added",
@@ -89,7 +98,7 @@ def handler(event, context):
             "statusCode": 201,
             "body": json.dumps({
                 "message": "Manual transaction recorded successfully",
-                "pending_id": str(saved_txn.pending_id)
+                "transaction_id": str(new_txn.transaction_id)
             })
         }
 

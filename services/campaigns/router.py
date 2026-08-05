@@ -90,6 +90,29 @@ async def get_campaign(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
         
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
+    
+    from sqlalchemy import func
+    from models.transaction import Transaction
+
+    raised = db.query(func.sum(Transaction.amount)).filter(
+        Transaction.campaign_id == campaign.campaign_id,
+        Transaction.status == "approved"
+    ).scalar()
+    
+    raised = float(raised or 0.0)
+    
+    contributors = db.query(func.count(func.distinct(Transaction.sender_phone))).filter(
+        Transaction.campaign_id == campaign.campaign_id,
+        Transaction.status == "approved"
+    ).scalar()
+    
+    campaign.total_raised = raised
+    campaign.contributor_count = contributors or 0
+    if campaign.target_amount and campaign.target_amount > 0:
+        campaign.progress_percentage = round((raised / float(campaign.target_amount)) * 100, 2)
+    else:
+        campaign.progress_percentage = 0.0
+        
     return campaign
 
 @router.patch("/campaigns/{campaign_id}", response_model=CampaignOut, summary="Update Campaign")
@@ -247,6 +270,33 @@ async def get_campaign_transactions(
         "total_items": total_items,
         "total_pages": (total_items + limit - 1) // limit if limit > 0 else 0,
         "page": (skip // limit) + 1 if limit > 0 else 1,
+        "limit": limit
+    }
+
+from services.approval.schemas import PaginatedPendingResponse
+@router.get("/campaigns/{campaign_id}/inbox", response_model=PaginatedPendingResponse, summary="Get Campaign Inbox")
+async def get_campaign_inbox(
+    campaign_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
+    
+    from repositories.transaction_repo import TransactionRepository
+    repo = TransactionRepository(db)
+    items, total = repo.fetch_pending_transactions_by_campaign(campaign.campaign_id, current_user.get('sub'), skip, limit)
+    
+    import math
+    return {
+        "items": items,
+        "total_items": total,
+        "total_pages": math.ceil(total / limit) if total > 0 else 1,
+        "page": (skip // limit) + 1,
         "limit": limit
     }
 

@@ -19,8 +19,8 @@ class TransactionSplit(BaseModel):
 
 
 class ManualEntryIn(BaseModel):
-    group_id: UUID = Field(..., description="Target group for the contribution")
-    campaign_id: UUID = Field(..., description="Target campaign for the contribution")
+    group_id: str = Field(..., description="Target group UUID or slug for the contribution")
+    campaign_id: str = Field(..., description="Target campaign UUID or slug for the contribution")
     amount: float = Field(..., json_schema_extra={"example": 1500.0})
     sender_name: str = Field(..., json_schema_extra={"example": "Joseph Njoroge"})
     sender_phone: str = Field(..., json_schema_extra={"example": "+254700000000"})

@@ -133,6 +133,25 @@ class TransactionRepository:
         items = self.db.execute(stmt).scalars().all()
         return items, total
 
+    def fetch_pending_transactions_by_campaign(self, campaign_id: UUID, owner_id: UUID, skip: int = 0, limit: int = 100):
+        """Fetches pending transactions for a specific campaign."""
+        from sqlalchemy import func
+        count_stmt = select(func.count()).select_from(PendingTransaction).where(
+            PendingTransaction.owner_id == owner_id,
+            PendingTransaction.campaign_id == campaign_id,
+            PendingTransaction.is_processed == False
+        )
+        total = self.db.execute(count_stmt).scalar()
+        
+        stmt = select(PendingTransaction).where(
+            PendingTransaction.owner_id == owner_id,
+            PendingTransaction.campaign_id == campaign_id,
+            PendingTransaction.is_processed == False
+        ).order_by(PendingTransaction.created_at.desc()).offset(skip).limit(limit)
+        
+        items = self.db.execute(stmt).scalars().all()
+        return items, total
+
     def fetch_pending_transaction_by_id(self, pending_id: str, owner_id: UUID) -> Optional[PendingTransaction]:
         """
         Retrieves a specific pending transaction for a specific treasurer.
