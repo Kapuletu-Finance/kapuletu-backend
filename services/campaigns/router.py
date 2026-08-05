@@ -483,7 +483,7 @@ async def export_campaign_pdf(
 
 @router.post("/public/campaigns/{campaign_id}/verify", response_model=CampaignOut, summary="Verify Public Access PIN")
 async def public_verify_campaign(
-    campaign_id: UUID,
+    campaign_id: str,
     pin: str = Query(...),
     db: Session = Depends(get_db)
 ):
