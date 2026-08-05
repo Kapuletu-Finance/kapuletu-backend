@@ -82,6 +82,43 @@ async def escalated_update(
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Profile updated"}
 
+@router.patch("/users/treasurers/{user_id}/role", summary="Upgrade User Role")
+async def upgrade_user_role(
+    user_id: str,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = UserService(db)
+    new_role = payload.get("role")
+    if not new_role:
+        raise HTTPException(status_code=400, detail="Missing role in payload")
+        
+    try:
+        success = service.upgrade_user_role(user_id, new_role)
+        if not success:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {"message": f"User upgraded to {new_role}"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/users/treasurers/{user_id}/plan", summary="Upgrade User Plan")
+async def upgrade_user_plan(
+    user_id: str,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = FinanceService(db)
+    plan_id = payload.get("plan_id")
+    if not plan_id:
+        raise HTTPException(status_code=400, detail="Missing plan_id in payload")
+        
+    success = service.manual_override_subscription(user_id, plan_id, payload.get("duration", 30))
+    if not success:
+        raise HTTPException(status_code=400, detail="Override failed")
+    return {"message": "User plan upgraded successfully"}
+
 # --- Module C: AI Parser Governance ---
 @router.get("/ai/parser/feedback-queue", summary="Get AI Feedback Queue")
 async def get_feedback_queue(

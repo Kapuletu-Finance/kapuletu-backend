@@ -63,3 +63,26 @@ jobs:
           aws lambda update-function-code \
             --function-name kapuletu-${{ env.STAGE }}-backend \
             --image-uri $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+      # -----------------------------
+      # SEED DATABASE PLANS
+      # -----------------------------
+      - name: Seed Database Plans
+        run: |
+          # Wait for Lambda update to finish
+          aws lambda wait function-updated --function-name kapuletu-${{ env.STAGE }}-backend
+          
+          echo "Triggering seed plans task on Lambda..."
+          aws lambda invoke \
+            --function-name kapuletu-${{ env.STAGE }}-backend \
+            --payload '{"task": "seed_plans"}' \
+            --cli-binary-format raw-in-base64-out \
+            seed_response.json
+            
+          echo "Seed Response:"
+          cat seed_response.json
+          
+          if grep -q '"statusCode": 500' seed_response.json || grep -q '"FunctionError"' seed_response.json; then
+            echo "Database seeding failed on Lambda!"
+            exit 1
+          fi

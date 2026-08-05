@@ -63,8 +63,22 @@ def handler(event, context):
             
             logger.info("Database migration completed successfully.")
             return {"statusCode": 200, "body": "Migration successful"}
+            
+        # 3. Intercept seeding tasks
+        if isinstance(event, dict) and event.get("task") == "seed_plans":
+            logger.info("Executing seed plans task...")
+            try:
+                from scripts.seed_plans import seed_plans
+                seed_plans()
+                logger.info("Seed plans completed successfully.")
+                return {"statusCode": 200, "body": "Seed successful"}
+            except Exception as e:
+                return {
+                    "statusCode": 500,
+                    "body": json.dumps({"error": "seed_failed", "message": str(e), "traceback": traceback.format_exc()})
+                }
 
-        # 2. API is a  Gateway Routing (FastAPI - Deferred)
+        # 4. API is a Gateway Routing (FastAPI - Deferred)
         from mangum import Mangum
         from local_server import app
         

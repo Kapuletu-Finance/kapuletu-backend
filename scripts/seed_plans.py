@@ -12,7 +12,7 @@ def seed_plans():
     
     plans_data = [
         {
-            "name": "Free",
+            "name": "Basic",
             "price": 0,
             "max_groups": 1,
             "max_campaigns": 1,
@@ -25,11 +25,11 @@ def seed_plans():
             }
         },
         {
-            "name": "Starter",
-            "price": 1000,
+            "name": "Bronze",
+            "price": 500,
             "max_groups": 1,
             "max_campaigns": 3,
-            "max_transactions_per_month": 150,
+            "max_transactions_per_month": 50,
             "allowed_features": {
                 "whatsapp_parsing": True,
                 "excel_exports": False,
@@ -38,11 +38,11 @@ def seed_plans():
             }
         },
         {
-            "name": "Professional",
-            "price": 3500,
+            "name": "Silver",
+            "price": 1000,
             "max_groups": 5,
             "max_campaigns": 15,
-            "max_transactions_per_month": 1500,
+            "max_transactions_per_month": 500,
             "allowed_features": {
                 "whatsapp_parsing": True,
                 "excel_exports": True,
@@ -51,8 +51,8 @@ def seed_plans():
             }
         },
         {
-            "name": "Enterprise",
-            "price": 15000,
+            "name": "Gold",
+            "price": 1500,
             "max_groups": 9999,
             "max_campaigns": 9999,
             "max_transactions_per_month": 10000,

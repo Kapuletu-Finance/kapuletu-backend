@@ -108,3 +108,20 @@ class UserService:
         
         self.db.commit()
         return True
+
+    def upgrade_user_role(self, user_id: str, new_role: str):
+        """
+        Upgrades or changes the user's role (e.g. treasurer to admin).
+        """
+        from common.enums import UserRole
+        valid_roles = [e.value for e in UserRole]
+        if new_role not in valid_roles:
+            raise ValueError(f"Invalid role. Must be one of {valid_roles}")
+            
+        user = self.db.query(User).filter(User.user_id == user_id).first()
+        if not user:
+            return False
+            
+        user.role = new_role
+        self.db.commit()
+        return True

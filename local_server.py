@@ -193,26 +193,7 @@ class SplitAllocation(BaseModel):
 class TransactionSplit(BaseModel):
     allocations: List[SplitAllocation]
 
-class ManualEntryIn(BaseModel):
-    amount: float = Field(..., json_schema_extra={"example": 1500.0})
-    sender_name: str = Field(..., json_schema_extra={"example": "Joseph Njoroge"})
-    sender_phone: str = Field(..., json_schema_extra={"example": "+254700000000"})
-    purpose: Optional[str] = Field(None, json_schema_extra={"example": "January Contribution"})
-    transaction_code: Optional[str] = Field(None, json_schema_extra={"example": "MANUAL-12345"})
-
-# --- Authentication Schemas (Moved to services/auth/schemas.py) ---
-from services.auth.schemas import UpdateProfileIn
-
-# --- Approval & Review Schemas ---
-
-class TransactionActionIn(BaseModel):
-    internal_note: Optional[str] = Field(None, json_schema_extra={"example": "Matched with paper receipt #123"})
-
-class TransactionEditIn(BaseModel):
-    extracted_amount: Optional[float] = Field(None, json_schema_extra={"example": 1500.0})
-    extracted_sender_name: Optional[str] = Field(None, json_schema_extra={"example": "Joseph Amuyunzu"})
-    extracted_code: Optional[str] = Field(None, json_schema_extra={"example": "ABC123XYZ"})
-    extracted_date: Optional[str] = Field(None, json_schema_extra={"example": "2026-05-08"})
+from services.approval.schemas import ManualEntryIn, TransactionActionIn, TransactionEditIn
 
 class BulkActionIn(BaseModel):
     pending_ids: List[str] = Field(..., json_schema_extra={"example": ["uuid-1", "uuid-2"]})
