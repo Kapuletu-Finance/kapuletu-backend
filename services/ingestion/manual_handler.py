@@ -16,7 +16,8 @@ def handler(event, context):
     Allows Treasurers to manually input transaction data that didn't come via webhook.
     """
     try:
-        body = json.loads(event.get("body", "{}"))
+        raw_body = event.get("body", "{}") or "{}"
+        body = json.loads(raw_body)
         
         # 1. Validation
         required = ["amount", "sender_name", "group_id", "campaign_id"]
@@ -34,8 +35,11 @@ def handler(event, context):
         import uuid
         
         try:
-            owner_uuid = uuid.UUID(event["user_id"])
-        except ValueError:
+            user_id_raw = event.get("user_id")
+            if not user_id_raw:
+                return {"statusCode": 401, "body": json.dumps({"error": "Unauthorized: Missing user identity"})}
+            owner_uuid = uuid.UUID(str(user_id_raw))
+        except (ValueError, AttributeError):
             return {"statusCode": 400, "body": json.dumps({"error": "Invalid UUID format for user_id"})}
             
         # Resolve identifiers (can be UUIDs or slugs)

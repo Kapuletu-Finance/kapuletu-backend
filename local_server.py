@@ -3,7 +3,7 @@ import json
 import logging
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, FastAPI, Request, Response, Depends
+from fastapi import APIRouter, FastAPI, HTTPException, Request, Response, Depends
 
 # Ensure all logger.info() messages (like OTP codes) are printed to the console
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:\t  %(message)s", datefmt='%Y-%m-%d %H:%M:%S %Z')
@@ -19,6 +19,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from services.approval.handler import handler as approval_handler
+from services.approval.schemas import ManualEntryIn
 from services.auth.router import router as auth
 
 from services.groups.router import router as groups
@@ -339,9 +340,86 @@ async def temp_elevate(email: str, db: Session = Depends(get_db)):
 
 
 
-from services.ingestion.manual_handler import handler as manual_handler
-@ingestion.post("/transactions/manual", summary="Manual Entry")
-async def manual_entry(request: Request, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, manual_handler)
+@ingestion.post("/transactions/manual", summary="Manual Entry", status_code=201)
+async def manual_entry(
+    payload: ManualEntryIn,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user),
+):
+    """
+    Manually record a finalized contribution directly into the ledger.
+    Requires ownership of the target group.
+    """
+    import uuid as _uuid
+    import logging
+    from repositories.group_repo import get_group
+    from repositories.campaign_repo import get_campaign
+    from models.transaction import Transaction
+    from models.pending_transaction import PendingTransaction
+    from services.approval.service import ApprovalService
+    from services.audit.service import AuditService
+
+    owner_id_str = current_user.get("sub")
+    try:
+        owner_uuid = _uuid.UUID(str(owner_id_str))
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid user identity in token.")
+
+    # IDOR guard: confirm the requesting treasurer owns this group
+    group = get_group(db, payload.group_id)
+    if not group or group.owner_id != owner_uuid:
+        logging.warning(f"manual_entry 403: User {owner_uuid} does not own group {payload.group_id}")
+        raise HTTPException(status_code=403, detail="Forbidden: You do not own this group.")
+
+    campaign = get_campaign(db, payload.campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+
+    txn_code = payload.transaction_code or f"MANUAL-{_uuid.uuid4().hex[:12].upper()}"
+
+    # Idempotency check
+    pending_exists = db.query(PendingTransaction).filter(
+        PendingTransaction.transaction_code == txn_code,
+        PendingTransaction.owner_id == owner_uuid,
+    ).first()
+    txn_exists = db.query(Transaction).filter(
+        Transaction.transaction_code == txn_code,
+        Transaction.owner_id == owner_uuid,
+    ).first()
+    if pending_exists or txn_exists:
+        raise HTTPException(status_code=409, detail="Transaction code already exists.")
+
+    new_txn = Transaction(
+        owner_id=owner_uuid,
+        group_id=group.group_id,
+        campaign_id=campaign.campaign_id,
+        transaction_code=txn_code,
+        amount=payload.amount,
+        sender_phone=payload.sender_phone,
+        sender_name=payload.sender_name,
+        payment_method=payload.payment_method or "Cash",
+        source_evidence="Manually entered by treasurer",
+        status="approved",
+    )
+    db.add(new_txn)
+    db.flush()
+
+    ApprovalService(db)._write_to_ledger(new_txn)
+    db.commit()
+
+    AuditService(db).log_action(
+        actor_id=owner_id_str,
+        action="MANUAL_ENTRY",
+        entity_type="TRANSACTION",
+        entity_id=str(new_txn.transaction_id),
+        details={
+            "amount": float(payload.amount),
+            "message": f"Manual contribution of Ksh. {float(payload.amount)} added",
+            "campaign_id": str(campaign.campaign_id),
+        },
+    )
+
+    return {"message": "Manual transaction recorded successfully", "transaction_id": str(new_txn.transaction_id)}
 
 # Removed parsing and review endpoints since they are now in native services/approval/router.py
 # 8. Ledger

@@ -24,6 +24,7 @@ class ManualEntryIn(BaseModel):
     amount: float = Field(..., json_schema_extra={"example": 1500.0})
     sender_name: str = Field(..., json_schema_extra={"example": "Joseph Njoroge"})
     sender_phone: Optional[str] = Field(None, json_schema_extra={"example": "+254700000000"})
+    payment_method: Optional[str] = Field("Cash", json_schema_extra={"example": "M-Pesa"})
     purpose: Optional[str] = Field(None, json_schema_extra={"example": "January Contribution"})
     transaction_code: Optional[str] = Field(None, json_schema_extra={"example": "MANUAL-12345"})
 
