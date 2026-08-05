@@ -101,7 +101,7 @@ async def get_campaign(
     
     raised = float(raised or 0.0)
     
-    contributors = db.query(func.count(func.distinct(Transaction.sender_phone))).filter(
+    contributors = db.query(func.count(Transaction.transaction_id)).filter(
         Transaction.campaign_id == campaign.campaign_id,
         Transaction.status == "approved"
     ).scalar()
@@ -258,7 +258,7 @@ async def get_campaign_transactions(
         raise HTTPException(status_code=404, detail="Campaign not found.")
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
     
-    query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved")
+    query = db.query(Transaction).filter(Transaction.campaign_id == campaign.campaign_id, Transaction.status == "approved")
     if search:
         query = query.filter(Transaction.sender_name.ilike(f"%{search}%"))
         

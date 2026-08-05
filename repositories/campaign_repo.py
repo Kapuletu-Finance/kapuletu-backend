@@ -76,8 +76,8 @@ def get_group_campaigns(db: Session, group_id: str, skip: int = 0, limit: int = 
     # 1. Total Raised
     funds_raised = dict(db.query(Transaction.campaign_id, func.sum(Transaction.amount)).filter(Transaction.campaign_id.in_(camp_ids), Transaction.status == "approved").group_by(Transaction.campaign_id).all())
     
-    # 2. Contributor Count (distinct senders)
-    contrib_counts = dict(db.query(Transaction.campaign_id, func.count(func.distinct(Transaction.sender_phone))).filter(Transaction.campaign_id.in_(camp_ids), Transaction.status == "approved").group_by(Transaction.campaign_id).all())
+    # 2. Contributor Count (total transactions)
+    contrib_counts = dict(db.query(Transaction.campaign_id, func.count(Transaction.transaction_id)).filter(Transaction.campaign_id.in_(camp_ids), Transaction.status == "approved").group_by(Transaction.campaign_id).all())
     
     for c in campaigns:
         raised = float(funds_raised.get(c.campaign_id, 0.0) or 0.0)
