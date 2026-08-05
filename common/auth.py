@@ -15,7 +15,7 @@ config = get_config()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Security parameters for JWT generation
-SECRET_KEY = os.getenv("JWT_SECRET", "supersecret")
+SECRET_KEY = config.JWT_SECRET_KEY
 ALGORITHM = "HS256"
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
