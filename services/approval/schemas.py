@@ -23,7 +23,7 @@ class ManualEntryIn(BaseModel):
     campaign_id: str = Field(..., description="Target campaign UUID or slug for the contribution")
     amount: float = Field(..., json_schema_extra={"example": 1500.0})
     sender_name: str = Field(..., json_schema_extra={"example": "Joseph Njoroge"})
-    sender_phone: str = Field(..., json_schema_extra={"example": "+254700000000"})
+    sender_phone: Optional[str] = Field(None, json_schema_extra={"example": "+254700000000"})
     purpose: Optional[str] = Field(None, json_schema_extra={"example": "January Contribution"})
     transaction_code: Optional[str] = Field(None, json_schema_extra={"example": "MANUAL-12345"})
 

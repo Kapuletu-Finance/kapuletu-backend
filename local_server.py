@@ -341,7 +341,7 @@ async def temp_elevate(email: str, db: Session = Depends(get_db)):
 
 from services.ingestion.manual_handler import handler as manual_handler
 @ingestion.post("/transactions/manual", summary="Manual Entry")
-async def manual_entry(request: Request, payload: ManualEntryIn, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, manual_handler)
+async def manual_entry(request: Request, current_user: Dict[str, Any] = Depends(get_verified_user)): return await lambda_adapter(request, manual_handler)
 
 # Removed parsing and review endpoints since they are now in native services/approval/router.py
 # 8. Ledger
