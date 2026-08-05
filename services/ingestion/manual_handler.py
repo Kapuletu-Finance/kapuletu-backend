@@ -29,9 +29,16 @@ def handler(event, context):
         
         # Security: Verify group ownership (IDOR prevention)
         from models.group import Group
-        group = db.query(Group).filter(Group.group_id == body["group_id"], Group.owner_id == event["user_id"]).first()
+        import uuid
+        try:
+            group_uuid = uuid.UUID(body["group_id"])
+            owner_uuid = uuid.UUID(event["user_id"])
+        except ValueError:
+            return {"statusCode": 400, "body": json.dumps({"error": "Invalid UUID format for group_id or user_id"})}
+            
+        group = db.query(Group).filter(Group.group_id == group_uuid, Group.owner_id == owner_uuid).first()
         if not group:
-            logger.warning(f"manual_handler 403: User {event['user_id']} does not own group {body.get('group_id')}")
+            logger.warning(f"manual_handler 403: User {owner_uuid} does not own group {group_uuid}")
             db.close()
             return {"statusCode": 403, "body": json.dumps({"error": "Forbidden: You do not have permission to add transactions to this group."})}
             

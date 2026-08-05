@@ -266,8 +266,8 @@ class AuthService:
         if not user.hashed_password or not verify_password(password, user.hashed_password):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password.")
             
-        access_token = create_access_token({"sub": str(user.user_id)})
-        refresh_token = create_refresh_token({"sub": str(user.user_id)})
+        access_token = create_access_token({"sub": str(user.user_id), "role": user.role})
+        refresh_token = create_refresh_token({"sub": str(user.user_id), "role": user.role})
         
         AuditService(db).log_action(
             actor_id=str(user.user_id),
