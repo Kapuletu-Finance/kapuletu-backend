@@ -19,7 +19,7 @@ def handler(event, context):
         body = json.loads(event.get("body", "{}"))
         
         # 1. Validation
-        required = ["amount", "sender_name", "sender_phone"]
+        required = ["amount", "sender_name"]
         for field in required:
             if field not in body:
                 return {"statusCode": 400, "body": json.dumps({"error": f"Missing field: {field}"})}
@@ -43,7 +43,7 @@ def handler(event, context):
             amount=body["amount"],
             currency=body.get("currency", "KES"),
             transaction_code=txn_code,
-            sender_phone=body["sender_phone"],
+            sender_phone=body.get("sender_phone"),
             purpose=body.get("purpose", "Manual Entry"),
             confidence_score=1.0, # Manual entry is 100% confident
             workflow_status="pending",
