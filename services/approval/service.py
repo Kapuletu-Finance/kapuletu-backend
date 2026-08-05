@@ -57,6 +57,13 @@ class ApprovalService:
         if not pending:
             logger.error(f"Approval Failed: Pending ID {pending_txn_id} not found.")
             raise Exception("Pending transaction not found")
+            
+        # Security: Verify group ownership (IDOR prevention)
+        from models.group import Group
+        group = self.db.query(Group).filter(Group.group_id == group_id, Group.owner_id == treasurer_id).first()
+        if not group:
+            logger.error(f"Approval Failed: Treasurer {treasurer_id} attempted to approve transaction into unauthorized Group {group_id}")
+            raise Exception("Forbidden: You do not have permission to approve transactions for this group.")
 
         # 2. Transition to Permanent Transaction record
         # This moves the data from the 'scratchpad' (Pending) to the 'General Ledger' (Transaction).

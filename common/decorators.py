@@ -22,7 +22,8 @@ def with_auth(role_required: str = None):
     def decorator(handler):
         @functools.wraps(handler)
         def wrapper(event, context):
-            auth_header = event.get("headers", {}).get("Authorization", "")
+            headers = event.get("headers", {})
+            auth_header = headers.get("Authorization") or headers.get("authorization") or ""
             if not auth_header.startswith("Bearer "):
                 return {"statusCode": 401, "body": json.dumps({"error": "Unauthorized: Missing or malformed token"})}
             

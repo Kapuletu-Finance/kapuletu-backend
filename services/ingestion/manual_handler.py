@@ -19,13 +19,21 @@ def handler(event, context):
         body = json.loads(event.get("body", "{}"))
         
         # 1. Validation
-        required = ["amount", "sender_name"]
+        required = ["amount", "sender_name", "group_id", "campaign_id"]
         for field in required:
-            if field not in body:
-                return {"statusCode": 400, "body": json.dumps({"error": f"Missing field: {field}"})}
+            if not body.get(field):
+                return {"statusCode": 400, "body": json.dumps({"error": f"Missing or empty field: {field}"})}
 
         # 2. Setup DB & Repo
         db = SessionLocal()
+        
+        # Security: Verify group ownership (IDOR prevention)
+        from models.group import Group
+        group = db.query(Group).filter(Group.group_id == body["group_id"], Group.owner_id == event["user_id"]).first()
+        if not group:
+            db.close()
+            return {"statusCode": 403, "body": json.dumps({"error": "Forbidden: You do not have permission to add transactions to this group."})}
+            
         repo = TransactionRepository(db)
         
         # 3. Create Pending Transaction record
@@ -38,6 +46,8 @@ def handler(event, context):
 
         pending_txn = PendingTransaction(
             owner_id=event["user_id"],
+            group_id=body["group_id"],
+            campaign_id=body["campaign_id"],
             raw_message="MANUAL_ENTRY",
             sender_name=body["sender_name"],
             amount=body["amount"],

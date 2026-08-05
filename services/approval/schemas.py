@@ -19,6 +19,8 @@ class TransactionSplit(BaseModel):
 
 
 class ManualEntryIn(BaseModel):
+    group_id: UUID = Field(..., description="Target group for the contribution")
+    campaign_id: UUID = Field(..., description="Target campaign for the contribution")
     amount: float = Field(..., json_schema_extra={"example": 1500.0})
     sender_name: str = Field(..., json_schema_extra={"example": "Joseph Njoroge"})
     sender_phone: str = Field(..., json_schema_extra={"example": "+254700000000"})
@@ -27,8 +29,8 @@ class ManualEntryIn(BaseModel):
 
 class TransactionActionIn(BaseModel):
     internal_note: Optional[str] = Field(None, json_schema_extra={"example": "Matched with paper receipt #123"})
-    group_id: Optional[str] = None
-    campaign_id: Optional[str] = None
+    group_id: UUID = Field(...)
+    campaign_id: UUID = Field(...)
 
 class TransactionEditIn(BaseModel):
     extracted_amount: Optional[float] = Field(None, json_schema_extra={"example": 1500.0})
