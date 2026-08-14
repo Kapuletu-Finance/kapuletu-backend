@@ -1,3 +1,4 @@
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from models.users import User
 from models.group import Group
@@ -43,11 +44,11 @@ class UserService:
         """
         Retrieves deep-dive data for a specific treasurer.
         """
-        user = self.db.query(User).filter(User.user_id == user_id).first()
+        user = self.db.query(User).filter(User.user_id == parse_uuid(user_id)).first()
         if not user:
             return None
             
-        group_count = self.db.query(Group).filter(Group.owner_id == user_id).count()
+        group_count = self.db.query(Group).filter(Group.owner_id == parse_uuid(user_id)).count()
         
         return {
             "profile": {
@@ -69,7 +70,7 @@ class UserService:
         """
         Lists all community groups owned by the treasurer.
         """
-        groups = self.db.query(Group).filter(Group.owner_id == user_id).all()
+        groups = self.db.query(Group).filter(Group.owner_id == parse_uuid(user_id)).all()
         return [{
             "group_id": str(g.group_id),
             "name": g.group_name,
@@ -81,7 +82,7 @@ class UserService:
         """
         Suspends or reactivates a user account.
         """
-        user = self.db.query(User).filter(User.user_id == user_id).first()
+        user = self.db.query(User).filter(User.user_id == parse_uuid(user_id)).first()
         if not user:
             return False
             
@@ -97,7 +98,7 @@ class UserService:
         """
         Allows an admin to manually correct user profile data.
         """
-        user = self.db.query(User).filter(User.user_id == user_id).first()
+        user = self.db.query(User).filter(User.user_id == parse_uuid(user_id)).first()
         if not user:
             return False
             
@@ -118,7 +119,7 @@ class UserService:
         if new_role not in valid_roles:
             raise ValueError(f"Invalid role. Must be one of {valid_roles}")
             
-        user = self.db.query(User).filter(User.user_id == user_id).first()
+        user = self.db.query(User).filter(User.user_id == parse_uuid(user_id)).first()
         if not user:
             return False
             

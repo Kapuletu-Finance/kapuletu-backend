@@ -1,5 +1,6 @@
 from typing import Dict, Any, Optional, cast
 from pydantic import BaseModel
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from fastapi import HTTPException, status
@@ -17,7 +18,7 @@ class SettingsService:
     def _get_active_plan(self, user_id: str) -> Plan:
         sub = self.db.execute(
             select(Subscription).where(
-                Subscription.user_id == user_id,
+                Subscription.user_id == parse_uuid(user_id),
                 Subscription.status == "active"
             )
         ).scalars().first()
@@ -43,7 +44,7 @@ class SettingsService:
 
     # --- Global Settings ---
     def get_global_settings(self, user_id: str) -> UserSettings:
-        user = self.db.execute(select(User).where(User.user_id == user_id)).scalars().first()
+        user = self.db.execute(select(User).where(User.user_id == parse_uuid(user_id))).scalars().first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
             
@@ -54,7 +55,7 @@ class SettingsService:
         """
         Safely isolates the update to a specific domain (e.g. 'security') to prevent clashing.
         """
-        user = self.db.execute(select(User).where(User.user_id == user_id)).scalars().first()
+        user = self.db.execute(select(User).where(User.user_id == parse_uuid(user_id))).scalars().first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
             
@@ -83,7 +84,7 @@ class SettingsService:
         if domain == "billing" and "auto_renew_subscription" in update_dict:
             sub = self.db.execute(
                 select(Subscription).where(
-                    Subscription.user_id == user_id,
+                    Subscription.user_id == parse_uuid(user_id),
                     Subscription.status == "active"
                 )
             ).scalars().first()
@@ -96,7 +97,7 @@ class SettingsService:
     # --- Group Settings ---
     def get_group_settings(self, user_id: str, group_id: str) -> GroupSettings:
         group = self.db.execute(
-            select(Group).where(Group.group_id == group_id, Group.owner_id == user_id)
+            select(Group).where(Group.group_id == group_id, Group.owner_id == parse_uuid(user_id))
         ).scalars().first()
         
         if not group:
@@ -106,7 +107,7 @@ class SettingsService:
 
     def update_group_domain(self, user_id: str, group_id: str, domain: str, updates: BaseModel) -> GroupSettings:
         group = self.db.execute(
-            select(Group).where(Group.group_id == group_id, Group.owner_id == user_id)
+            select(Group).where(Group.group_id == group_id, Group.owner_id == parse_uuid(user_id))
         ).scalars().first()
         
         if not group:
@@ -137,7 +138,7 @@ class SettingsService:
         campaign = self.db.execute(
             select(Campaign).join(Group).where(
                 Campaign.campaign_id == campaign_id,
-                Group.owner_id == user_id
+                Group.owner_id == parse_uuid(user_id)
             )
         ).scalars().first()
         
@@ -150,7 +151,7 @@ class SettingsService:
         campaign = self.db.execute(
             select(Campaign).join(Group).where(
                 Campaign.campaign_id == campaign_id,
-                Group.owner_id == user_id
+                Group.owner_id == parse_uuid(user_id)
             )
         ).scalars().first()
         
@@ -196,7 +197,7 @@ class SettingsService:
                     return val
                     
         # 3. Check Global User
-        user = self.db.execute(select(User).where(User.user_id == user_id)).scalars().first()
+        user = self.db.execute(select(User).where(User.user_id == parse_uuid(user_id))).scalars().first()
         if user and user.preferences:
             val = user.preferences.get(domain, {}).get(key)
             if val is not None:

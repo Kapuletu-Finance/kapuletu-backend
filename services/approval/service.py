@@ -1,3 +1,4 @@
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 
 from common.logger import get_logger
@@ -60,7 +61,7 @@ class ApprovalService:
             
         # Security: Verify group ownership (IDOR prevention)
         from models.group import Group
-        group = self.db.query(Group).filter(Group.group_id == group_id, Group.owner_id == treasurer_id).first()
+        group = self.db.query(Group).filter(Group.group_id == group_id, Group.owner_id == parse_uuid(treasurer_id)).first()
         if not group:
             logger.error(f"Approval Failed: Treasurer {treasurer_id} attempted to approve transaction into unauthorized Group {group_id}")
             raise Exception("Forbidden: You do not have permission to approve transactions for this group.")
@@ -92,7 +93,7 @@ class ApprovalService:
         
         # Admin Feedback Loop: Record the correction if the ground truth differs from the AI's first guess.
         # CRITICAL: Only log if the user has opted-in to AI training (Privacy Guard)
-        user = self.db.query(User).filter(User.user_id == treasurer_id).first()
+        user = self.db.query(User).filter(User.user_id == parse_uuid(treasurer_id)).first()
         if user and user.allow_ai_training and pending.original_ai_output:
             from services.admin.ai_governance_service import AIGovernanceService
             ai_service = AIGovernanceService(self.db)
@@ -278,7 +279,7 @@ class ApprovalService:
         try:
             pending = self.db.query(PendingTransaction).filter(
                 PendingTransaction.pending_id == pending_txn_id,
-                PendingTransaction.owner_id == treasurer_id
+                PendingTransaction.owner_id == parse_uuid(treasurer_id)
             ).with_for_update(nowait=True).first()
         except Exception:
             raise Exception("Transaction is currently being processed by another request.")

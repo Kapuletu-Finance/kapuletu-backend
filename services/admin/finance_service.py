@@ -1,3 +1,4 @@
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from models.subscription import Plan, Subscription, SubscriptionPayment
 import uuid
@@ -69,7 +70,7 @@ class FinanceService:
         self.db.add(payment)
         
         # 2. Upsert Subscription
-        sub = self.db.query(Subscription).filter(Subscription.user_id == user_id).first()
+        sub = self.db.query(Subscription).filter(Subscription.user_id == parse_uuid(user_id)).first()
         if not sub:
             sub = Subscription(
                 user_id=user_id,

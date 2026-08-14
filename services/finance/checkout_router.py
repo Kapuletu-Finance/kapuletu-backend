@@ -6,6 +6,7 @@ from sqlalchemy import select, desc
 
 from common.database import get_db
 from common.auth_dependencies import get_verified_user
+from common.utils import parse_uuid
 from services.finance.checkout_schemas import (
     PlanOut, MySubscriptionOut, CheckoutIn, CheckoutOut, 
     PaymentStatusOut, BillingHistoryOut
@@ -40,7 +41,7 @@ async def get_my_subscription(
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    user_id = current_user.get("sub")
+    user_id = parse_uuid(current_user.get("sub"))
     sub = db.execute(select(Subscription).where(Subscription.user_id == user_id)).scalars().first()
     
     if not sub:

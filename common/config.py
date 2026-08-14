@@ -34,6 +34,9 @@ class Config:
     
     # Frontend URL for generating public links
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://app.kapuletu.co.ke")
+    
+    # Local development mode — set to True when running locally (disables secure cookies, etc.)
+    IS_LOCAL: bool = os.getenv("IS_LOCAL", "false").lower() == "true"
 
 def get_config() -> Config:
     """
