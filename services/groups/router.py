@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from common.database import get_db
 from common.auth_dependencies import get_verified_user
+from common.utils import parse_uuid
 from services.groups.schemas import GroupCreate, GroupUpdate, GroupOut, PaginatedGroupResponse
 from services.auth.router import limiter
 from repositories import group_repo
@@ -25,7 +26,7 @@ async def create_group(
     try:
         new_group = group_repo.create_group(
             db=db, 
-            owner_id=current_user.get('sub'), 
+            owner_id=parse_uuid(current_user.get('sub')), 
             name=payload.name, 
             description=payload.description,
             currency=payload.currency.value
@@ -59,7 +60,7 @@ async def list_groups(
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Lists all groups owned by the current treasurer with pagination, search, and stats."""
-    groups = group_repo.get_owner_groups(db=db, owner_id=current_user.get('sub'), skip=skip, limit=limit, search=search, status=group_status)
+    groups = group_repo.get_owner_groups(db=db, owner_id=parse_uuid(current_user.get('sub')), skip=skip, limit=limit, search=search, status=group_status)
     return groups
 
 @router.get("/{group_id}", response_model=GroupOut, summary="Get Single Group")
@@ -74,7 +75,7 @@ async def get_group(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     
     # Security Check: Ensure the user actually owns this group
-    if str(group.owner_id) != current_user.get('sub'):
+    if str(group.owner_id) != str(current_user.get('sub')):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this group.")
         
     return group
@@ -91,7 +92,7 @@ async def update_group(
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     
-    if str(group.owner_id) != current_user.get('sub'):
+    if str(group.owner_id) != str(current_user.get('sub')):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to modify this group.")
         
     if not group.is_active:
@@ -124,7 +125,7 @@ async def toggle_favorite_group(
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     
-    if str(group.owner_id) != current_user.get('sub'):
+    if str(group.owner_id) != str(current_user.get('sub')):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to modify this group.")
         
     updated_group = group_repo.update_group(db=db, group_id=str(group.group_id), updates={"is_favorite": not group.is_favorite})
@@ -141,7 +142,7 @@ async def archive_group(
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
         
-    if str(group.owner_id) != current_user.get('sub'):
+    if str(group.owner_id) != str(current_user.get('sub')):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to archive this group.")
         
     if not group.is_active:
