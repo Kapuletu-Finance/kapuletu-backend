@@ -20,6 +20,7 @@ from models.users import User
 from models.otp import OTP
 from models.token_blacklist import TokenBlacklist
 from common.config import get_config
+from common.utils import parse_uuid
 from services.audit.service import AuditService
 from services.notifications.service import create_notification
 
