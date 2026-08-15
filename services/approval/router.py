@@ -38,10 +38,10 @@ async def get_pending(
         "limit": limit
     }
 
+from pydantic import BaseModel
+
 class ClearHistoryIn(BaseModel):
     pending_ids: Optional[List[str]] = None
-
-from pydantic import BaseModel
 
 @router.delete("/history", summary="Clear Processed History")
 async def clear_history(
