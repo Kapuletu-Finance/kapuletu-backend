@@ -20,6 +20,7 @@ from models.users import User
 from models.otp import OTP
 from models.token_blacklist import TokenBlacklist
 from common.config import get_config
+from common.utils import parse_uuid
 from services.audit.service import AuditService
 from services.notifications.service import create_notification
 
@@ -69,7 +70,7 @@ class AuthService:
         
     def _save_otp(self, db: Session, user_id, identifier: str, purpose: str) -> str:
         # Delete existing OTPs for this purpose and identifier
-        db.query(OTP).filter(OTP.user_id == user_id, OTP.purpose == purpose).delete()
+        db.query(OTP).filter(OTP.user_id ==parse_uuid(parse_uuid(user_id)), OTP.purpose == purpose).delete()
         
         code = self._generate_otp()
         otp_entry = OTP(
@@ -290,7 +291,7 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
             
         otp = db.query(OTP).filter(
-            OTP.user_id == user.user_id, 
+            OTP.user_id == parse_uuid(user.user_id), 
             OTP.purpose == "registration",
             OTP.code == code
         ).first()
@@ -464,7 +465,7 @@ class AuthService:
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
             
-        user = db.query(User).filter(User.user_id == user_id).first()
+        user = db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(user_id))).first()
         if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
             
@@ -491,7 +492,7 @@ class AuthService:
         user = self._get_user_by_identifier(db, username)
         
         otp = db.query(OTP).filter(
-            OTP.user_id == user.user_id, 
+            OTP.user_id == parse_uuid(user.user_id), 
             OTP.purpose == "password_reset",
             OTP.code == code
         ).first()
@@ -521,7 +522,7 @@ class AuthService:
         )
 
     def change_password(self, db: Session, user_id: str, old_password: str, new_password: str):
-        user = db.query(User).filter(User.user_id == user_id).first()
+        user = db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(user_id))).first()
         if not user or not verify_password(old_password, user.hashed_password):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect old password.")
             
@@ -536,7 +537,7 @@ class AuthService:
         )
 
     def update_profile(self, db: Session, user_id: str, updates: dict):
-        user = db.query(User).filter(User.user_id == user_id).first()
+        user = db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(user_id))).first()
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
             
@@ -554,20 +555,20 @@ class AuthService:
         )
 
     def request_email_verification(self, db: Session, user_id: str):
-        user = db.query(User).filter(User.user_id == user_id).first()
+        user = db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(user_id))).first()
         code = self._save_otp(db, user.user_id, user.email, "verify_email")
         self._send_resend_email(user.email, "Verify your Email", code, "verify your email", user.first_name)
 
     def confirm_email_verification(self, db: Session, user_id: str, code: str):
         otp = db.query(OTP).filter(
-            OTP.user_id == user_id, 
+            OTP.user_id ==parse_uuid(parse_uuid(user_id)), 
             OTP.purpose == "verify_email",
             OTP.code == code
         ).first()
         if not otp or otp.expires_at < datetime.datetime.utcnow():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code.")
             
-        user = db.query(User).filter(User.user_id == user_id).first()
+        user = db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(user_id))).first()
         user.email_verified = True
         db.delete(otp)
         db.commit()

@@ -32,12 +32,20 @@ class AuditService:
             details (dict): Optional JSON payload for deep forensic diffs.
             ip_address (str): Optional network context.
         """
+        import uuid
+        parsed_actor_id = None
+        if actor_id:
+            try:
+                parsed_actor_id = uuid.UUID(str(actor_id))
+            except (ValueError, TypeError):
+                pass
+
         try:
             log_entry = AuditLog(
-                actor_id=actor_id,
+                actor_id=parsed_actor_id,
                 action=action,
                 entity_type=entity_type,
-                entity_id=entity_id,
+                entity_id=str(entity_id) if entity_id else None,
                 details=details or {},
                 ip_address=ip_address
             )

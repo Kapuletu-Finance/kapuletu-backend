@@ -1,3 +1,4 @@
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 
 from common.logger import get_logger
@@ -49,7 +50,7 @@ class ApprovalService:
         """
         # 1. Fetch the original pending record with an exclusive DB lock to prevent double-approvals
         try:
-            pending = self.db.query(PendingTransaction).filter(PendingTransaction.pending_id == pending_txn_id).with_for_update(nowait=True).first()
+            pending = self.db.query(PendingTransaction).filter(PendingTransaction.pending_id == parse_uuid(pending_txn_id)).with_for_update(nowait=True).first()
         except Exception as e:
             logger.error(f"Approval Failed: Database lock could not be acquired for Pending ID {pending_txn_id}. {e}")
             raise Exception("Transaction is currently being processed by another request. Please try again.")
@@ -60,7 +61,7 @@ class ApprovalService:
             
         # Security: Verify group ownership (IDOR prevention)
         from models.group import Group
-        group = self.db.query(Group).filter(Group.group_id == group_id, Group.owner_id == treasurer_id).first()
+        group = self.db.query(Group).filter(Group.group_id == parse_uuid(group_id), Group.owner_id ==parse_uuid(parse_uuid(treasurer_id))).first()
         if not group:
             logger.error(f"Approval Failed: Treasurer {treasurer_id} attempted to approve transaction into unauthorized Group {group_id}")
             raise Exception("Forbidden: You do not have permission to approve transactions for this group.")
@@ -68,9 +69,9 @@ class ApprovalService:
         # 2. Transition to Permanent Transaction record
         # This moves the data from the 'scratchpad' (Pending) to the 'General Ledger' (Transaction).
         new_txn = Transaction(
-            owner_id=treasurer_id,
-            group_id=group_id,
-            campaign_id=campaign_id,
+            owner_id=parse_uuid(treasurer_id),
+            group_id=parse_uuid(group_id),
+            campaign_id=parse_uuid(campaign_id) if campaign_id else None,
             transaction_code=pending.transaction_code,
             amount=pending.amount,
             sender_phone=pending.sender_phone,
@@ -79,8 +80,25 @@ class ApprovalService:
             source_evidence=pending.source_evidence,
             status="approved"
         )
-        self.db.add(new_txn)
-        self.db.flush() # Flushes to DB to generate the transaction_id for the ledger record
+        try:
+            self.db.add(new_txn)
+            self.db.flush() # Flushes to DB to generate the transaction_id for the ledger record
+        except Exception as e:
+            # If UNIQUE constraint fails, the transaction was already approved previously
+            # (e.g. UUID bug caused is_processed to not be set). Just find the existing one and continue.
+            from sqlalchemy.exc import IntegrityError
+            if isinstance(e, IntegrityError) and "UNIQUE constraint failed" in str(e):
+                self.db.rollback()
+                new_txn = self.db.query(Transaction).filter(
+                    Transaction.transaction_code == pending.transaction_code,
+                    Transaction.owner_id == parse_uuid(treasurer_id)
+                ).first()
+                if not new_txn:
+                    raise Exception("Transaction already exists but could not be located.")
+                logger.warning(f"Approval: Transaction {pending.transaction_code} already existed, marking pending as processed.")
+            else:
+                self.db.rollback()
+                raise
 
         # 2.5 Active Learning Hook
         # Feed the ground truth (after potential treasurer edits) back into the AI loop
@@ -92,7 +110,7 @@ class ApprovalService:
         
         # Admin Feedback Loop: Record the correction if the ground truth differs from the AI's first guess.
         # CRITICAL: Only log if the user has opted-in to AI training (Privacy Guard)
-        user = self.db.query(User).filter(User.user_id == treasurer_id).first()
+        user = self.db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(treasurer_id))).first()
         if user and user.allow_ai_training and pending.original_ai_output:
             from services.admin.ai_governance_service import AIGovernanceService
             ai_service = AIGovernanceService(self.db)
@@ -123,17 +141,17 @@ class ApprovalService:
         pending.is_processed = True
         pending.workflow_status = "approved"
         pending.processed_at = datetime.utcnow()
-        pending.processed_by = treasurer_id
+        pending.processed_by = parse_uuid(treasurer_id)
         
         self.db.commit()
         
         target_name = "Unknown"
         if campaign_id:
-            camp = self.db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+            camp = self.db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
             if camp:
                 target_name = camp.title
         else:
-            grp = self.db.query(Group).filter(Group.group_id == group_id).first()
+            grp = self.db.query(Group).filter(Group.group_id == parse_uuid(group_id)).first()
             if grp:
                 target_name = grp.group_name
 
@@ -168,7 +186,7 @@ class ApprovalService:
         if campaign_id and camp:
             # Calculate total raised for this campaign so far
             total_raised = self.db.query(func.sum(Transaction.amount)).filter(
-                Transaction.campaign_id == str(campaign_id),
+                Transaction.campaign_id == parse_uuid(str(campaign_id)),
                 Transaction.status == "approved"
             ).scalar() or 0.0
             
@@ -196,7 +214,7 @@ class ApprovalService:
         # 1. Fetch record
         try:
             pending = self.db.query(PendingTransaction).filter(
-                PendingTransaction.pending_id == pending_txn_id
+                PendingTransaction.pending_id == parse_uuid(pending_txn_id)
             ).with_for_update(nowait=True).first()
         except Exception:
             raise Exception("Transaction is currently being processed by another request. Please try again.")
@@ -211,12 +229,13 @@ class ApprovalService:
 
         # 3. Create Parent Transaction
         new_txn = Transaction(
-            owner_id=treasurer_id,
-            group_id=group_id,
-            campaign_id=campaign_id,
+            owner_id=parse_uuid(treasurer_id),
+            group_id=parse_uuid(group_id),
+            campaign_id=parse_uuid(campaign_id) if campaign_id else None,
             transaction_code=pending.transaction_code,
             amount=pending.amount,
             sender_phone=pending.sender_phone,
+            sender_name=", ".join(a["name"] for a in allocations),
             payment_method=pending.payment_method,
             source_evidence=pending.source_evidence,
             status="approved"
@@ -243,17 +262,17 @@ class ApprovalService:
         pending.is_processed = True
         pending.workflow_status = "split_approved"
         pending.processed_at = datetime.utcnow()
-        pending.processed_by = treasurer_id
+        pending.processed_by = parse_uuid(treasurer_id)
         
         self.db.commit()
 
         target_name = "Unknown"
         if campaign_id:
-            camp = self.db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+            camp = self.db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
             if camp:
                 target_name = camp.title
         else:
-            grp = self.db.query(Group).filter(Group.group_id == group_id).first()
+            grp = self.db.query(Group).filter(Group.group_id == parse_uuid(group_id)).first()
             if grp:
                 target_name = grp.group_name
 
@@ -284,8 +303,8 @@ class ApprovalService:
         """
         try:
             pending = self.db.query(PendingTransaction).filter(
-                PendingTransaction.pending_id == pending_txn_id,
-                PendingTransaction.owner_id == treasurer_id
+                PendingTransaction.pending_id == parse_uuid(pending_txn_id),
+                PendingTransaction.owner_id ==parse_uuid(parse_uuid(treasurer_id))
             ).with_for_update(nowait=True).first()
         except Exception:
             raise Exception("Transaction is currently being processed by another request.")
@@ -297,7 +316,7 @@ class ApprovalService:
         pending.is_processed = True
         pending.workflow_status = "rejected"
         pending.processed_at = datetime.utcnow()
-        pending.processed_by = treasurer_id
+        pending.processed_by = parse_uuid(treasurer_id)
         pending.rejection_reason = reason
         
         self.db.commit()
@@ -316,9 +335,9 @@ class ApprovalService:
         logger.info(f"Transaction {pending_txn_id} rejected by treasurer {treasurer_id}.")
         return {"status": "rejected"}
 
-    def undo_rejection(self, pending_txn_id, treasurer_id):
+    def undo_action(self, pending_txn_id, treasurer_id):
         """
-        Reverts a rejected transaction back to the pending state.
+        Reverts an approved or rejected transaction back to the pending state.
         
         Args:
             pending_txn_id (UUID): The record to undo.
@@ -326,8 +345,8 @@ class ApprovalService:
         """
         try:
             pending = self.db.query(PendingTransaction).filter(
-                PendingTransaction.pending_id == pending_txn_id,
-                PendingTransaction.owner_id == treasurer_id
+                PendingTransaction.pending_id == parse_uuid(pending_txn_id),
+                PendingTransaction.owner_id == parse_uuid(treasurer_id)
             ).with_for_update(nowait=True).first()
         except Exception:
             raise Exception("Transaction is currently being processed by another request.")
@@ -335,8 +354,27 @@ class ApprovalService:
         if not pending:
             raise Exception("Pending transaction not found or access denied")
             
-        if pending.workflow_status != "rejected" or not pending.is_processed:
-            raise Exception("Only rejected transactions can be undone.")
+        if not pending.is_processed:
+            raise Exception("Transaction is not processed yet.")
+            
+        # Undo approval: Delete the resulting Transaction (which deletes ReviewAllocations via DB cascade)
+        if pending.workflow_status in ["approved", "split_approved"]:
+            from models.review_allocation import ReviewAllocation
+            txn = self.db.query(Transaction).filter(
+                Transaction.transaction_code == pending.transaction_code,
+                Transaction.owner_id == parse_uuid(treasurer_id)
+            ).first()
+            if txn:
+                self.db.query(ReviewAllocation).filter(ReviewAllocation.transaction_id == txn.transaction_id).delete()
+                self.db.delete(txn)
+            action_log = "TXN_UNDO_APPROVE"
+            msg_log = "Transaction approval was undone"
+            
+        elif pending.workflow_status == "rejected":
+            action_log = "TXN_UNDO_REJECT"
+            msg_log = "Transaction rejection was undone"
+        else:
+            raise Exception(f"Cannot undo transaction in state: {pending.workflow_status}")
             
         pending.is_processed = False
         pending.workflow_status = "pending"
@@ -348,15 +386,15 @@ class ApprovalService:
         
         AuditService(self.db).log_action(
             actor_id=treasurer_id,
-            action="TXN_UNDO_REJECT",
+            action=action_log,
             entity_type="PENDING_TRANSACTION",
             entity_id=str(pending_txn_id),
             details={
-                "message": "Transaction rejection was undone"
+                "message": msg_log
             }
         )
         
-        logger.info(f"Rejection of transaction {pending_txn_id} was undone by treasurer {treasurer_id}.")
+        logger.info(f"{msg_log} for {pending_txn_id} by treasurer {treasurer_id}.")
         return pending
 
     def bulk_approve(self, pending_ids: list, treasurer_id, group_id, campaign_id=None):

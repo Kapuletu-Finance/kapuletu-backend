@@ -1,17 +1,18 @@
 import uuid
 import random
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from models.campaign import Campaign
 from models.transaction import Transaction
-from common.utils import generate_slug
+from common.utils import generate_slug, parse_uuid
 
 def create_campaign(db: Session, group_id: str, title: str, description: str = None, target_amount: float = 0.0, payment_instructions: str = None):
     """Creates a new campaign for a specific group with full reporting metadata."""
     base_slug = generate_slug(title)
     slug = base_slug
     # Ensure slug uniqueness for this group
-    while db.query(Campaign).filter(Campaign.group_id == group_id, Campaign.slug == slug).first():
+    while db.query(Campaign).filter(Campaign.group_id == parse_uuid(group_id), Campaign.slug == slug).first():
         slug = f"{base_slug}-{random.randint(1000, 9999)}"
 
     default_settings = {
@@ -27,7 +28,7 @@ def create_campaign(db: Session, group_id: str, title: str, description: str = N
 
     new_campaign = Campaign(
         campaign_id=uuid.uuid4(),
-        group_id=group_id,
+        group_id=parse_uuid(group_id),
         title=title,
         description=description,
         target_amount=target_amount,
@@ -44,13 +45,13 @@ def get_campaign(db: Session, identifier: str):
     """Fetches a single campaign by its ID or slug."""
     try:
         valid_uuid = uuid.UUID(identifier)
-        return db.query(Campaign).filter(Campaign.campaign_id == valid_uuid).first()
+        return db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(valid_uuid)).first()
     except ValueError:
         return db.query(Campaign).filter(Campaign.slug == identifier).first()
 
 def get_group_campaigns(db: Session, group_id: str, skip: int = 0, limit: int = 100, search: str = None, status: str = None):
     """Returns all campaigns belonging to a specific group with pagination, search, and dynamic stats."""
-    query = db.query(Campaign).filter(Campaign.group_id == group_id)
+    query = db.query(Campaign).filter(Campaign.group_id == parse_uuid(group_id))
     
     if search:
         query = query.filter(Campaign.title.ilike(f"%{search}%"))
@@ -130,13 +131,13 @@ def get_group_campaigns(db: Session, group_id: str, skip: int = 0, limit: int = 
 
 def update_campaign(db: Session, campaign_id: str, updates: dict):
     """Updates campaign details."""
-    db.query(Campaign).filter(Campaign.campaign_id == campaign_id).update(updates)
+    db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).update(updates)
     db.commit()
     return get_campaign(db, campaign_id)
 
 def archive_campaign(db: Session, campaign_id: str):
     """Soft deletes a campaign by archiving it."""
-    db.query(Campaign).filter(Campaign.campaign_id == campaign_id).update({
+    db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).update({
         "status": "archived",
         "is_active": False
     })

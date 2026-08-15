@@ -1,4 +1,5 @@
 from sqlalchemy import func
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from datetime import datetime
 
@@ -8,14 +9,14 @@ from models.transaction import Transaction
 def generate_summary(db: Session, owner_id: str):
     """Calculates a real-time financial summary for the treasurer dashboard."""
     total_collected = db.query(func.sum(Transaction.amount)).filter(
-        Transaction.owner_id == owner_id
+        Transaction.owner_id == parse_uuid(owner_id)
     ).scalar() or 0.0
 
     campaign_breakdown = db.query(
         Campaign.title,
         func.sum(Transaction.amount).label("total")
-    ).join(Transaction, Transaction.campaign_id == Campaign.campaign_id)\
-     .filter(Transaction.owner_id == owner_id)\
+    ).join(Transaction, Transaction.campaign_id == parse_uuid(Campaign.campaign_id))\
+     .filter(Transaction.owner_id == parse_uuid(owner_id))\
      .group_by(Campaign.title).all()
 
     return {
@@ -29,12 +30,12 @@ def generate_campaign_whatsapp_report(db: Session, campaign_id: str, manual_inst
     Prioritizes instructions set during campaign creation.
     """
     # 1. Fetch Data
-    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
     if not campaign:
         return "ERROR: CAMPAIGN RECORD NOT FOUND."
 
     txns = db.query(Transaction).filter(
-        Transaction.campaign_id == campaign_id,
+        Transaction.campaign_id == parse_uuid(campaign_id),
         Transaction.status == "approved"
     ).order_by(Transaction.created_at.asc()).all()
 

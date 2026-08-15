@@ -2,6 +2,7 @@ import os
 import sys
 import datetime
 import logging
+from common.utils import parse_uuid
 from sqlalchemy import select
 
 # Ensure backend root is in PYTHONPATH
@@ -50,7 +51,7 @@ def run_expiry_sweep():
         ).scalars().all()
 
         for sub in active_subs:
-            user = db.execute(select(User).where(User.user_id == sub.user_id)).scalars().first()
+            user = db.execute(select(User).where(User.user_id == parse_uuid(sub.user_id))).scalars().first()
             if not user:
                 continue
                 

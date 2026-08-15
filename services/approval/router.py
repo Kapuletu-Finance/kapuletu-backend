@@ -24,11 +24,12 @@ async def get_pending(
     limit: int = Query(10, ge=1, le=100),
     search: Optional[str] = Query(None),
     filter: Optional[str] = Query(None),
+    status: str = Query("pending"),
     db: Session = Depends(get_db), 
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     repo = TransactionRepository(db)
-    items, total = repo.fetch_pending_transactions_by_owner(current_user.get("sub"), skip, limit, search, filter)
+    items, total = repo.fetch_pending_transactions_by_owner(current_user.get("sub"), skip, limit, search, filter, status)
     return {
         "items": items,
         "total_items": total,
@@ -95,6 +96,26 @@ async def get_pending_single(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending transaction not found")
     return pending
 
+@router.post("/bulk/approve", summary="Bulk Approval")
+async def bulk_approve(
+    payload: BulkActionIn, 
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = ApprovalService(db)
+    results = service.bulk_approve(payload.pending_ids, current_user.get("sub"), payload.group_id, payload.campaign_id)
+    return {"results": results}
+
+@router.post("/bulk/reject", summary="Bulk Reject")
+async def bulk_reject(
+    payload: BulkActionIn, 
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = ApprovalService(db)
+    results = service.bulk_reject(payload.pending_ids, current_user.get("sub"))
+    return {"results": results}
+
 @router.post("/{pending_id}/approve", response_model=TransactionOut, summary="Approve Transaction")
 async def approve(
     pending_id: str, 
@@ -131,15 +152,15 @@ async def reject(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.post("/{pending_id}/undo", response_model=PendingTransactionOut, summary="Undo Rejection")
-async def undo_rejection(
+@router.post("/{pending_id}/undo", response_model=PendingTransactionOut, summary="Undo Action")
+async def undo_action(
     pending_id: str,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     service = ApprovalService(db)
     try:
-        pending = service.undo_rejection(pending_id, current_user.get("sub"))
+        pending = service.undo_action(pending_id, current_user.get("sub"))
         return pending
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -245,22 +266,4 @@ async def validate_tx(
         
     return {"status": "success", "message": "Transaction is valid and ready for approval"}
 
-@router.post("/bulk/approve", summary="Bulk Approval")
-async def bulk_approve(
-    payload: BulkActionIn, 
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
-):
-    service = ApprovalService(db)
-    results = service.bulk_approve(payload.pending_ids, current_user.get("sub"), payload.group_id, payload.campaign_id)
-    return {"results": results}
 
-@router.post("/bulk/reject", summary="Bulk Reject")
-async def bulk_reject(
-    payload: BulkActionIn, 
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
-):
-    service = ApprovalService(db)
-    results = service.bulk_reject(payload.pending_ids, current_user.get("sub"))
-    return {"results": results}

@@ -8,6 +8,7 @@ from slowapi.util import get_remote_address
 limiter = Limiter(key_func=get_remote_address)
 
 from common.database import get_db
+from common.utils import parse_uuid
 from services.auth.schemas import (
     RegisterIn, RegisterOut, LoginIn, VerifyIn, VerifyEmailIn, ResendCodeIn, RefreshIn,
     ForgotPasswordIn, ResetPasswordIn, ChangePasswordIn, UpdateProfileIn,
@@ -54,6 +55,9 @@ async def resend_code(request: Request, payload: ResendCodeIn, db: Session = Dep
 @limiter.limit("10/minute")
 async def login(request: Request, payload: LoginIn, response: Response, db: Session = Depends(get_db)):
     """Standard JSON login endpoint. Sets HTTP-Only cookies for frontend."""
+    from common.config import get_config
+    is_secure = not get_config().IS_LOCAL
+    
     auth_result = auth_service.login(db=db, username=payload.identifier, password=payload.password)
     
     # Set HTTP-Only Cookies
@@ -61,7 +65,7 @@ async def login(request: Request, payload: LoginIn, response: Response, db: Sess
         key="kapuletu_access_token", 
         value=auth_result.get('AccessToken'), 
         httponly=True, 
-        secure=True, 
+        secure=is_secure, 
         samesite='lax', 
         max_age=15 * 60 # 15 minutes
     )
@@ -69,7 +73,7 @@ async def login(request: Request, payload: LoginIn, response: Response, db: Sess
         key="kapuletu_refresh_token", 
         value=auth_result.get('RefreshToken'), 
         httponly=True, 
-        secure=True, 
+        secure=is_secure, 
         samesite='lax', 
         max_age=1 * 24 * 60 * 60 # 1 day
     )
@@ -104,6 +108,9 @@ async def refresh(request: Request, response: Response, payload: RefreshIn = Non
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token missing")
         
+    from common.config import get_config
+    is_secure = not get_config().IS_LOCAL
+    
     auth_result = auth_service.refresh_token(db=db, refresh_token=refresh_token)
     
     # Set new Access Token cookie
@@ -111,7 +118,7 @@ async def refresh(request: Request, response: Response, payload: RefreshIn = Non
         key="kapuletu_access_token", 
         value=auth_result.get('AccessToken'), 
         httponly=True, 
-        secure=True, 
+        secure=is_secure, 
         samesite='lax', 
         max_age=15 * 60
     )
@@ -200,13 +207,13 @@ async def confirm_email_verification(payload: VerifyEmailIn, current_user: Dict[
 @router.get("/settings", response_model=SettingsOut, summary="Get User Settings")
 async def get_settings(current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
     from models.users import User
-    user = db.query(User).filter(User.user_id == current_user.get('sub')).first()
+    user = db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(current_user.get('sub')))).first()
     return SettingsOut(allow_ai_training=user.allow_ai_training if user else True)
 
 @router.post("/settings", response_model=MessageOut, summary="Update User Settings")
 async def update_settings(payload: SettingsIn, current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
     from models.users import User
-    user = db.query(User).filter(User.user_id == current_user.get('sub')).first()
+    user = db.query(User).filter(User.user_id == parse_uuid(current_user.get('sub'))).first()
     if user:
         user.allow_ai_training = payload.allow_ai_training
         db.commit()

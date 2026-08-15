@@ -6,6 +6,7 @@ from sqlalchemy import select, desc
 
 from common.database import get_db
 from common.auth_dependencies import get_verified_user
+from common.utils import parse_uuid
 from services.finance.checkout_schemas import (
     PlanOut, MySubscriptionOut, CheckoutIn, CheckoutOut, 
     PaymentStatusOut, BillingHistoryOut
@@ -40,8 +41,8 @@ async def get_my_subscription(
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    user_id = current_user.get("sub")
-    sub = db.execute(select(Subscription).where(Subscription.user_id == user_id)).scalars().first()
+    user_id = parse_uuid(current_user.get("sub"))
+    sub = db.execute(select(Subscription).where(Subscription.user_id == parse_uuid(user_id))).scalars().first()
     
     if not sub:
         # Should not happen if onboarding sets trial, but fallback to Free
@@ -62,12 +63,12 @@ async def get_my_subscription(
         delta = sub.end_date - datetime.datetime.utcnow()
         days_remaining = max(0, delta.days)
         
-    is_on_trial = (plan.name == "Professional" and sub.status == "active" and not db.execute(select(SubscriptionPayment).where(SubscriptionPayment.user_id == user_id, SubscriptionPayment.status == "success")).first())
+    is_on_trial = (plan.name == "Professional" and sub.status == "active" and not db.execute(select(SubscriptionPayment).where(SubscriptionPayment.user_id == parse_uuid(user_id), SubscriptionPayment.status == "success")).first())
     
     # Usage calculation
-    groups_count = db.execute(select(Group).where(Group.owner_id == user_id)).scalars().all()
+    groups_count = db.execute(select(Group).where(Group.owner_id == parse_uuid(user_id))).scalars().all()
     groups_count = len(groups_count)
-    campaigns_count = db.execute(select(Campaign).join(Group).where(Group.owner_id == user_id)).scalars().all()
+    campaigns_count = db.execute(select(Campaign).join(Group).where(Group.owner_id == parse_uuid(user_id))).scalars().all()
     campaigns_count = len(campaigns_count)
     
     return MySubscriptionOut(
@@ -124,7 +125,7 @@ async def get_payment_status(
     user_id = current_user.get("sub")
     payment = db.execute(
         select(SubscriptionPayment).where(
-            SubscriptionPayment.user_id == user_id,
+            SubscriptionPayment.user_id == parse_uuid(user_id),
             (SubscriptionPayment.provider_reference == checkout_id) | (SubscriptionPayment.payment_id == checkout_id)
         )
     ).scalars().first()
@@ -153,7 +154,7 @@ async def get_billing_history(
     user_id = current_user.get("sub")
     payments = db.execute(
         select(SubscriptionPayment)
-        .where(SubscriptionPayment.user_id == user_id)
+        .where(SubscriptionPayment.user_id == parse_uuid(user_id))
         .order_by(desc(SubscriptionPayment.created_at))
     ).scalars().all()
     
@@ -175,7 +176,7 @@ async def cancel_subscription(
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     user_id = current_user.get("sub")
-    sub = db.execute(select(Subscription).where(Subscription.user_id == user_id)).scalars().first()
+    sub = db.execute(select(Subscription).where(Subscription.user_id == parse_uuid(user_id))).scalars().first()
     if not sub:
         raise HTTPException(status_code=404, detail="No active subscription found")
         

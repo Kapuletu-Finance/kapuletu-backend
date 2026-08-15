@@ -1,5 +1,6 @@
 from datetime import datetime
 import random
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import select
 
@@ -21,7 +22,7 @@ class TemplateEngine:
 
     def get_or_create_settings(self, campaign_id: str) -> CampaignReportSettings:
         settings = self.db.execute(
-            select(CampaignReportSettings).where(CampaignReportSettings.campaign_id == campaign_id)
+            select(CampaignReportSettings).where(CampaignReportSettings.campaign_id == parse_uuid(campaign_id))
         ).scalars().first()
         
         if not settings:
@@ -37,7 +38,7 @@ class TemplateEngine:
 
     def generate_whatsapp_report(self, campaign_id: str) -> str:
         # 1. Fetch Campaign and Data
-        campaign = self.db.execute(select(Campaign).where(Campaign.campaign_id == campaign_id)).scalars().first()
+        campaign = self.db.execute(select(Campaign).where(Campaign.campaign_id == parse_uuid(campaign_id))).scalars().first()
         if not campaign:
             return "ERROR: Campaign not found."
 
@@ -45,7 +46,7 @@ class TemplateEngine:
         
         txns = self.db.execute(
             select(Transaction).options(joinedload(Transaction.allocations)).where(
-                Transaction.campaign_id == campaign_id,
+                Transaction.campaign_id == parse_uuid(campaign_id),
                 Transaction.status == "approved"
             ).order_by(Transaction.created_at.asc())
         ).scalars().unique().all()

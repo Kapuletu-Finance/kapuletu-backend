@@ -1,4 +1,5 @@
 from sqlalchemy import func
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from models.transaction import Transaction
 
@@ -13,7 +14,7 @@ def list_members_by_group(db: Session, group_id: str):
         func.max(Transaction.sender_name).label("name"),
         func.count(Transaction.transaction_id).label("total_contributions"),
         func.sum(Transaction.amount).label("total_amount")
-    ).filter(Transaction.group_id == group_id).group_by(Transaction.sender_phone).all()
+    ).filter(Transaction.group_id == parse_uuid(group_id)).group_by(Transaction.sender_phone).all()
     
     return [
         {
@@ -29,7 +30,7 @@ def get_contributor_history(db: Session, group_id: str, phone: str):
     Returns the full contribution history for a specific person in a group.
     """
     history = db.query(Transaction).filter(
-        Transaction.group_id == group_id,
+        Transaction.group_id == parse_uuid(group_id),
         Transaction.sender_phone == phone
     ).order_by(Transaction.created_at.desc()).all()
     

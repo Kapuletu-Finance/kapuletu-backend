@@ -1,3 +1,4 @@
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from models.subscription import Subscription, SubscriptionPayment, Plan
 from models.audit_log import AuditLog
@@ -36,7 +37,7 @@ class FulfillmentService:
 
         # 3. Update/Create Subscription
         plan = self.db.query(Plan).filter(Plan.plan_id == plan_id).first()
-        sub = self.db.query(Subscription).filter(Subscription.user_id == user_id).first()
+        sub = self.db.query(Subscription).filter(Subscription.user_id ==parse_uuid(parse_uuid(user_id))).first()
         
         if not sub:
             sub = Subscription(

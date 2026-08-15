@@ -1,7 +1,22 @@
+import uuid
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
+
+
+def parse_user_uuid(user_id: Any) -> uuid.UUID:
+    """Safely convert a string or UUID user_id to a uuid.UUID for DB queries."""
+    if isinstance(user_id, uuid.UUID):
+        return user_id
+    try:
+        return uuid.UUID(str(user_id))
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload format",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 from common.database import get_db
 from services.auth.auth_service import decode_token
@@ -43,7 +58,7 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: 
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    user = db.query(User).filter(User.user_id == user_id).first()
+    user = db.query(User).filter(User.user_id == parse_user_uuid(user_id)).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
