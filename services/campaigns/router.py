@@ -440,7 +440,6 @@ async def get_campaign_report_preview(
         title = f"{campaign.title} Update"
         
     footer = settings.get("report_footer", "")
-    title = campaign.title
     indicator = settings.get("paid_indicator", "\u2713")
     
     def fmt_ksh(val: float) -> str:
