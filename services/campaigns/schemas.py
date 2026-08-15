@@ -142,6 +142,10 @@ class CampaignReportPreview(BaseModel):
     description: Optional[str] = None
     raised: float
     target: float
+    total_mpesa: float = 0.0
+    total_cash: float = 0.0
+    total_bank: float = 0.0
+    total_pledges: float = 0.0
     contributors: List[ContributorPreview]
     payment_instructions: Optional[str] = None
     footer: Optional[str] = None

@@ -420,10 +420,22 @@ async def get_campaign_report_preview(
     footer = settings.get("report_footer", "")
     indicator = settings.get("paid_indicator", "✔")
     
-    # Calculate raised
-    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").scalar() or 0.0
-    
     transactions = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").order_by(Transaction.created_at.desc()).all()
+    
+    raised = sum(t.amount for t in transactions)
+    pm_map = {"mpesa": 0.0, "cash": 0.0, "bank": 0.0, "pledge": 0.0}
+    for t in transactions:
+        pm = (t.payment_method or "").lower()
+        if pm in pm_map:
+            pm_map[pm] += float(t.amount)
+        elif "mpesa" in pm:
+            pm_map["mpesa"] += float(t.amount)
+        elif "cash" in pm:
+            pm_map["cash"] += float(t.amount)
+        elif "bank" in pm:
+            pm_map["bank"] += float(t.amount)
+        elif "pledge" in pm:
+            pm_map["pledge"] += float(t.amount)
     
     lines = []
     lines.append(f"*{title}*")
@@ -431,6 +443,15 @@ async def get_campaign_report_preview(
         lines.append(campaign.description)
     lines.append("")
     lines.append(f"Raised so far: Ksh {raised:,.2f} of Ksh {float(campaign.target_amount):,.2f}")
+    if pm_map["mpesa"] > 0:
+        lines.append(f"Amount Received (M-Pesa): Ksh {pm_map['mpesa']:,.2f}")
+    if pm_map["cash"] > 0:
+        lines.append(f"Amount Received (Cash): Ksh {pm_map['cash']:,.2f}")
+    if pm_map["bank"] > 0:
+        lines.append(f"Amount Received (Bank): Ksh {pm_map['bank']:,.2f}")
+    if pm_map["pledge"] > 0:
+        lines.append(f"Amount Received (Pledge): Ksh {pm_map['pledge']:,.2f}")
+        
     if campaign.payment_instructions:
         lines.append(f"{campaign.payment_instructions}")
     lines.append("")
@@ -485,6 +506,10 @@ async def get_campaign_report_preview(
         "description": campaign.description,
         "raised": float(raised),
         "target": float(campaign.target_amount),
+        "total_mpesa": pm_map["mpesa"],
+        "total_cash": pm_map["cash"],
+        "total_bank": pm_map["bank"],
+        "total_pledges": pm_map["pledge"],
         "contributors": contributors_list,
         "payment_instructions": campaign.payment_instructions,
         "footer": footer,
