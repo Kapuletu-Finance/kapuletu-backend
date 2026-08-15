@@ -114,7 +114,7 @@ async def get_campaign(
     
     pm_map = {"mpesa": 0.0, "cash": 0.0, "bank": 0.0, "pledge": 0.0}
     for pm, amount in pm_sums:
-        pm_lower = (pm or "cash").lower()
+        pm_lower = (pm or "cash").lower().replace("-", "").replace(" ", "")
         if "mpesa" in pm_lower:
             pm_map["mpesa"] += float(amount)
         elif "cash" in pm_lower:
@@ -425,7 +425,7 @@ async def get_campaign_report_preview(
     raised = sum(t.amount for t in transactions)
     pm_map = {"mpesa": 0.0, "cash": 0.0, "bank": 0.0, "pledge": 0.0}
     for t in transactions:
-        pm = (t.payment_method or "").lower()
+        pm = (t.payment_method or "").lower().replace("-", "").replace(" ", "")
         if pm in pm_map:
             pm_map[pm] += float(t.amount)
         elif "mpesa" in pm:
@@ -634,7 +634,7 @@ async def public_verify_campaign(
     
     pm_map = {"mpesa": 0.0, "cash": 0.0, "bank": 0.0, "pledge": 0.0}
     for pm, amount in pm_sums:
-        pm_lower = (pm or "cash").lower()
+        pm_lower = (pm or "cash").lower().replace("-", "").replace(" ", "")
         if "mpesa" in pm_lower:
             pm_map["mpesa"] += float(amount)
         elif "cash" in pm_lower:
