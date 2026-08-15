@@ -1,7 +1,7 @@
 """Add inbox history fields
 
 Revision ID: hist_history123
-Revises: 093cc07edc0c
+Revises: ee7f2a5d3f2a
 Create Date: 2026-08-15 04:05:00.000000
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'hist_history123'
-down_revision: Union[str, Sequence[str], None] = '093cc07edc0c'
+down_revision: Union[str, Sequence[str], None] = 'ee7f2a5d3f2a'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
