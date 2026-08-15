@@ -55,6 +55,16 @@ class CampaignOut(BaseModel):
     progress_percentage: float = Field(0.0, json_schema_extra={"example": 50.0})
     contributor_count: int = Field(0, json_schema_extra={"example": 12})
     
+    total_mpesa: float = Field(0.0)
+    total_cash: float = Field(0.0)
+    total_bank: float = Field(0.0)
+    total_pledges: float = Field(0.0)
+    
+    mpesa_percentage: float = Field(0.0)
+    cash_percentage: float = Field(0.0)
+    bank_percentage: float = Field(0.0)
+    pledges_percentage: float = Field(0.0)
+    
     settings_override: Optional[CampaignSettings] = None
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
