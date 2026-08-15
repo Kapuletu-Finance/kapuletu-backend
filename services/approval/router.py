@@ -21,7 +21,7 @@ import math
 @router.get("/pending", response_model=PaginatedPendingResponse, summary="Get Pending Transactions (Inbox)")
 async def get_pending(
     skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=100),
     search: Optional[str] = Query(None),
     filter: Optional[str] = Query(None),
     status: str = Query("pending"),
@@ -41,7 +41,7 @@ async def get_pending(
 @router.get("/history", response_model=PaginatedInboxHistoryResponse, summary="Get Processed Transactions History")
 async def get_history(
     skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=100),
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),

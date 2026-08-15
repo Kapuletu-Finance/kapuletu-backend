@@ -153,7 +153,7 @@ class PinResponse(BaseModel):
 class PublicVerifyRequest(BaseModel):
     pin: Optional[str] = None
     page: int = Field(1, ge=1)
-    limit: int = Field(100, ge=1, le=500)
+    limit: int = Field(50, ge=1, le=500)
 
 class PublicContributor(BaseModel):
     name: str

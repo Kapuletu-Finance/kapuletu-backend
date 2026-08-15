@@ -276,7 +276,7 @@ async def get_campaign_chart_data(
 async def get_campaign_transactions(
     campaign_id: str,
     skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=100),
     search: str = Query(None),
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
@@ -306,7 +306,7 @@ from services.approval.schemas import PaginatedPendingResponse
 async def get_campaign_inbox(
     campaign_id: str,
     skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
