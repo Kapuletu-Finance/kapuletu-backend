@@ -170,7 +170,8 @@ async def update_campaign(
     
     if "settings" in updates:
         settings_update = updates.pop("settings")
-        current_settings = campaign.settings_override or {}
+        # Ensure a completely new dict to force SQLAlchemy JSON update detection
+        current_settings = dict(campaign.settings_override or {})
         current_settings.update(settings_update)
         updates["settings_override"] = current_settings
         
