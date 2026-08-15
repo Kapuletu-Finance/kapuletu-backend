@@ -105,10 +105,9 @@ class TransactionRepository:
                 
         return user
 
-    def fetch_pending_transactions_by_owner(self, owner_id: UUID, skip: int = 0, limit: int = 100, search: Optional[str] = None, filter_val: Optional[str] = None) -> tuple[List[PendingTransaction], int]:
+    def fetch_pending_transactions_by_owner(self, owner_id: UUID, skip: int = 0, limit: int = 100, search: Optional[str] = None, filter_val: Optional[str] = None, status: str = "pending") -> tuple[List[PendingTransaction], int]:
         """
-        Retrieves all unprocessed pending transactions for a specific treasurer with pagination.
-        Typically used to populate the treasurer's approval inbox.
+        Retrieves transactions for a specific treasurer with pagination and status filtering.
         
         Args:
             owner_id (UUID): The unique ID of the treasurer.
@@ -116,6 +115,7 @@ class TransactionRepository:
             limit (int): Pagination limit.
             search (Optional[str]): Search query for name or code.
             filter_val (Optional[str]): Date filter.
+            status (str): "pending", "approved", "rejected", or "all".
             
         Returns:
             tuple: (List[PendingTransaction], total_count)
@@ -124,9 +124,15 @@ class TransactionRepository:
         from datetime import datetime, timedelta
         
         base_query = self.db.query(PendingTransaction).filter(
-            PendingTransaction.owner_id == parse_uuid(owner_id),
-            PendingTransaction.is_processed == False
+            PendingTransaction.owner_id == parse_uuid(owner_id)
         )
+        
+        if status == "pending":
+            base_query = base_query.filter(PendingTransaction.is_processed == False)
+        elif status == "approved":
+            base_query = base_query.filter(PendingTransaction.is_processed == True, PendingTransaction.workflow_status == "approved")
+        elif status == "rejected":
+            base_query = base_query.filter(PendingTransaction.is_processed == True, PendingTransaction.workflow_status == "rejected")
         
         if search:
             search_term = f"%{search}%"

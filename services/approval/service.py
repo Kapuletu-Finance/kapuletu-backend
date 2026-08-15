@@ -69,9 +69,9 @@ class ApprovalService:
         # 2. Transition to Permanent Transaction record
         # This moves the data from the 'scratchpad' (Pending) to the 'General Ledger' (Transaction).
         new_txn = Transaction(
-            owner_id=treasurer_id,
-            group_id=group_id,
-            campaign_id=campaign_id,
+            owner_id=parse_uuid(treasurer_id),
+            group_id=parse_uuid(group_id),
+            campaign_id=parse_uuid(campaign_id) if campaign_id else None,
             transaction_code=pending.transaction_code,
             amount=pending.amount,
             sender_phone=pending.sender_phone,
@@ -80,8 +80,25 @@ class ApprovalService:
             source_evidence=pending.source_evidence,
             status="approved"
         )
-        self.db.add(new_txn)
-        self.db.flush() # Flushes to DB to generate the transaction_id for the ledger record
+        try:
+            self.db.add(new_txn)
+            self.db.flush() # Flushes to DB to generate the transaction_id for the ledger record
+        except Exception as e:
+            # If UNIQUE constraint fails, the transaction was already approved previously
+            # (e.g. UUID bug caused is_processed to not be set). Just find the existing one and continue.
+            from sqlalchemy.exc import IntegrityError
+            if isinstance(e, IntegrityError) and "UNIQUE constraint failed" in str(e):
+                self.db.rollback()
+                new_txn = self.db.query(Transaction).filter(
+                    Transaction.transaction_code == pending.transaction_code,
+                    Transaction.owner_id == parse_uuid(treasurer_id)
+                ).first()
+                if not new_txn:
+                    raise Exception("Transaction already exists but could not be located.")
+                logger.warning(f"Approval: Transaction {pending.transaction_code} already existed, marking pending as processed.")
+            else:
+                self.db.rollback()
+                raise
 
         # 2.5 Active Learning Hook
         # Feed the ground truth (after potential treasurer edits) back into the AI loop
@@ -124,7 +141,7 @@ class ApprovalService:
         pending.is_processed = True
         pending.workflow_status = "approved"
         pending.processed_at = datetime.utcnow()
-        pending.processed_by = treasurer_id
+        pending.processed_by = parse_uuid(treasurer_id)
         
         self.db.commit()
         
@@ -212,9 +229,9 @@ class ApprovalService:
 
         # 3. Create Parent Transaction
         new_txn = Transaction(
-            owner_id=treasurer_id,
-            group_id=group_id,
-            campaign_id=campaign_id,
+            owner_id=parse_uuid(treasurer_id),
+            group_id=parse_uuid(group_id),
+            campaign_id=parse_uuid(campaign_id) if campaign_id else None,
             transaction_code=pending.transaction_code,
             amount=pending.amount,
             sender_phone=pending.sender_phone,
@@ -244,7 +261,7 @@ class ApprovalService:
         pending.is_processed = True
         pending.workflow_status = "split_approved"
         pending.processed_at = datetime.utcnow()
-        pending.processed_by = treasurer_id
+        pending.processed_by = parse_uuid(treasurer_id)
         
         self.db.commit()
 
@@ -298,7 +315,7 @@ class ApprovalService:
         pending.is_processed = True
         pending.workflow_status = "rejected"
         pending.processed_at = datetime.utcnow()
-        pending.processed_by = treasurer_id
+        pending.processed_by = parse_uuid(treasurer_id)
         pending.rejection_reason = reason
         
         self.db.commit()
