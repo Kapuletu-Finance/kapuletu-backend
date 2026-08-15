@@ -467,7 +467,13 @@ async def get_campaign_report_preview(
         lines.append("")
         
     remaining = max(0, float(campaign.target_amount) - float(raised))
-    lines.append("*Progress Update:*")
+    
+    is_goal_met = float(campaign.target_amount) > 0 and float(raised) >= float(campaign.target_amount)
+    
+    if is_goal_met:
+        lines.append("*Goal Achieved Update! 🌟*")
+    else:
+        lines.append("*Progress Update:*")
     
     if float(raised) >= float(campaign.target_amount):
         lines.append(f"So far, we have raised Ksh {raised:,.2f}, successfully surpassing our initial goal of Ksh {float(campaign.target_amount):,.2f}! Thank you to everyone who made this possible. The campaign remains open, and any further contributions are still greatly appreciated.")
@@ -525,7 +531,10 @@ async def get_campaign_report_preview(
         lines.append(f"{start_idx + i}.")
         
     lines.append("")
-    lines.append("Thank you to everyone who has contributed so far. Your continued support is greatly appreciated as we work towards our goal.")
+    if is_goal_met:
+        lines.append("Thank you to everyone who has contributed so far. Your overwhelming support has helped us successfully reach our goal! The campaign is still ongoing, and we encourage you to continue supporting the cause.")
+    else:
+        lines.append("Thank you to everyone who has contributed so far. Your continued support is greatly appreciated as we work towards our goal.")
     lines.append("")
     
     if footer:
@@ -538,6 +547,8 @@ async def get_campaign_report_preview(
     
     lines.append("To view a more comprehensive report, click the link below:")
     lines.append(f"{public_url}")
+    if settings.get("require_pin", True) and settings.get("access_pin"):
+        lines.append(f"Access PIN: {settings.get('access_pin')}")
     if not settings.get("remove_watermark", False):
         lines.append("\n*Generated via KapuLetu*")
         
@@ -647,7 +658,17 @@ async def public_verify_campaign(
     req: PublicVerifyRequest,
     db: Session = Depends(get_db)
 ):
-    campaign = db.query(Campaign).filter(Campaign.short_code == short_code).first()
+    import uuid
+    from sqlalchemy import or_
+    try:
+        # Check if short_code is actually a UUID (fallback from missing short_codes)
+        val = uuid.UUID(short_code)
+        campaign = db.query(Campaign).filter(
+            or_(Campaign.short_code == short_code, Campaign.campaign_id == str(val))
+        ).first()
+    except ValueError:
+        campaign = db.query(Campaign).filter(Campaign.short_code == short_code).first()
+        
     if not campaign or not campaign.group:
         raise HTTPException(status_code=404, detail="Campaign not found.")
         
