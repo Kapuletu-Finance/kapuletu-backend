@@ -137,10 +137,10 @@ class ApprovalService:
 
         # 4. Mark pending as processed
         # This ensures the item no longer appears in the treasurer's approval inbox.
-        from datetime import datetime
+        from datetime import datetime, timezone
         pending.is_processed = True
         pending.workflow_status = "approved"
-        pending.processed_at = datetime.utcnow()
+        pending.processed_at = datetime.now(timezone.utc)
         pending.processed_by = parse_uuid(treasurer_id)
         if group_id:
             pending.group_id = parse_uuid(group_id)
@@ -257,10 +257,10 @@ class ApprovalService:
             created_txns.append(new_txn)
 
         # 4. Mark Processed
-        from datetime import datetime
+        from datetime import datetime, timezone
         pending.is_processed = True
         pending.workflow_status = "split_approved"
-        pending.processed_at = datetime.utcnow()
+        pending.processed_at = datetime.now(timezone.utc)
         pending.processed_by = parse_uuid(treasurer_id)
         if group_id:
             pending.group_id = parse_uuid(group_id)
@@ -315,10 +315,10 @@ class ApprovalService:
         if not pending:
             raise Exception("Pending transaction not found or access denied")
 
-        from datetime import datetime
+        from datetime import datetime, timezone
         pending.is_processed = True
         pending.workflow_status = "rejected"
-        pending.processed_at = datetime.utcnow()
+        pending.processed_at = datetime.now(timezone.utc)
         pending.processed_by = parse_uuid(treasurer_id)
         pending.rejection_reason = reason
         

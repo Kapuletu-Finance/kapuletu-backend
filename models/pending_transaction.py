@@ -68,4 +68,4 @@ class PendingTransaction(Base):
     # source_evidence: The raw message or default text.
     source_evidence = Column(String, nullable=True)
     # created_at: Timestamp when the ingestion occurred.
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
