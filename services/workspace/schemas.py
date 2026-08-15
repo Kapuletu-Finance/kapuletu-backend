@@ -8,6 +8,16 @@ class GroupOverview(BaseModel):
     currency: str
     total_campaigns: int
 
+class CampaignOverview(BaseModel):
+    campaign_id: str
+    title: str
+    group_id: str
+    group_name: str
+    target_amount: float
+    amount_raised: float
+    currency: str
+    updated_at: datetime
+
 class SubscriptionOverview(BaseModel):
     plan_name: str
     status: str
@@ -28,4 +38,5 @@ class WorkspaceOverviewOut(BaseModel):
     total_collected: float
     subscription: SubscriptionOverview
     active_groups: List[GroupOverview]
+    recent_campaigns: List[CampaignOverview]
     recent_activities: List[WorkspaceActivity]
