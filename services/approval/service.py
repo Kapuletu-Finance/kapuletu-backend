@@ -142,6 +142,10 @@ class ApprovalService:
         pending.workflow_status = "approved"
         pending.processed_at = datetime.utcnow()
         pending.processed_by = parse_uuid(treasurer_id)
+        if group_id:
+            pending.group_id = parse_uuid(group_id)
+        if campaign_id:
+            pending.campaign_id = parse_uuid(campaign_id)
         
         self.db.commit()
         
@@ -258,6 +262,10 @@ class ApprovalService:
         pending.workflow_status = "split_approved"
         pending.processed_at = datetime.utcnow()
         pending.processed_by = parse_uuid(treasurer_id)
+        if group_id:
+            pending.group_id = parse_uuid(group_id)
+        if campaign_id:
+            pending.campaign_id = parse_uuid(campaign_id)
         
         self.db.commit()
 
