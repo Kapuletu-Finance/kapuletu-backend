@@ -35,6 +35,7 @@ class CampaignSummary(BaseModel):
     target_amount: float
     total_raised: float
     progress_percentage: float
+    surplus_amount: float
 
 class RecentActivity(BaseModel):
     transaction_id: str

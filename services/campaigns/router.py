@@ -131,6 +131,8 @@ async def get_campaign(
     else:
         campaign.progress_percentage = 0.0
         
+    campaign.surplus_amount = max(0.0, float(raised) - float(campaign.target_amount)) if campaign.target_amount else 0.0
+        
     campaign.total_mpesa = pm_map["mpesa"]
     campaign.total_cash = pm_map["cash"]
     campaign.total_bank = pm_map["bank"]
@@ -684,7 +686,8 @@ async def public_verify_campaign(
     transactions = transactions_query.offset(offset).limit(limit).all()
     
     target_amount = float(campaign.target_amount)
-    progress_percentage = min((float(raised) / target_amount * 100), 100.0) if target_amount > 0 else 0.0
+    progress_percentage = (float(raised) / target_amount * 100) if target_amount > 0 else 0.0
+    surplus_amount = max(0.0, float(raised) - target_amount)
     
     try:
         blank_slots = int(settings.get("blank_slots", 3)) + 3
@@ -706,6 +709,7 @@ async def public_verify_campaign(
         "raised_amount": float(raised),
         "target_amount": target_amount,
         "progress_percentage": round(progress_percentage, 2),
+        "surplus_amount": surplus_amount,
         "total_mpesa": pm_map["mpesa"],
         "total_cash": pm_map["cash"],
         "total_bank": pm_map["bank"],

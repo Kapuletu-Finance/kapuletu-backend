@@ -86,13 +86,15 @@ async def dashboard_summary(
         target = float(c.target_amount) if c.target_amount else 0.0
         raised = raised_map.get(str(c.campaign_id), 0.0)
         progress = (raised / target * 100) if target > 0 else 0.0
+        surplus = max(0.0, raised - target)
         campaign_breakdown.append(
             CampaignSummary(
                 campaign_id=str(c.campaign_id),
                 title=c.title,
                 target_amount=target,
                 total_raised=raised,
-                progress_percentage=round(progress, 2)
+                progress_percentage=round(progress, 2),
+                surplus_amount=surplus
             )
         )
         

@@ -134,13 +134,15 @@ class LedgerService:
         if campaign:
             target = float(campaign.target_amount or 0.0)
             progress = (total_raised / target * 100) if target > 0 else 0.0
+            surplus = max(0.0, total_raised - target)
             summary = CampaignLedgerSummaryOut(
                 campaign_id=str(campaign.campaign_id),
                 title=campaign.title,
                 target_amount=target,
                 total_raised=total_raised,
                 transaction_count=len(entries),
-                progress_percentage=round(progress, 2)
+                progress_percentage=round(progress, 2),
+                surplus_amount=surplus
             )
             
         return LedgerResponse(summary=summary, entries=entries)

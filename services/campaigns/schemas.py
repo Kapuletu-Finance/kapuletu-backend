@@ -53,6 +53,7 @@ class CampaignOut(BaseModel):
     # New Operational Metrics
     total_raised: float = Field(0.0, json_schema_extra={"example": 25000.0})
     progress_percentage: float = Field(0.0, json_schema_extra={"example": 50.0})
+    surplus_amount: float = Field(0.0, json_schema_extra={"example": 0.0})
     contributor_count: int = Field(0, json_schema_extra={"example": 12})
     
     total_mpesa: float = Field(0.0)
@@ -171,6 +172,7 @@ class PublicWebReportOut(BaseModel):
     raised_amount: float
     target_amount: float
     progress_percentage: float
+    surplus_amount: float
     
     # Method Totals
     total_mpesa: float

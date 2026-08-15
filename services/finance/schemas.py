@@ -39,6 +39,7 @@ class CampaignLedgerSummaryOut(BaseModel):
     total_raised: float
     transaction_count: int
     progress_percentage: float
+    surplus_amount: float
     
     class Config:
         from_attributes = True
