@@ -347,7 +347,7 @@ async def get_campaign_activities(
             ) | (
                 cast(AuditLog.details["campaign_id"], String).ilike(f'%{str(campaign.campaign_id)}%')
             )
-        ).order_by(AuditLog.created_at.desc()).limit(10)
+        ).order_by(AuditLog.created_at.desc()).limit(5)
     ).scalars().all()
     
     return logs
