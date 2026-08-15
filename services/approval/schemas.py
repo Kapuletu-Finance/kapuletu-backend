@@ -59,6 +59,7 @@ class PendingTransactionOut(BaseModel):
     created_at: datetime
     assigned_group_name: Optional[str] = None
     assigned_campaign_name: Optional[str] = None
+    processed_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
