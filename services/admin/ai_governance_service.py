@@ -1,5 +1,6 @@
 import subprocess
 import os
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from models.ai_feedback import AIFeedback
 from models.pending_transaction import PendingTransaction
@@ -68,7 +69,7 @@ class AIGovernanceService:
         approved = self.db.query(AIFeedback).filter(AIFeedback.is_approved_for_training == True).all()
         return [{
             "id": str(f.feedback_id),
-            "text": self.db.query(PendingTransaction).filter(PendingTransaction.pending_id == f.pending_transaction_id).first().raw_message,
+            "text": self.db.query(PendingTransaction).filter(PendingTransaction.pending_id == parse_uuid(f.pending_transaction_id)).first().raw_message,
             "ground_truth": f.corrected_data,
             "source": "treasurer_correction"
         } for f in approved]

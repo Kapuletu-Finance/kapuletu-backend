@@ -27,18 +27,18 @@ async def get_workspace_overview(
     owner_id = uuid.UUID(owner_id_str) if owner_id_str else None
     
     # 1. Total Groups and Active Groups preview
-    groups = db.execute(select(Group).where(Group.owner_id == parse_uuid(owner_id), Group.is_active == True)).scalars().all()
+    groups = db.execute(select(Group).where(Group.owner_id ==parse_uuid(parse_uuid(owner_id)), Group.is_active == True)).scalars().all()
     total_groups = len(groups)
     
     # 2. Total Campaigns
-    campaigns = db.execute(select(Campaign).join(Group).where(Group.owner_id == parse_uuid(owner_id))).scalars().all()
+    campaigns = db.execute(select(Campaign).join(Group).where(Group.owner_id ==parse_uuid(parse_uuid(owner_id)))).scalars().all()
     total_campaigns = len(campaigns)
     
     # Count campaigns per group with GROUP BY (Fix N+1 issue)
     campaign_counts = dict(
         db.query(Campaign.group_id, func.count(Campaign.campaign_id))
         .join(Group)
-        .where(Group.owner_id == parse_uuid(owner_id))
+        .where(Group.owner_id ==parse_uuid(parse_uuid(owner_id)))
         .group_by(Campaign.group_id)
         .all()
     )
@@ -53,11 +53,11 @@ async def get_workspace_overview(
         ))
 
     # 3. Total Members (Distinct sender_phone in finalized transactions for this owner)
-    total_members = db.query(Transaction.sender_phone).filter(Transaction.owner_id == parse_uuid(owner_id)).distinct().count()
+    total_members = db.query(Transaction.sender_phone).filter(Transaction.owner_id ==parse_uuid(parse_uuid(owner_id))).distinct().count()
     
     # 4. Total Collected (Currency Collision Fixed - Assuming KES Global Currency)
     total_collected = db.query(func.sum(Transaction.amount)).join(Group).filter(
-        Transaction.owner_id == parse_uuid(owner_id), 
+        Transaction.owner_id ==parse_uuid(parse_uuid(owner_id)), 
         Transaction.status == "approved",
         Group.currency == "KES"
     ).scalar() or 0.0
@@ -65,14 +65,14 @@ async def get_workspace_overview(
     # 5. Pending Approvals
     # From transaction_repo, fetch_pending_transactions_by_owner uses is_processed == False.
     pending_approvals = db.query(PendingTransaction).filter(
-        PendingTransaction.owner_id == parse_uuid(owner_id),
+        PendingTransaction.owner_id ==parse_uuid(parse_uuid(owner_id)),
         PendingTransaction.is_processed == False
     ).count()
 
     # 6. Subscription Info
     sub = db.execute(
         select(Subscription).where(
-            Subscription.user_id == parse_uuid(owner_id),
+            Subscription.user_id ==parse_uuid(parse_uuid(owner_id)),
             Subscription.status == "active"
         )
     ).scalars().first()
@@ -92,7 +92,7 @@ async def get_workspace_overview(
     
     # 7. Recent Activities
     logs = db.execute(
-        select(AuditLog).where(AuditLog.actor_id == parse_uuid(owner_id))
+        select(AuditLog).where(AuditLog.actor_id ==parse_uuid(parse_uuid(owner_id)))
         .order_by(AuditLog.created_at.desc()).limit(10)
     ).scalars().all()
     

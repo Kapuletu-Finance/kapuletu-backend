@@ -1,5 +1,6 @@
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
@@ -37,27 +38,27 @@ async def dashboard_summary(
     
     # 1. Total Collected
     total_stmt = select(func.sum(Transaction.amount)).where(
-        Transaction.owner_id == owner_id,
+        Transaction.owner_id == parse_uuid(owner_id),
         Transaction.status == "approved"
     )
     total_collected = db.execute(total_stmt).scalar() or 0.0
     
     # True Transaction Count (Parent Txns - Split Parents + Allocations)
     total_parents_stmt = select(func.count(Transaction.transaction_id)).where(
-        Transaction.owner_id == owner_id,
+        Transaction.owner_id == parse_uuid(owner_id),
         Transaction.status == "approved"
     )
     total_parents = db.execute(total_parents_stmt).scalar() or 0
     
     from models.review_allocation import ReviewAllocation
     alloc_count_stmt = select(func.count(ReviewAllocation.allocation_id)).join(Transaction).where(
-        Transaction.owner_id == owner_id,
+        Transaction.owner_id == parse_uuid(owner_id),
         Transaction.status == "approved"
     )
     total_allocs = db.execute(alloc_count_stmt).scalar() or 0
     
     split_parents_stmt = select(func.count(func.distinct(ReviewAllocation.transaction_id))).join(Transaction).where(
-        Transaction.owner_id == owner_id,
+        Transaction.owner_id == parse_uuid(owner_id),
         Transaction.status == "approved"
     )
     split_parents = db.execute(split_parents_stmt).scalar() or 0
@@ -66,7 +67,7 @@ async def dashboard_summary(
     
     # 2. Campaign Breakdown
     campaigns = db.execute(
-        select(Campaign).join(Group).where(Group.owner_id == owner_id)
+        select(Campaign).join(Group).where(Group.owner_id == parse_uuid(owner_id))
     ).scalars().all()
     
     # Aggregate grouped by campaign
@@ -74,7 +75,7 @@ async def dashboard_summary(
         Transaction.campaign_id, 
         func.sum(Transaction.amount)
     ).where(
-        Transaction.owner_id == owner_id,
+        Transaction.owner_id == parse_uuid(owner_id),
         Transaction.status == "approved"
     ).group_by(Transaction.campaign_id)
     
@@ -98,7 +99,7 @@ async def dashboard_summary(
     # 3. Recent Activity (Top 10)
     from sqlalchemy.orm import joinedload
     recent_stmt = select(Transaction).options(joinedload(Transaction.allocations)).where(
-        Transaction.owner_id == owner_id,
+        Transaction.owner_id == parse_uuid(owner_id),
         Transaction.status == "approved"
     ).order_by(Transaction.created_at.desc()).limit(10)
     
@@ -146,7 +147,7 @@ async def dashboard_summary(
     cutoff_utc = cutoff_eat.astimezone(timezone.utc).replace(tzinfo=None)
     
     daily_txns = db.query(Transaction).filter(
-        Transaction.owner_id == owner_id,
+        Transaction.owner_id == parse_uuid(owner_id),
         Transaction.status == "approved",
         Transaction.created_at >= cutoff_utc
     ).all()

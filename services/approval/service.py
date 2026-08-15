@@ -50,7 +50,7 @@ class ApprovalService:
         """
         # 1. Fetch the original pending record with an exclusive DB lock to prevent double-approvals
         try:
-            pending = self.db.query(PendingTransaction).filter(PendingTransaction.pending_id == pending_txn_id).with_for_update(nowait=True).first()
+            pending = self.db.query(PendingTransaction).filter(PendingTransaction.pending_id == parse_uuid(pending_txn_id)).with_for_update(nowait=True).first()
         except Exception as e:
             logger.error(f"Approval Failed: Database lock could not be acquired for Pending ID {pending_txn_id}. {e}")
             raise Exception("Transaction is currently being processed by another request. Please try again.")
@@ -61,7 +61,7 @@ class ApprovalService:
             
         # Security: Verify group ownership (IDOR prevention)
         from models.group import Group
-        group = self.db.query(Group).filter(Group.group_id == group_id, Group.owner_id == parse_uuid(treasurer_id)).first()
+        group = self.db.query(Group).filter(Group.group_id == parse_uuid(group_id), Group.owner_id ==parse_uuid(parse_uuid(treasurer_id))).first()
         if not group:
             logger.error(f"Approval Failed: Treasurer {treasurer_id} attempted to approve transaction into unauthorized Group {group_id}")
             raise Exception("Forbidden: You do not have permission to approve transactions for this group.")
@@ -93,7 +93,7 @@ class ApprovalService:
         
         # Admin Feedback Loop: Record the correction if the ground truth differs from the AI's first guess.
         # CRITICAL: Only log if the user has opted-in to AI training (Privacy Guard)
-        user = self.db.query(User).filter(User.user_id == parse_uuid(treasurer_id)).first()
+        user = self.db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(treasurer_id))).first()
         if user and user.allow_ai_training and pending.original_ai_output:
             from services.admin.ai_governance_service import AIGovernanceService
             ai_service = AIGovernanceService(self.db)
@@ -130,11 +130,11 @@ class ApprovalService:
         
         target_name = "Unknown"
         if campaign_id:
-            camp = self.db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+            camp = self.db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
             if camp:
                 target_name = camp.title
         else:
-            grp = self.db.query(Group).filter(Group.group_id == group_id).first()
+            grp = self.db.query(Group).filter(Group.group_id == parse_uuid(group_id)).first()
             if grp:
                 target_name = grp.group_name
 
@@ -169,7 +169,7 @@ class ApprovalService:
         if campaign_id and camp:
             # Calculate total raised for this campaign so far
             total_raised = self.db.query(func.sum(Transaction.amount)).filter(
-                Transaction.campaign_id == str(campaign_id),
+                Transaction.campaign_id == parse_uuid(str(campaign_id)),
                 Transaction.status == "approved"
             ).scalar() or 0.0
             
@@ -197,7 +197,7 @@ class ApprovalService:
         # 1. Fetch record
         try:
             pending = self.db.query(PendingTransaction).filter(
-                PendingTransaction.pending_id == pending_txn_id
+                PendingTransaction.pending_id == parse_uuid(pending_txn_id)
             ).with_for_update(nowait=True).first()
         except Exception:
             raise Exception("Transaction is currently being processed by another request. Please try again.")
@@ -250,11 +250,11 @@ class ApprovalService:
 
         target_name = "Unknown"
         if campaign_id:
-            camp = self.db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+            camp = self.db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
             if camp:
                 target_name = camp.title
         else:
-            grp = self.db.query(Group).filter(Group.group_id == group_id).first()
+            grp = self.db.query(Group).filter(Group.group_id == parse_uuid(group_id)).first()
             if grp:
                 target_name = grp.group_name
 
@@ -285,8 +285,8 @@ class ApprovalService:
         """
         try:
             pending = self.db.query(PendingTransaction).filter(
-                PendingTransaction.pending_id == pending_txn_id,
-                PendingTransaction.owner_id == parse_uuid(treasurer_id)
+                PendingTransaction.pending_id == parse_uuid(pending_txn_id),
+                PendingTransaction.owner_id ==parse_uuid(parse_uuid(treasurer_id))
             ).with_for_update(nowait=True).first()
         except Exception:
             raise Exception("Transaction is currently being processed by another request.")
@@ -327,8 +327,8 @@ class ApprovalService:
         """
         try:
             pending = self.db.query(PendingTransaction).filter(
-                PendingTransaction.pending_id == pending_txn_id,
-                PendingTransaction.owner_id == treasurer_id
+                PendingTransaction.pending_id == parse_uuid(pending_txn_id),
+                PendingTransaction.owner_id == parse_uuid(treasurer_id)
             ).with_for_update(nowait=True).first()
         except Exception:
             raise Exception("Transaction is currently being processed by another request.")

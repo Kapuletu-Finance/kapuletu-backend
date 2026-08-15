@@ -1,3 +1,4 @@
+from common.utils import parse_uuid
 import json
 import logging
 import os
@@ -161,7 +162,7 @@ def process_ingestion(body_str: str, config):
             else:
                 # Resolve the user's most recent active campaign
                 campaign = db.query(Campaign).join(Group).filter(
-                    Group.owner_id == owner.user_id,
+                    Group.owner_id == parse_uuid(owner.user_id),
                     Campaign.is_active == True
                 ).order_by(Campaign.created_at.desc()).first()
                 

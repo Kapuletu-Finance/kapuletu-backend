@@ -2,6 +2,7 @@ from typing import List, Dict, Any
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.responses import StreamingResponse
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, cast, String
 import random
@@ -95,19 +96,19 @@ async def get_campaign(
     from models.transaction import Transaction
 
     raised = db.query(func.sum(Transaction.amount)).filter(
-        Transaction.campaign_id == campaign.campaign_id,
+        Transaction.campaign_id == parse_uuid(campaign.campaign_id),
         Transaction.status == "approved"
     ).scalar()
     
     raised = float(raised or 0.0)
     
     contributors = db.query(func.count(Transaction.transaction_id)).filter(
-        Transaction.campaign_id == campaign.campaign_id,
+        Transaction.campaign_id == parse_uuid(campaign.campaign_id),
         Transaction.status == "approved"
     ).scalar()
     
     pm_sums = db.query(Transaction.payment_method, func.sum(Transaction.amount)).filter(
-        Transaction.campaign_id == campaign.campaign_id,
+        Transaction.campaign_id == parse_uuid(campaign.campaign_id),
         Transaction.status == "approved"
     ).group_by(Transaction.payment_method).all()
     
@@ -257,7 +258,7 @@ async def get_campaign_chart_data(
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
     
     transactions = db.execute(
-        select(Transaction).where(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved")
+        select(Transaction).where(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved")
         .order_by(Transaction.created_at.asc())
     ).scalars().all()
     
@@ -285,7 +286,7 @@ async def get_campaign_transactions(
         raise HTTPException(status_code=404, detail="Campaign not found.")
     _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
     
-    query = db.query(Transaction).filter(Transaction.campaign_id == campaign.campaign_id, Transaction.status == "approved")
+    query = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(campaign.campaign_id), Transaction.status == "approved")
     if search:
         query = query.filter(Transaction.sender_name.ilike(f"%{search}%"))
         
@@ -371,9 +372,9 @@ async def get_campaign_report_preview(
     indicator = settings.get("paid_indicator", "✔")
     
     # Calculate raised
-    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").scalar() or 0.0
+    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").scalar() or 0.0
     
-    transactions = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc()).limit(10).all()
+    transactions = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").order_by(Transaction.created_at.desc()).limit(10).all()
     
     lines = []
     lines.append(f"*{title}*")
@@ -458,7 +459,7 @@ async def export_campaign_excel(
     from services.reporting.excel_gen import generate_excel_report
     import base64
     
-    txn_query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved")
+    txn_query = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved")
     if txn_query.count() > 20000:
         raise HTTPException(status_code=400, detail="This campaign exceeds the 20,000 transaction limit for synchronous Excel export. Please contact support for a bulk export.")
         
@@ -500,7 +501,7 @@ async def export_campaign_pdf(
     from services.reporting.pdf_gen import generate_pdf_report
     import base64
     
-    txn_query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved")
+    txn_query = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved")
     if txn_query.count() > 5000:
         raise HTTPException(status_code=400, detail="This campaign exceeds the 5,000 transaction limit for synchronous PDF export. Please contact support for a bulk export.")
         
@@ -550,9 +551,9 @@ async def public_verify_campaign(
             raise HTTPException(status_code=403, detail="Invalid PIN.")
             
     # Calculate raised
-    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").scalar() or 0.0
+    raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").scalar() or 0.0
     
-    transactions_query = db.query(Transaction).filter(Transaction.campaign_id == str(campaign.campaign_id), Transaction.status == "approved").order_by(Transaction.created_at.desc())
+    transactions_query = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").order_by(Transaction.created_at.desc())
     total_contributors = transactions_query.count()
     
     page = req.page

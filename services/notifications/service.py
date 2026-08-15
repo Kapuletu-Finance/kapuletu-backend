@@ -1,5 +1,6 @@
 import uuid
 from typing import List, Optional
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import select, update, delete
 from datetime import datetime
@@ -17,13 +18,13 @@ def _uid(user_id):
 
 def get_notifications_for_user(db: Session, user_id: str, limit: int = 50) -> List[Notification]:
     stmt = select(Notification).where(
-        Notification.user_id == _uid(user_id)
+        Notification.user_id == parse_uuid(_uid(user_id))
     ).order_by(Notification.created_at.desc()).limit(limit)
     return db.execute(stmt).scalars().all()
 
 def get_unread_count(db: Session, user_id: str) -> int:
     stmt = select(Notification).where(
-        Notification.user_id == _uid(user_id),
+        Notification.user_id == parse_uuid(_uid(user_id)),
         Notification.is_read == False
     )
     return len(db.execute(stmt).scalars().all())
@@ -31,7 +32,7 @@ def get_unread_count(db: Session, user_id: str) -> int:
 def mark_as_read(db: Session, notification_id: str, user_id: str) -> bool:
     stmt = select(Notification).where(
         Notification.notification_id == notification_id,
-        Notification.user_id == _uid(user_id)
+        Notification.user_id == parse_uuid(_uid(user_id))
     )
     notification = db.execute(stmt).scalars().first()
     if notification:
@@ -42,7 +43,7 @@ def mark_as_read(db: Session, notification_id: str, user_id: str) -> bool:
 
 def mark_all_as_read(db: Session, user_id: str) -> int:
     stmt = update(Notification).where(
-        Notification.user_id == _uid(user_id),
+        Notification.user_id == parse_uuid(_uid(user_id)),
         Notification.is_read == False
     ).values(is_read=True)
     result = db.execute(stmt)
@@ -52,7 +53,7 @@ def mark_all_as_read(db: Session, user_id: str) -> int:
 def delete_notification(db: Session, notification_id: str, user_id: str) -> bool:
     stmt = select(Notification).where(
         Notification.notification_id == notification_id,
-        Notification.user_id == _uid(user_id)
+        Notification.user_id == parse_uuid(_uid(user_id))
     )
     notification = db.execute(stmt).scalars().first()
     if notification:
@@ -63,7 +64,7 @@ def delete_notification(db: Session, notification_id: str, user_id: str) -> bool
 
 def clear_all_notifications(db: Session, user_id: str) -> int:
     stmt = delete(Notification).where(
-        Notification.user_id == _uid(user_id)
+        Notification.user_id == parse_uuid(_uid(user_id))
     )
     result = db.execute(stmt)
     db.commit()

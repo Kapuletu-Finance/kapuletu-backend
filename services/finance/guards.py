@@ -18,7 +18,7 @@ def get_active_plan(
     # Get active subscription
     sub = db.execute(
         select(Subscription).where(
-            Subscription.user_id == parse_uuid(user_id),
+            Subscription.user_id ==parse_uuid(parse_uuid(user_id)),
             Subscription.status == "active"
         )
     ).scalars().first()
@@ -81,18 +81,18 @@ class CheckLimit:
         # In a real scenario, this would query current count. For example:
         if self.metric_name == "max_groups":
             from models.group import Group
-            current_count = db.execute(select(Group).where(Group.owner_id == parse_uuid(user_id))).scalars().all()
+            current_count = db.execute(select(Group).where(Group.owner_id ==parse_uuid(parse_uuid(user_id)))).scalars().all()
             current_count = len(current_count)
         elif self.metric_name == "max_campaigns":
             from models.campaign import Campaign
             from models.group import Group
-            current_count = db.execute(select(Campaign).join(Group).where(Group.owner_id == parse_uuid(user_id))).scalars().all()
+            current_count = db.execute(select(Campaign).join(Group).where(Group.owner_id ==parse_uuid(parse_uuid(user_id)))).scalars().all()
             current_count = len(current_count)
         else:
             # Fallback to usage tracking table
             usage = db.execute(
                 select(UsageTracking).where(
-                    UsageTracking.user_id == parse_uuid(user_id),
+                    UsageTracking.user_id ==parse_uuid(parse_uuid(user_id)),
                     UsageTracking.metric_name == self.metric_name
                 )
             ).scalars().first()

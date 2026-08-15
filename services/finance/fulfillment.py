@@ -37,7 +37,7 @@ class FulfillmentService:
 
         # 3. Update/Create Subscription
         plan = self.db.query(Plan).filter(Plan.plan_id == plan_id).first()
-        sub = self.db.query(Subscription).filter(Subscription.user_id == parse_uuid(user_id)).first()
+        sub = self.db.query(Subscription).filter(Subscription.user_id ==parse_uuid(parse_uuid(user_id))).first()
         
         if not sub:
             sub = Subscription(

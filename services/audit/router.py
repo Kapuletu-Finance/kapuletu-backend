@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from typing import List
@@ -24,7 +25,7 @@ def get_logs(
     
     logs = db.execute(
         select(AuditLog)
-        .where(AuditLog.actor_id == user_id)
+        .where(AuditLog.actor_id == parse_uuid(user_id))
         .order_by(AuditLog.created_at.desc())
         .limit(limit)
     ).scalars().all()
@@ -47,7 +48,7 @@ def get_logs_by_entity(
     logs = db.execute(
         select(AuditLog)
         .where(
-            AuditLog.actor_id == user_id,
+            AuditLog.actor_id == parse_uuid(user_id),
             AuditLog.entity_type == entity_type.upper(),
             AuditLog.entity_id == entity_id
         )

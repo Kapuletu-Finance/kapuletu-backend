@@ -1,3 +1,4 @@
+from common.utils import parse_uuid
 import json
 import logging
 import uuid
@@ -60,8 +61,8 @@ def handler(event, context):
         
         # Check for duplicates
         from models.pending_transaction import PendingTransaction
-        pending_exists = db.query(PendingTransaction).filter(PendingTransaction.transaction_code == txn_code, PendingTransaction.owner_id == owner_uuid).first()
-        txn_exists = db.query(Transaction).filter(Transaction.transaction_code == txn_code, Transaction.owner_id == owner_uuid).first()
+        pending_exists = db.query(PendingTransaction).filter(PendingTransaction.transaction_code == txn_code, PendingTransaction.owner_id == parse_uuid(owner_uuid)).first()
+        txn_exists = db.query(Transaction).filter(Transaction.transaction_code == txn_code, Transaction.owner_id == parse_uuid(owner_uuid)).first()
         if pending_exists or txn_exists:
             return {"statusCode": 409, "body": json.dumps({"error": "Transaction code already exists"})}
 

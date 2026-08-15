@@ -1,6 +1,7 @@
 import json
 import hashlib
 import logging
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import select, func
 
@@ -45,8 +46,8 @@ class LedgerService:
         """
         txn = self.db.execute(
             select(Transaction).where(
-                Transaction.transaction_id == transaction_id,
-                Transaction.owner_id == owner_id
+                Transaction.transaction_id == parse_uuid(transaction_id),
+                Transaction.owner_id == parse_uuid(owner_id)
             )
         ).scalars().first()
         
@@ -81,13 +82,13 @@ class LedgerService:
         """
         # 1. Fetch Campaign Details
         campaign = self.db.execute(
-            select(Campaign).where(Campaign.campaign_id == campaign_id)
+            select(Campaign).where(Campaign.campaign_id == parse_uuid(campaign_id))
         ).scalars().first()
         
         # 2. Fetch all approved transactions for this campaign
         stmt = select(Transaction).options(joinedload(Transaction.allocations)).where(
-            Transaction.owner_id == owner_id,
-            Transaction.campaign_id == campaign_id,
+            Transaction.owner_id == parse_uuid(owner_id),
+            Transaction.campaign_id == parse_uuid(campaign_id),
             Transaction.status == "approved"
         ).order_by(Transaction.created_at.desc())
         
@@ -149,7 +150,7 @@ class LedgerService:
         Fetches the complete ledger for the owner.
         """
         stmt = select(Transaction).options(joinedload(Transaction.allocations)).where(
-            Transaction.owner_id == owner_id,
+            Transaction.owner_id == parse_uuid(owner_id),
             Transaction.status == "approved"
         ).order_by(Transaction.created_at.desc())
         

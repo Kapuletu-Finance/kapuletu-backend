@@ -207,13 +207,13 @@ async def confirm_email_verification(payload: VerifyEmailIn, current_user: Dict[
 @router.get("/settings", response_model=SettingsOut, summary="Get User Settings")
 async def get_settings(current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
     from models.users import User
-    user = db.query(User).filter(User.user_id == parse_uuid(current_user.get('sub'))).first()
+    user = db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(current_user.get('sub')))).first()
     return SettingsOut(allow_ai_training=user.allow_ai_training if user else True)
 
 @router.post("/settings", response_model=MessageOut, summary="Update User Settings")
 async def update_settings(payload: SettingsIn, current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
     from models.users import User
-    user = db.query(User).filter(User.user_id == current_user.get('sub')).first()
+    user = db.query(User).filter(User.user_id == parse_uuid(current_user.get('sub'))).first()
     if user:
         user.allow_ai_training = payload.allow_ai_training
         db.commit()

@@ -1,3 +1,4 @@
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from models.audit_log import AuditLog
 from sqlalchemy import or_
@@ -17,7 +18,7 @@ class AuditService:
         query = self.db.query(AuditLog)
         
         if filters.get("actor_id"):
-            query = query.filter(AuditLog.actor_id == filters["actor_id"])
+            query = query.filter(AuditLog.actor_id == parse_uuid(filters["actor_id"]))
             
         if filters.get("entity_type"):
             query = query.filter(AuditLog.entity_type == filters["entity_type"])
