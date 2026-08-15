@@ -439,23 +439,34 @@ async def get_campaign_report_preview(
     
     lines = []
     lines.append(f"*{title}*")
+    lines.append("")
     if campaign.description:
         lines.append(campaign.description)
-    lines.append("")
-    lines.append(f"Raised so far: Ksh {raised:,.2f} of Ksh {float(campaign.target_amount):,.2f}")
-    if pm_map["mpesa"] > 0:
-        lines.append(f"Amount Received (M-Pesa): Ksh {pm_map['mpesa']:,.2f}")
-    if pm_map["cash"] > 0:
-        lines.append(f"Amount Received (Cash): Ksh {pm_map['cash']:,.2f}")
-    if pm_map["bank"] > 0:
-        lines.append(f"Amount Received (Bank): Ksh {pm_map['bank']:,.2f}")
-    if pm_map["pledge"] > 0:
-        lines.append(f"Amount Received (Pledge): Ksh {pm_map['pledge']:,.2f}")
+        lines.append("")
         
+    remaining = max(0, float(campaign.target_amount) - float(raised))
+    lines.append("*Progress Update:*")
+    lines.append(f"So far, we have raised Ksh {raised:,.2f} against our goal of Ksh {float(campaign.target_amount):,.2f}. We have an amount remaining of Ksh {remaining:,.2f} to meet our goal. Every contribution counts.")
+    lines.append("")
+    
+    if pm_map["mpesa"] > 0:
+        lines.append(f"*Amount Received (M-Pesa):* Ksh {pm_map['mpesa']:,.2f}")
+    if pm_map["cash"] > 0:
+        lines.append(f"*Amount Received (Cash):* Ksh {pm_map['cash']:,.2f}")
+    if pm_map["bank"] > 0:
+        lines.append(f"*Amount Received (Bank):* Ksh {pm_map['bank']:,.2f}")
+    if pm_map["pledge"] > 0:
+        lines.append(f"*Amount Received (Pledge):* Ksh {pm_map['pledge']:,.2f}")
+        
+    if pm_map["mpesa"] > 0 or pm_map["cash"] > 0 or pm_map["bank"] > 0 or pm_map["pledge"] > 0:
+        lines.append("")
+        
+    lines.append("To send your contributions, the payment instructions are as follows:")
     if campaign.payment_instructions:
         lines.append(f"{campaign.payment_instructions}")
     lines.append("")
     
+    lines.append("*Contributions Received:*")
     if not transactions:
         dummy_contributors = [
             {"name": "Contributor A", "amount": 1000.0},
@@ -487,16 +498,18 @@ async def get_campaign_report_preview(
         lines.append(f"{start_idx + i}.")
         
     lines.append("")
-    remaining = max(0, float(campaign.target_amount) - float(raised))
+    lines.append("Thank you to everyone who has contributed so far. Your continued support is greatly appreciated as we work towards our goal.")
+    lines.append("")
+    
     if footer:
         lines.append(footer)
-    else:
-        lines.append(f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts.")
+        lines.append("")
         
     frontend_url = get_config().FRONTEND_URL.rstrip('/')
     public_url = f"{frontend_url}/report/w/{campaign.group.owner_id}/g/{campaign.group.slug or campaign.group_id}/c/{campaign.slug or campaign.campaign_id}"
     
-    lines.append(f"View the full report at: {public_url}")
+    lines.append("To view a more comprehensive report, click the link below:")
+    lines.append(f"{public_url}")
     if not settings.get("remove_watermark", False):
         lines.append("\n*Generated via KapuLetu*")
         
