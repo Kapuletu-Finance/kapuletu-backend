@@ -517,7 +517,7 @@ async def get_campaign_report_preview(
         start_idx = len(transactions) + 1
         
     try:
-        blank_slots = min(int(settings.get("blank_slots", 3)), 5)
+        blank_slots = int(settings.get("blank_slots", 3))
     except (ValueError, TypeError):
         blank_slots = 3
         
@@ -692,9 +692,9 @@ async def public_verify_campaign(
     surplus_amount = max(0.0, float(raised) - target_amount)
     
     try:
-        blank_slots = int(settings.get("blank_slots", 3)) + 3
+        blank_slots = int(settings.get("blank_slots", 3))
     except (ValueError, TypeError):
-        blank_slots = 6
+        blank_slots = 3
         
     remaining = max(0, target_amount - float(raised))
     remaining_message = f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts."
