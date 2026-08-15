@@ -106,12 +106,39 @@ async def get_campaign(
         Transaction.status == "approved"
     ).scalar()
     
+    pm_sums = db.query(Transaction.payment_method, func.sum(Transaction.amount)).filter(
+        Transaction.campaign_id == campaign.campaign_id,
+        Transaction.status == "approved"
+    ).group_by(Transaction.payment_method).all()
+    
+    pm_map = {"mpesa": 0.0, "cash": 0.0, "bank": 0.0, "pledge": 0.0}
+    for pm, amount in pm_sums:
+        pm_lower = (pm or "cash").lower()
+        if "mpesa" in pm_lower:
+            pm_map["mpesa"] += float(amount)
+        elif "cash" in pm_lower:
+            pm_map["cash"] += float(amount)
+        elif "bank" in pm_lower:
+            pm_map["bank"] += float(amount)
+        elif "pledge" in pm_lower:
+            pm_map["pledge"] += float(amount)
+    
     campaign.total_raised = raised
     campaign.contributor_count = contributors or 0
     if campaign.target_amount and campaign.target_amount > 0:
         campaign.progress_percentage = round((raised / float(campaign.target_amount)) * 100, 2)
     else:
         campaign.progress_percentage = 0.0
+        
+    campaign.total_mpesa = pm_map["mpesa"]
+    campaign.total_cash = pm_map["cash"]
+    campaign.total_bank = pm_map["bank"]
+    campaign.total_pledges = pm_map["pledge"]
+    
+    campaign.mpesa_percentage = round((campaign.total_mpesa / raised) * 100, 2) if raised > 0 else 0.0
+    campaign.cash_percentage = round((campaign.total_cash / raised) * 100, 2) if raised > 0 else 0.0
+    campaign.bank_percentage = round((campaign.total_bank / raised) * 100, 2) if raised > 0 else 0.0
+    campaign.pledges_percentage = round((campaign.total_pledges / raised) * 100, 2) if raised > 0 else 0.0
         
     return campaign
 

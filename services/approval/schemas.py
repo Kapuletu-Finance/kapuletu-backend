@@ -68,6 +68,30 @@ class PaginatedPendingResponse(BaseModel):
     page: int
     limit: int
 
+class InboxHistoryItemOut(BaseModel):
+    pending_id: UUID
+    sender_name: Optional[str] = None
+    sender_phone: Optional[str] = None
+    amount: Optional[float] = None
+    currency: Optional[str] = "KES"
+    transaction_code: Optional[str] = None
+    purpose: Optional[str] = None
+    workflow_status: str
+    processed_at: Optional[datetime] = None
+    processed_by_name: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class PaginatedInboxHistoryResponse(BaseModel):
+    items: List[InboxHistoryItemOut]
+    total_items: int
+    total_pages: int
+    page: int
+    limit: int
+
 class TransactionOut(BaseModel):
     transaction_id: UUID
     transaction_code: Optional[str] = None

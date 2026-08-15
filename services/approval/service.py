@@ -120,8 +120,11 @@ class ApprovalService:
 
         # 4. Mark pending as processed
         # This ensures the item no longer appears in the treasurer's approval inbox.
+        from datetime import datetime
         pending.is_processed = True
         pending.workflow_status = "approved"
+        pending.processed_at = datetime.utcnow()
+        pending.processed_by = treasurer_id
         
         self.db.commit()
         
@@ -237,8 +240,11 @@ class ApprovalService:
         self._write_to_ledger(new_txn)
 
         # 6. Mark Processed
+        from datetime import datetime
         pending.is_processed = True
         pending.workflow_status = "split_approved"
+        pending.processed_at = datetime.utcnow()
+        pending.processed_by = treasurer_id
         
         self.db.commit()
 
@@ -268,13 +274,14 @@ class ApprovalService:
 
 
 
-    def reject_transaction(self, pending_txn_id, treasurer_id):
+    def reject_transaction(self, pending_txn_id, treasurer_id, reason=None):
         """
         Marks a pending transaction as rejected.
         
         Args:
             pending_txn_id (UUID): The record to reject.
             treasurer_id (UUID): The treasurer rejecting the record.
+            reason (str, optional): Why it was rejected.
         """
         try:
             pending = self.db.query(PendingTransaction).filter(
@@ -287,8 +294,12 @@ class ApprovalService:
         if not pending:
             raise Exception("Pending transaction not found or access denied")
 
+        from datetime import datetime
         pending.is_processed = True
         pending.workflow_status = "rejected"
+        pending.processed_at = datetime.utcnow()
+        pending.processed_by = treasurer_id
+        pending.rejection_reason = reason
         
         self.db.commit()
         
@@ -305,6 +316,49 @@ class ApprovalService:
         
         logger.info(f"Transaction {pending_txn_id} rejected by treasurer {treasurer_id}.")
         return {"status": "rejected"}
+
+    def undo_rejection(self, pending_txn_id, treasurer_id):
+        """
+        Reverts a rejected transaction back to the pending state.
+        
+        Args:
+            pending_txn_id (UUID): The record to undo.
+            treasurer_id (UUID): The treasurer undoing the action.
+        """
+        try:
+            pending = self.db.query(PendingTransaction).filter(
+                PendingTransaction.pending_id == pending_txn_id,
+                PendingTransaction.owner_id == treasurer_id
+            ).with_for_update(nowait=True).first()
+        except Exception:
+            raise Exception("Transaction is currently being processed by another request.")
+            
+        if not pending:
+            raise Exception("Pending transaction not found or access denied")
+            
+        if pending.workflow_status != "rejected" or not pending.is_processed:
+            raise Exception("Only rejected transactions can be undone.")
+            
+        pending.is_processed = False
+        pending.workflow_status = "pending"
+        pending.processed_at = None
+        pending.processed_by = None
+        pending.rejection_reason = None
+        
+        self.db.commit()
+        
+        AuditService(self.db).log_action(
+            actor_id=treasurer_id,
+            action="TXN_UNDO_REJECT",
+            entity_type="PENDING_TRANSACTION",
+            entity_id=str(pending_txn_id),
+            details={
+                "message": "Transaction rejection was undone"
+            }
+        )
+        
+        logger.info(f"Rejection of transaction {pending_txn_id} was undone by treasurer {treasurer_id}.")
+        return pending
 
     def bulk_approve(self, pending_ids: list, treasurer_id, group_id, campaign_id=None):
         """Processes multiple approvals in a single batch."""

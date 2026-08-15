@@ -490,7 +490,7 @@ from services.workspace.router import router as workspace_router
 app.include_router(workspace_router, dependencies=[Depends(get_verified_user)])
 
 from services.settings.router import router as settings_router
-app.include_router(settings_router, tags=["13. Enterprise Settings"], prefix="", dependencies=[Depends(get_verified_user)])
+app.include_router(settings_router, tags=["13. Enterprise Settings"], prefix="/settings", dependencies=[Depends(get_verified_user)])
 
 # Serve static assets (Logo, Favicons, etc.)
 import os

@@ -79,6 +79,27 @@ def get_group_campaigns(db: Session, group_id: str, skip: int = 0, limit: int = 
     # 2. Contributor Count (total transactions)
     contrib_counts = dict(db.query(Transaction.campaign_id, func.count(Transaction.transaction_id)).filter(Transaction.campaign_id.in_(camp_ids), Transaction.status == "approved").group_by(Transaction.campaign_id).all())
     
+    # 3. Payment Method Breakdown
+    pm_sums = db.query(Transaction.campaign_id, Transaction.payment_method, func.sum(Transaction.amount)).filter(
+        Transaction.campaign_id.in_(camp_ids), 
+        Transaction.status == "approved"
+    ).group_by(Transaction.campaign_id, Transaction.payment_method).all()
+    
+    pm_map = {}
+    for cid, pm, amount in pm_sums:
+        pm_lower = (pm or "cash").lower()
+        if cid not in pm_map:
+            pm_map[cid] = {"mpesa": 0.0, "cash": 0.0, "bank": 0.0, "pledge": 0.0}
+            
+        if "mpesa" in pm_lower:
+            pm_map[cid]["mpesa"] += float(amount)
+        elif "cash" in pm_lower:
+            pm_map[cid]["cash"] += float(amount)
+        elif "bank" in pm_lower:
+            pm_map[cid]["bank"] += float(amount)
+        elif "pledge" in pm_lower:
+            pm_map[cid]["pledge"] += float(amount)
+    
     for c in campaigns:
         raised = float(funds_raised.get(c.campaign_id, 0.0) or 0.0)
         c.total_raised = raised
@@ -87,6 +108,17 @@ def get_group_campaigns(db: Session, group_id: str, skip: int = 0, limit: int = 
             c.progress_percentage = round((raised / float(c.target_amount)) * 100, 2)
         else:
             c.progress_percentage = 0.0
+            
+        cmap = pm_map.get(c.campaign_id, {"mpesa": 0.0, "cash": 0.0, "bank": 0.0, "pledge": 0.0})
+        c.total_mpesa = cmap["mpesa"]
+        c.total_cash = cmap["cash"]
+        c.total_bank = cmap["bank"]
+        c.total_pledges = cmap["pledge"]
+        
+        c.mpesa_percentage = round((c.total_mpesa / raised) * 100, 2) if raised > 0 else 0.0
+        c.cash_percentage = round((c.total_cash / raised) * 100, 2) if raised > 0 else 0.0
+        c.bank_percentage = round((c.total_bank / raised) * 100, 2) if raised > 0 else 0.0
+        c.pledges_percentage = round((c.total_pledges / raised) * 100, 2) if raised > 0 else 0.0
             
     return {
         "items": campaigns,
