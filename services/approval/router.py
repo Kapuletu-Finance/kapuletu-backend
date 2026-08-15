@@ -38,6 +38,21 @@ async def get_pending(
         "limit": limit
     }
 
+class ClearHistoryIn(BaseModel):
+    pending_ids: Optional[List[str]] = None
+
+from pydantic import BaseModel
+
+@router.delete("/history", summary="Clear Processed History")
+async def clear_history(
+    payload: ClearHistoryIn,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = ApprovalService(db)
+    result = service.clear_history(current_user.get("sub"), payload.pending_ids)
+    return result
+
 @router.get("/history", response_model=PaginatedInboxHistoryResponse, summary="Get Processed Transactions History")
 async def get_history(
     skip: int = Query(0, ge=0),

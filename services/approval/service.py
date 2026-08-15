@@ -416,6 +416,36 @@ class ApprovalService:
                 results.append({"pending_id": str(pid), "status": "error", "message": str(e)})
         return results
 
+    def clear_history(self, treasurer_id, pending_ids: list = None):
+        """
+        Clears the processed items from the inbox history.
+        If pending_ids is provided, it deletes only those specific processed items.
+        If pending_ids is None, it deletes all processed items for this treasurer.
+        Note: This only deletes the PendingTransaction record. The immutable Ledger (Transaction) remains unaffected.
+        """
+        query = self.db.query(PendingTransaction).filter(
+            PendingTransaction.owner_id == parse_uuid(treasurer_id),
+            PendingTransaction.is_processed == True
+        )
+        
+        if pending_ids:
+            uuid_list = [parse_uuid(pid) for pid in pending_ids]
+            query = query.filter(PendingTransaction.pending_id.in_(uuid_list))
+            
+        deleted_count = query.delete(synchronize_session=False)
+        self.db.commit()
+        
+        AuditService(self.db).log_action(
+            actor_id=treasurer_id,
+            action="HISTORY_CLEARED",
+            entity_type="PENDING_TRANSACTION",
+            entity_id="bulk",
+            details={
+                "message": f"Cleared {deleted_count} processed transactions from inbox history."
+            }
+        )
+        return {"status": "success", "deleted_count": deleted_count}
+
     def _write_to_ledger(self, txn: Transaction):
         """
         Internal helper to generate a cryptographic seal for the transaction.

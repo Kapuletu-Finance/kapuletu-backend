@@ -57,6 +57,8 @@ class PendingTransactionOut(BaseModel):
     confidence_score: float
     workflow_status: str
     created_at: datetime
+    assigned_group_name: Optional[str] = None
+    assigned_campaign_name: Optional[str] = None
     
     class Config:
         from_attributes = True

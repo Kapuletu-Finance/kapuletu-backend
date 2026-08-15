@@ -122,15 +122,21 @@ class TransactionRepository:
         """
         from sqlalchemy import func, or_
         from datetime import datetime, timedelta
+        from models.group import Group
+        from models.campaign import Campaign
         
-        base_query = self.db.query(PendingTransaction).filter(
+        base_query = self.db.query(PendingTransaction, Group.group_name, Campaign.title).outerjoin(
+            Group, PendingTransaction.group_id == Group.group_id
+        ).outerjoin(
+            Campaign, PendingTransaction.campaign_id == Campaign.campaign_id
+        ).filter(
             PendingTransaction.owner_id == parse_uuid(owner_id)
         )
         
         if status == "pending":
             base_query = base_query.filter(PendingTransaction.is_processed == False)
         elif status == "approved":
-            base_query = base_query.filter(PendingTransaction.is_processed == True, PendingTransaction.workflow_status == "approved")
+            base_query = base_query.filter(PendingTransaction.is_processed == True, PendingTransaction.workflow_status.in_(["approved", "split_approved"]))
         elif status == "rejected":
             base_query = base_query.filter(PendingTransaction.is_processed == True, PendingTransaction.workflow_status == "rejected")
         
@@ -158,7 +164,14 @@ class TransactionRepository:
                 base_query = base_query.filter(PendingTransaction.created_at >= start_date)
 
         total = base_query.count()
-        items = base_query.order_by(PendingTransaction.created_at.desc()).offset(skip).limit(limit).all()
+        results = base_query.order_by(PendingTransaction.created_at.desc()).offset(skip).limit(limit).all()
+        
+        items = []
+        for pending, group_name, campaign_title in results:
+            pending.assigned_group_name = group_name
+            pending.assigned_campaign_name = campaign_title
+            items.append(pending)
+            
         return items, total
 
     def fetch_pending_transactions_by_campaign(self, campaign_id: UUID, owner_id: UUID, skip: int = 0, limit: int = 100):
