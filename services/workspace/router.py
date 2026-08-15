@@ -45,7 +45,7 @@ async def get_workspace_overview(
         
     # Get top 10 recent campaigns
     recent_campaigns_query = (
-        db.query(Campaign, Group.group_name, Group.currency)
+        db.query(Campaign, Group.group_name, Group.currency, Group.slug.label("group_slug"))
         .join(Group)
         .filter(Group.owner_id == parse_uuid(parse_uuid(owner_id)))
         .order_by(Campaign.created_at.desc())
@@ -54,7 +54,7 @@ async def get_workspace_overview(
     )
     
     recent_campaigns_list = []
-    for camp, group_name, currency in recent_campaigns_query:
+    for camp, group_name, currency, group_slug in recent_campaigns_query:
         # Calculate amount raised for this campaign
         amount_raised = db.query(func.sum(Transaction.amount)).filter(
             Transaction.campaign_id == camp.campaign_id,
@@ -63,12 +63,15 @@ async def get_workspace_overview(
         
         recent_campaigns_list.append(CampaignOverview(
             campaign_id=str(camp.campaign_id),
+            campaign_slug=camp.slug,
             title=camp.title,
             group_id=str(camp.group_id),
+            group_slug=group_slug,
             group_name=group_name,
             target_amount=float(camp.target_amount or 0.0),
             amount_raised=float(amount_raised),
             currency=currency or "KES",
+            status=camp.status,
             updated_at=camp.created_at # Using created_at since updated_at is missing
         ))
         

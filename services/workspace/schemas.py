@@ -10,12 +10,15 @@ class GroupOverview(BaseModel):
 
 class CampaignOverview(BaseModel):
     campaign_id: str
+    campaign_slug: Optional[str] = None
     title: str
     group_id: str
+    group_slug: Optional[str] = None
     group_name: str
     target_amount: float
     amount_raised: float
     currency: str
+    status: Optional[str] = None
     updated_at: datetime
 
 class SubscriptionOverview(BaseModel):
