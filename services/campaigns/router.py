@@ -297,14 +297,20 @@ async def get_campaign_chart_data(
             daily_sums[txn_eat] = daily_sums.get(txn_eat, 0.0) + float(txn.amount)
             
     result = []
-    current_date = start_date
-    while current_date <= end_date:
-        running_total += daily_sums.get(current_date, 0.0)
+    
+    if start_date not in daily_sums:
         result.append({
-            "date": current_date.strftime("%Y-%m-%d"),
+            "date": start_date.strftime("%Y-%m-%d"),
             "amount": running_total
         })
-        current_date += timedelta(days=1)
+        
+    sorted_dates = sorted(daily_sums.keys())
+    for d in sorted_dates:
+        running_total += daily_sums[d]
+        result.append({
+            "date": d.strftime("%Y-%m-%d"),
+            "amount": running_total
+        })
         
     if filter == "all_time" and (end_date - start_date).days > 365:
         monthly_result = {}
