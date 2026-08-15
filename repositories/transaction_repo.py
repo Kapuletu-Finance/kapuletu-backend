@@ -2,6 +2,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy import select
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 import time
 
@@ -58,7 +59,7 @@ class TransactionRepository:
         
         pending_exists = self.db.query(PendingTransaction).filter(
             PendingTransaction.transaction_code == transaction_code,
-            PendingTransaction.owner_id == owner_id
+            PendingTransaction.owner_id == parse_uuid(owner_id)
         ).first() is not None
         
         if pending_exists:
@@ -67,7 +68,7 @@ class TransactionRepository:
         # 2. Check Finalized Transactions
         finalized_exists = self.db.query(Transaction).filter(
             Transaction.transaction_code == transaction_code,
-            Transaction.owner_id == owner_id
+            Transaction.owner_id == parse_uuid(owner_id)
         ).first() is not None
         
         return finalized_exists
@@ -123,7 +124,7 @@ class TransactionRepository:
         from datetime import datetime, timedelta
         
         base_query = self.db.query(PendingTransaction).filter(
-            PendingTransaction.owner_id == owner_id,
+            PendingTransaction.owner_id == parse_uuid(owner_id),
             PendingTransaction.is_processed == False
         )
         
@@ -158,15 +159,15 @@ class TransactionRepository:
         """Fetches pending transactions for a specific campaign."""
         from sqlalchemy import func
         count_stmt = select(func.count()).select_from(PendingTransaction).where(
-            PendingTransaction.owner_id == owner_id,
-            PendingTransaction.campaign_id == campaign_id,
+            PendingTransaction.owner_id == parse_uuid(owner_id),
+            PendingTransaction.campaign_id == parse_uuid(campaign_id),
             PendingTransaction.is_processed == False
         )
         total = self.db.execute(count_stmt).scalar()
         
         stmt = select(PendingTransaction).where(
-            PendingTransaction.owner_id == owner_id,
-            PendingTransaction.campaign_id == campaign_id,
+            PendingTransaction.owner_id == parse_uuid(owner_id),
+            PendingTransaction.campaign_id == parse_uuid(campaign_id),
             PendingTransaction.is_processed == False
         ).order_by(PendingTransaction.created_at.desc()).offset(skip).limit(limit)
         
@@ -185,8 +186,8 @@ class TransactionRepository:
             Optional[PendingTransaction]: The pending transaction if found and owned by user, else None.
         """
         stmt = select(PendingTransaction).where(
-            PendingTransaction.pending_id == pending_id,
-            PendingTransaction.owner_id == owner_id,
+            PendingTransaction.pending_id == parse_uuid(pending_id),
+            PendingTransaction.owner_id == parse_uuid(owner_id),
             PendingTransaction.is_processed == False
         )
         return self.db.execute(stmt).scalars().first()
@@ -207,7 +208,7 @@ class TransactionRepository:
             User.first_name,
             User.last_name
         ).outerjoin(User, PendingTransaction.processed_by == User.user_id).filter(
-            PendingTransaction.owner_id == owner_id,
+            PendingTransaction.owner_id == parse_uuid(owner_id),
             PendingTransaction.is_processed == True
         )
 

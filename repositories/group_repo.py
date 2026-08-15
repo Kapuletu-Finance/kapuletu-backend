@@ -1,5 +1,6 @@
 import uuid
 import random
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from models import Group, Campaign
@@ -12,7 +13,7 @@ def create_group(db: Session, owner_id: str, name: str, description: str = None,
     base_slug = generate_slug(name)
     slug = base_slug
     # Ensure slug uniqueness for this owner
-    while db.query(Group).filter(Group.owner_id == owner_id_uuid, Group.slug == slug).first():
+    while db.query(Group).filter(Group.owner_id == parse_uuid(owner_id_uuid), Group.slug == slug).first():
         slug = f"{base_slug}-{random.randint(1000, 9999)}"
         
     new_group = Group(
@@ -32,14 +33,14 @@ def get_group(db: Session, identifier: str):
     """Retrieves a single group by ID or slug."""
     try:
         valid_uuid = uuid.UUID(identifier)
-        return db.query(Group).filter(Group.group_id == valid_uuid).first()
+        return db.query(Group).filter(Group.group_id == parse_uuid(valid_uuid)).first()
     except ValueError:
         return db.query(Group).filter(Group.slug == identifier).first()
 
 def get_owner_groups(db: Session, owner_id: str, skip: int = 0, limit: int = 100, search: str = None, status: str = None):
     """Lists all groups belonging to a treasurer with pagination, search, and dynamic stats."""
     owner_id_uuid = owner_id if isinstance(owner_id, uuid.UUID) else uuid.UUID(owner_id)
-    query = db.query(Group).filter(Group.owner_id == owner_id_uuid)
+    query = db.query(Group).filter(Group.owner_id == parse_uuid(owner_id_uuid))
     
     if search:
         query = query.filter(Group.group_name.ilike(f"%{search}%"))
@@ -88,13 +89,13 @@ def update_group(db: Session, group_id: str, updates: dict):
     """Updates group properties."""
     if "name" in updates:
         updates["group_name"] = updates.pop("name")
-    db.query(Group).filter(Group.group_id == group_id).update(updates)
+    db.query(Group).filter(Group.group_id == parse_uuid(group_id)).update(updates)
     db.commit()
     return get_group(db, group_id)
 
 def archive_group(db: Session, group_id: str):
     """Soft deletes a group by archiving it."""
-    db.query(Group).filter(Group.group_id == group_id).update({
+    db.query(Group).filter(Group.group_id == parse_uuid(group_id)).update({
         "status": "archived",
         "is_active": False
     })
