@@ -235,7 +235,7 @@ class ApprovalService:
             transaction_code=pending.transaction_code,
             amount=pending.amount,
             sender_phone=pending.sender_phone,
-            sender_name=", ".join(a["name"] for a in allocations),
+            sender_name=f"{pending.sender_name} (Split)" if pending.sender_name else "Unknown Sender (Split)",
             payment_method=pending.payment_method,
             source_evidence=pending.source_evidence,
             status="approved"
@@ -245,14 +245,15 @@ class ApprovalService:
 
         # 4. Create Individual Allocations
         for alloc in allocations:
-            item = ReviewAllocation(
-                allocation_id=uuid.uuid4(),
-                transaction_id=new_txn.transaction_id,
-                pending_id=pending.pending_id,
-                member_name=alloc["name"],
-                allocated_amount=alloc["amount"]
-            )
-            self.db.add(item)
+            if float(alloc["amount"]) > 0:
+                item = ReviewAllocation(
+                    allocation_id=uuid.uuid4(),
+                    transaction_id=new_txn.transaction_id,
+                    pending_id=pending.pending_id,
+                    member_name=alloc["name"],
+                    allocated_amount=alloc["amount"]
+                )
+                self.db.add(item)
 
         # 5. Ledger Commitment
         self._write_to_ledger(new_txn)
