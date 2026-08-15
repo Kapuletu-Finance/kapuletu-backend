@@ -374,7 +374,7 @@ async def get_campaign_report_preview(
     # Calculate raised
     raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").scalar() or 0.0
     
-    transactions = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").order_by(Transaction.created_at.desc()).limit(10).all()
+    transactions = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").order_by(Transaction.created_at.desc()).all()
     
     lines = []
     lines.append(f"*{title}*")
