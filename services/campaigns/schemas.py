@@ -168,6 +168,12 @@ class PublicWebReportOut(BaseModel):
     target_amount: float
     progress_percentage: float
     
+    # Method Totals
+    total_mpesa: float
+    total_cash: float
+    total_bank: float
+    total_pledges: float
+    
     # Contributors
     total_contributors: int
     page: int

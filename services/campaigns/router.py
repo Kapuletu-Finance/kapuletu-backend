@@ -596,6 +596,23 @@ async def public_verify_campaign(
     # Calculate raised
     raised = db.query(func.sum(Transaction.amount)).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").scalar() or 0.0
     
+    pm_sums = db.query(Transaction.payment_method, func.sum(Transaction.amount)).filter(
+        Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)),
+        Transaction.status == "approved"
+    ).group_by(Transaction.payment_method).all()
+    
+    pm_map = {"mpesa": 0.0, "cash": 0.0, "bank": 0.0, "pledge": 0.0}
+    for pm, amount in pm_sums:
+        pm_lower = (pm or "cash").lower()
+        if "mpesa" in pm_lower:
+            pm_map["mpesa"] += float(amount)
+        elif "cash" in pm_lower:
+            pm_map["cash"] += float(amount)
+        elif "bank" in pm_lower:
+            pm_map["bank"] += float(amount)
+        elif "pledge" in pm_lower:
+            pm_map["pledge"] += float(amount)
+            
     transactions_query = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").order_by(Transaction.created_at.desc())
     total_contributors = transactions_query.count()
     
@@ -629,6 +646,10 @@ async def public_verify_campaign(
         "raised_amount": float(raised),
         "target_amount": target_amount,
         "progress_percentage": round(progress_percentage, 2),
+        "total_mpesa": pm_map["mpesa"],
+        "total_cash": pm_map["cash"],
+        "total_bank": pm_map["bank"],
+        "total_pledges": pm_map["pledge"],
         "total_contributors": total_contributors,
         "page": page,
         "total_pages": total_pages,
