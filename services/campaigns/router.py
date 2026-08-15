@@ -697,7 +697,10 @@ async def public_verify_campaign(
         blank_slots = 3
         
     remaining = max(0, target_amount - float(raised))
-    remaining_message = f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts."
+    if float(raised) >= target_amount:
+        remaining_message = f"We have successfully surpassed our initial goal of Ksh {target_amount:,.2f}! Thank you to everyone who made this possible. The campaign remains open, and any further contributions are still greatly appreciated."
+    else:
+        remaining_message = f"We still need Ksh {remaining:,.2f} to reach our goal. Every contribution counts."
     
     footer_message = settings.get("report_footer", None)
     watermark = "Generated via KapuLetu" if not settings.get("remove_watermark", False) else None
