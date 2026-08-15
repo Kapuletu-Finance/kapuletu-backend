@@ -517,9 +517,9 @@ async def get_campaign_report_preview(
         start_idx = len(transactions) + 1
         
     try:
-        blank_slots = int(settings.get("blank_slots", 3)) + 3
+        blank_slots = min(int(settings.get("blank_slots", 3)), 5)
     except (ValueError, TypeError):
-        blank_slots = 6
+        blank_slots = 3
         
     for i in range(blank_slots):
         lines.append(f"{start_idx + i}.")
@@ -532,7 +532,7 @@ async def get_campaign_report_preview(
         lines.append(footer)
         lines.append("")
         
-    frontend_url = "https://dev-app.kapuletu.co.ke"
+    frontend_url = get_config().FRONTEND_URL.rstrip('/')
     short_code = campaign.short_code or campaign.campaign_id
     public_url = f"{frontend_url}/r/{short_code}"
     
@@ -702,7 +702,7 @@ async def public_verify_campaign(
     footer_message = settings.get("report_footer", None)
     watermark = "Generated via KapuLetu" if not settings.get("remove_watermark", False) else None
     
-    frontend_url = "https://dev-app.kapuletu.co.ke"
+    frontend_url = get_config().FRONTEND_URL.rstrip('/')
     public_url = f"{frontend_url}/r/{campaign.short_code or campaign.campaign_id}"
     
     return {
