@@ -400,6 +400,7 @@ class ApprovalService:
                 txn = self.approve_transaction(pid, treasurer_id, group_id, campaign_id)
                 results.append({"pending_id": str(pid), "status": "success", "transaction_id": str(txn.transaction_id)})
             except Exception as e:
+                self.db.rollback()
                 results.append({"pending_id": str(pid), "status": "error", "message": str(e)})
         return results
 
@@ -411,6 +412,7 @@ class ApprovalService:
                 self.reject_transaction(pid, treasurer_id)
                 results.append({"pending_id": str(pid), "status": "success"})
             except Exception as e:
+                self.db.rollback()
                 results.append({"pending_id": str(pid), "status": "error", "message": str(e)})
         return results
 
