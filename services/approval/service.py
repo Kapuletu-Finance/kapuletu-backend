@@ -235,6 +235,7 @@ class ApprovalService:
             transaction_code=pending.transaction_code,
             amount=pending.amount,
             sender_phone=pending.sender_phone,
+            sender_name=", ".join(a["name"] for a in allocations),
             payment_method=pending.payment_method,
             source_evidence=pending.source_evidence,
             status="approved"
