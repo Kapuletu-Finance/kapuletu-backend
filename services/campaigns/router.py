@@ -262,15 +262,58 @@ async def get_campaign_chart_data(
         .order_by(Transaction.created_at.asc())
     ).scalars().all()
     
-    grouped = {}
-    from datetime import timezone
+    from datetime import datetime, timezone, timedelta
     import zoneinfo
+    
+    tz = zoneinfo.ZoneInfo("Africa/Nairobi")
+    now_eat = datetime.now(timezone.utc).astimezone(tz)
+    
+    end_date = now_eat.date()
+    start_date = None
+    
+    if filter == "this_week":
+        start_date = end_date - timedelta(days=end_date.weekday())
+    elif filter == "this_month":
+        start_date = end_date.replace(day=1)
+    elif filter == "this_year":
+        start_date = end_date.replace(month=1, day=1)
+    elif filter == "last_year":
+        start_date = end_date.replace(year=end_date.year - 1, month=1, day=1)
+        end_date = end_date.replace(year=end_date.year - 1, month=12, day=31)
+    else: # all_time
+        if transactions:
+            start_date = transactions[0].created_at.replace(tzinfo=timezone.utc).astimezone(tz).date()
+        else:
+            start_date = end_date
+            
+    running_total = 0.0
+    daily_sums = {}
+    
     for txn in transactions:
-        txn_eat = txn.created_at.replace(tzinfo=timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
-        date_str = txn_eat.strftime("%Y-%m-%d") if filter in ["this_week", "this_month"] else txn_eat.strftime("%Y-%m")
-        grouped[date_str] = grouped.get(date_str, 0.0) + float(txn.amount)
+        txn_eat = txn.created_at.replace(tzinfo=timezone.utc).astimezone(tz).date()
+        if txn_eat < start_date:
+            running_total += float(txn.amount)
+        elif txn_eat <= end_date:
+            daily_sums[txn_eat] = daily_sums.get(txn_eat, 0.0) + float(txn.amount)
+            
+    result = []
+    current_date = start_date
+    while current_date <= end_date:
+        running_total += daily_sums.get(current_date, 0.0)
+        result.append({
+            "date": current_date.strftime("%Y-%m-%d"),
+            "amount": running_total
+        })
+        current_date += timedelta(days=1)
         
-    return [{"date": k, "amount": v} for k, v in grouped.items()]
+    if filter == "all_time" and (end_date - start_date).days > 365:
+        monthly_result = {}
+        for r in result:
+            month_str = r["date"][:7]
+            monthly_result[month_str] = r["amount"]
+        return [{"date": k, "amount": v} for k, v in monthly_result.items()]
+        
+    return result
 
 @router.get("/campaigns/{campaign_id}/transactions", response_model=PaginatedTransactionResponse, summary="List Campaign Transactions")
 async def get_campaign_transactions(
