@@ -440,7 +440,11 @@ async def get_campaign_report_preview(
         title = f"{campaign.title} Update"
         
     footer = settings.get("report_footer", "")
-    indicator = settings.get("paid_indicator", "✔")
+    title = campaign.title
+    indicator = settings.get("paid_indicator", "\u2713")
+    
+    def fmt_ksh(val: float) -> str:
+        return f"{val:,.0f}" if float(val).is_integer() else f"{val:,.2f}"
     
     transactions = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").order_by(Transaction.created_at.desc()).all()
     
@@ -476,20 +480,20 @@ async def get_campaign_report_preview(
         lines.append("*Progress Update:*")
     
     if float(raised) >= float(campaign.target_amount):
-        lines.append(f"So far, we have raised Ksh {raised:,.2f}, successfully surpassing our initial goal of Ksh {float(campaign.target_amount):,.2f}! Thank you to everyone who made this possible. The campaign remains open, and any further contributions are still greatly appreciated.")
+        lines.append(f"So far, we have raised Ksh {fmt_ksh(raised)}, successfully surpassing our initial goal of Ksh {fmt_ksh(float(campaign.target_amount))}! Thank you to everyone who made this possible. The campaign remains open, and any further contributions are still greatly appreciated.")
     else:
-        lines.append(f"So far, we have raised Ksh {raised:,.2f} against our goal of Ksh {float(campaign.target_amount):,.2f}. We have an amount remaining of Ksh {remaining:,.2f} to meet our goal. Every contribution counts.")
+        lines.append(f"So far, we have raised Ksh {fmt_ksh(raised)} against our goal of Ksh {fmt_ksh(float(campaign.target_amount))}. We have an amount remaining of Ksh {fmt_ksh(remaining)} to meet our goal. Every contribution counts.")
     
     lines.append("")
     
     if pm_map["mpesa"] > 0:
-        lines.append(f"*Amount Received (M-Pesa):* Ksh {pm_map['mpesa']:,.2f}")
+        lines.append(f"*Amount Received (M-Pesa):* Ksh {fmt_ksh(pm_map['mpesa'])}")
     if pm_map["cash"] > 0:
-        lines.append(f"*Amount Received (Cash):* Ksh {pm_map['cash']:,.2f}")
+        lines.append(f"*Amount Received (Cash):* Ksh {fmt_ksh(pm_map['cash'])}")
     if pm_map["bank"] > 0:
-        lines.append(f"*Amount Received (Bank):* Ksh {pm_map['bank']:,.2f}")
+        lines.append(f"*Amount Received (Bank):* Ksh {fmt_ksh(pm_map['bank'])}")
     if pm_map["pledge"] > 0:
-        lines.append(f"*Amount Received (Pledge):* Ksh {pm_map['pledge']:,.2f}")
+        lines.append(f"*Amount Received (Pledge):* Ksh {fmt_ksh(pm_map['pledge'])}")
         
     if pm_map["mpesa"] > 0 or pm_map["cash"] > 0 or pm_map["bank"] > 0 or pm_map["pledge"] > 0:
         lines.append("")
@@ -510,7 +514,7 @@ async def get_campaign_report_preview(
             {"name": "Contributor F", "amount": 3000.0},
         ]
         for i, c in enumerate(dummy_contributors, 1):
-            lines.append(f"{i}. {c['name']} - Ksh {c['amount']:,.2f} {indicator}")
+            lines.append(f"{i}. {c['name']} - Ksh {fmt_ksh(c['amount'])} {indicator}")
         contributors_list = dummy_contributors
         start_idx = 7
     else:
@@ -519,7 +523,7 @@ async def get_campaign_report_preview(
             name = txn.sender_name or "Anonymous"
             amount = float(txn.amount)
             contributors_list.append({"name": name, "amount": amount})
-            lines.append(f"{i}. {name} - Ksh {amount:,.2f} {indicator}")
+            lines.append(f"{i}. {name} - Ksh {fmt_ksh(amount)} {indicator}")
         start_idx = len(transactions) + 1
         
     try:
