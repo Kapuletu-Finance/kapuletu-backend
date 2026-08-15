@@ -61,6 +61,58 @@ def handler(event, context):
                 ]
                 return {"statusCode": 200, "body": json.dumps({"results": results}, default=default_serializer)}
 
+            elif event.get("httpMethod") == "GET" and "/history" in path:
+                from repositories.transaction_repo import TransactionRepository
+                repo = TransactionRepository(db)
+                qs = event.get("queryStringParameters") or {}
+                skip = int(qs.get("skip", 0))
+                limit = int(qs.get("limit", 10))
+                status_val = qs.get("status")
+                search = qs.get("search")
+                date_from = qs.get("date_from")
+                date_to = qs.get("date_to")
+                
+                results, total = repo.fetch_inbox_history(
+                    user_id, skip, limit, status_val, search, date_from, date_to
+                )
+                
+                import decimal
+                from uuid import UUID
+                from datetime import datetime
+                
+                def default_serializer(obj):
+                    if isinstance(obj, UUID): return str(obj)
+                    if isinstance(obj, decimal.Decimal): return float(obj)
+                    if isinstance(obj, datetime): return obj.isoformat()
+                    return str(obj)
+
+                formatted = []
+                for r in results:
+                    p = r["pending"]
+                    formatted.append({
+                        "pending_id": p.pending_id,
+                        "sender_name": p.sender_name,
+                        "sender_phone": p.sender_phone,
+                        "amount": p.amount,
+                        "currency": p.currency,
+                        "transaction_code": p.transaction_code,
+                        "purpose": p.purpose,
+                        "workflow_status": p.workflow_status,
+                        "processed_at": p.processed_at,
+                        "processed_by_name": r["processed_by_name"],
+                        "rejection_reason": p.rejection_reason,
+                        "created_at": p.created_at
+                    })
+                    
+                import math
+                return {"statusCode": 200, "body": json.dumps({
+                    "items": formatted,
+                    "total_items": total,
+                    "total_pages": math.ceil(total / limit) if total > 0 else 1,
+                    "page": (skip // limit) + 1,
+                    "limit": limit
+                }, default=default_serializer)}
+
             if "/bulk/approve" in path:
                 pending_ids = body.get("pending_ids", [])
                 result = service.bulk_approve(pending_ids, user_id, group_id, body.get("campaign_id"))
@@ -86,8 +138,15 @@ def handler(event, context):
             
             elif "/reject" in path:
                 if not pending_id: return {"statusCode": 400, "body": json.dumps({"error": "Missing pending_id"})}
-                service.reject_transaction(pending_id, user_id)
+                reason = body.get("internal_note")
+                service.reject_transaction(pending_id, user_id, reason)
                 msg = "Transaction rejected."
+                txn = None
+                
+            elif "/undo" in path:
+                if not pending_id: return {"statusCode": 400, "body": json.dumps({"error": "Missing pending_id"})}
+                pending = service.undo_rejection(pending_id, user_id)
+                msg = "Rejection undone."
                 txn = None
             
             else:

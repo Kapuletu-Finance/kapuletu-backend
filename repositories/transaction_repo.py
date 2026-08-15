@@ -104,7 +104,7 @@ class TransactionRepository:
                 
         return user
 
-    def fetch_pending_transactions_by_owner(self, owner_id: UUID, skip: int = 0, limit: int = 100) -> tuple[List[PendingTransaction], int]:
+    def fetch_pending_transactions_by_owner(self, owner_id: UUID, skip: int = 0, limit: int = 100, search: Optional[str] = None, filter_val: Optional[str] = None) -> tuple[List[PendingTransaction], int]:
         """
         Retrieves all unprocessed pending transactions for a specific treasurer with pagination.
         Typically used to populate the treasurer's approval inbox.
@@ -113,24 +113,45 @@ class TransactionRepository:
             owner_id (UUID): The unique ID of the treasurer.
             skip (int): Pagination offset.
             limit (int): Pagination limit.
+            search (Optional[str]): Search query for name or code.
+            filter_val (Optional[str]): Date filter.
             
         Returns:
             tuple: (List[PendingTransaction], total_count)
         """
-        from sqlalchemy import func
+        from sqlalchemy import func, or_
+        from datetime import datetime, timedelta
         
-        count_stmt = select(func.count()).select_from(PendingTransaction).where(
+        base_query = self.db.query(PendingTransaction).filter(
             PendingTransaction.owner_id == owner_id,
             PendingTransaction.is_processed == False
         )
-        total = self.db.execute(count_stmt).scalar()
         
-        stmt = select(PendingTransaction).where(
-            PendingTransaction.owner_id == owner_id,
-            PendingTransaction.is_processed == False
-        ).order_by(PendingTransaction.created_at.desc()).offset(skip).limit(limit)
-        
-        items = self.db.execute(stmt).scalars().all()
+        if search:
+            search_term = f"%{search}%"
+            base_query = base_query.filter(or_(
+                PendingTransaction.sender_name.ilike(search_term),
+                PendingTransaction.transaction_code.ilike(search_term)
+            ))
+            
+        if filter_val:
+            now = datetime.utcnow()
+            if filter_val == "today":
+                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                base_query = base_query.filter(PendingTransaction.created_at >= start_date)
+            elif filter_val == "this_week":
+                start_date = now - timedelta(days=now.weekday())
+                start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                base_query = base_query.filter(PendingTransaction.created_at >= start_date)
+            elif filter_val == "this_month":
+                start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                base_query = base_query.filter(PendingTransaction.created_at >= start_date)
+            elif filter_val == "this_year":
+                start_date = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                base_query = base_query.filter(PendingTransaction.created_at >= start_date)
+
+        total = base_query.count()
+        items = base_query.order_by(PendingTransaction.created_at.desc()).offset(skip).limit(limit).all()
         return items, total
 
     def fetch_pending_transactions_by_campaign(self, campaign_id: UUID, owner_id: UUID, skip: int = 0, limit: int = 100):
@@ -169,3 +190,60 @@ class TransactionRepository:
             PendingTransaction.is_processed == False
         )
         return self.db.execute(stmt).scalars().first()
+
+    def fetch_inbox_history(
+        self, owner_id: UUID, skip: int = 0, limit: int = 100, 
+        status: Optional[str] = None, search: Optional[str] = None, 
+        date_from: Optional[str] = None, date_to: Optional[str] = None
+    ):
+        """
+        Retrieves processed inbox transactions for history.
+        """
+        from sqlalchemy import or_, desc
+        from datetime import datetime
+
+        query = self.db.query(
+            PendingTransaction,
+            User.first_name,
+            User.last_name
+        ).outerjoin(User, PendingTransaction.processed_by == User.user_id).filter(
+            PendingTransaction.owner_id == owner_id,
+            PendingTransaction.is_processed == True
+        )
+
+        if status and status != "all":
+            query = query.filter(PendingTransaction.workflow_status == status)
+
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(or_(
+                PendingTransaction.sender_name.ilike(search_term),
+                PendingTransaction.transaction_code.ilike(search_term)
+            ))
+
+        if date_from:
+            try:
+                dt_from = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+                query = query.filter(PendingTransaction.processed_at >= dt_from)
+            except ValueError:
+                pass
+
+        if date_to:
+            try:
+                dt_to = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+                query = query.filter(PendingTransaction.processed_at <= dt_to)
+            except ValueError:
+                pass
+
+        total = query.count()
+        items = query.order_by(desc(PendingTransaction.processed_at)).offset(skip).limit(limit).all()
+
+        results = []
+        for pending, fname, lname in items:
+            processed_by_name = f"{fname or ''} {lname or ''}".strip() if fname or lname else None
+            results.append({
+                "pending": pending,
+                "processed_by_name": processed_by_name
+            })
+            
+        return results, total

@@ -7,7 +7,8 @@ from common.database import get_db
 from common.auth_dependencies import get_verified_user
 from services.approval.schemas import (
     TransactionActionIn, TransactionEditIn, TransactionSplit, BulkActionIn,
-    PendingTransactionOut, TransactionOut, PaginatedPendingResponse
+    PendingTransactionOut, TransactionOut, PaginatedPendingResponse,
+    PaginatedInboxHistoryResponse, InboxHistoryItemOut
 )
 from repositories.transaction_repo import TransactionRepository
 from services.approval.service import ApprovalService
@@ -21,13 +22,61 @@ import math
 async def get_pending(
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    filter: Optional[str] = Query(None),
     db: Session = Depends(get_db), 
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     repo = TransactionRepository(db)
-    items, total = repo.fetch_pending_transactions_by_owner(current_user.get("sub"), skip, limit)
+    items, total = repo.fetch_pending_transactions_by_owner(current_user.get("sub"), skip, limit, search, filter)
     return {
         "items": items,
+        "total_items": total,
+        "total_pages": math.ceil(total / limit) if total > 0 else 1,
+        "page": (skip // limit) + 1,
+        "limit": limit
+    }
+
+@router.get("/history", response_model=PaginatedInboxHistoryResponse, summary="Get Processed Transactions History")
+async def get_history(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    status: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    repo = TransactionRepository(db)
+    results, total = repo.fetch_inbox_history(
+        owner_id=current_user.get("sub"), 
+        skip=skip, limit=limit, 
+        status=status, search=search, 
+        date_from=date_from, date_to=date_to
+    )
+    
+    formatted_items = []
+    for r in results:
+        pending = r["pending"]
+        item = InboxHistoryItemOut(
+            pending_id=pending.pending_id,
+            sender_name=pending.sender_name,
+            sender_phone=pending.sender_phone,
+            amount=pending.amount,
+            currency=pending.currency,
+            transaction_code=pending.transaction_code,
+            purpose=pending.purpose,
+            workflow_status=pending.workflow_status,
+            processed_at=pending.processed_at,
+            processed_by_name=r["processed_by_name"],
+            rejection_reason=pending.rejection_reason,
+            created_at=pending.created_at
+        )
+        formatted_items.append(item)
+        
+    return {
+        "items": formatted_items,
         "total_items": total,
         "total_pages": math.ceil(total / limit) if total > 0 else 1,
         "page": (skip // limit) + 1,
@@ -76,8 +125,22 @@ async def reject(
 ):
     service = ApprovalService(db)
     try:
-        service.reject_transaction(pending_id, current_user.get("sub"))
+        reason = payload.internal_note if payload else None
+        service.reject_transaction(pending_id, current_user.get("sub"), reason)
         return {"status": "success", "message": "Transaction rejected."}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+@router.post("/{pending_id}/undo", response_model=PendingTransactionOut, summary="Undo Rejection")
+async def undo_rejection(
+    pending_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = ApprovalService(db)
+    try:
+        pending = service.undo_rejection(pending_id, current_user.get("sub"))
+        return pending
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

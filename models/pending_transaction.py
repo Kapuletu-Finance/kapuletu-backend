@@ -57,6 +57,12 @@ class PendingTransaction(Base):
     workflow_status = Column(String, default="pending") 
     # is_processed: Flag to indicate if the transaction has been finalized in the ledger.
     is_processed = Column(Boolean, default=False)
+    
+    # Audit trail for processed transactions
+    processed_at = Column(DateTime, nullable=True)
+    processed_by = Column(UUID(as_uuid=True), nullable=True) # ID of the treasurer who acted
+    rejection_reason = Column(String, nullable=True)
+
     # payment_method: Automatic tag (e.g., "M-Pesa", "Cash").
     payment_method = Column(String, default="Cash")
     # source_evidence: The raw message or default text.
