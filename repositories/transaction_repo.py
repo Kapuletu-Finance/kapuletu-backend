@@ -105,7 +105,7 @@ class TransactionRepository:
                 
         return user
 
-    def fetch_pending_transactions_by_owner(self, owner_id: UUID, skip: int = 0, limit: int = 100, search: Optional[str] = None, filter_val: Optional[str] = None, status: str = "pending") -> tuple[List[PendingTransaction], int]:
+    def fetch_pending_transactions_by_owner(self, owner_id: UUID, skip: int = 0, limit: int = 100, search: Optional[str] = None, filter_val: Optional[str] = None, status: str = "pending", sort_by: Optional[str] = "date", sort_order: Optional[str] = "desc") -> tuple[List[PendingTransaction], int]:
         """
         Retrieves transactions for a specific treasurer with pagination and status filtering.
         
@@ -164,7 +164,19 @@ class TransactionRepository:
                 base_query = base_query.filter(PendingTransaction.created_at >= start_date)
 
         total = base_query.count()
-        results = base_query.order_by(PendingTransaction.created_at.desc()).offset(skip).limit(limit).all()
+        
+        if sort_by == "amount":
+            if sort_order == "asc":
+                base_query = base_query.order_by(PendingTransaction.amount.asc(), PendingTransaction.created_at.desc())
+            else:
+                base_query = base_query.order_by(PendingTransaction.amount.desc(), PendingTransaction.created_at.desc())
+        else:
+            if sort_order == "asc":
+                base_query = base_query.order_by(PendingTransaction.created_at.asc())
+            else:
+                base_query = base_query.order_by(PendingTransaction.created_at.desc())
+                
+        results = base_query.offset(skip).limit(limit).all()
         
         items = []
         for pending, group_name, campaign_title in results:
@@ -174,7 +186,7 @@ class TransactionRepository:
             
         return items, total
 
-    def fetch_pending_transactions_by_campaign(self, campaign_id: UUID, owner_id: UUID, skip: int = 0, limit: int = 100):
+    def fetch_pending_transactions_by_campaign(self, campaign_id: UUID, owner_id: UUID, skip: int = 0, limit: int = 100, sort_by: Optional[str] = "date", sort_order: Optional[str] = "desc"):
         """Fetches pending transactions for a specific campaign."""
         from sqlalchemy import func
         count_stmt = select(func.count()).select_from(PendingTransaction).where(
@@ -188,7 +200,20 @@ class TransactionRepository:
             PendingTransaction.owner_id == parse_uuid(owner_id),
             PendingTransaction.campaign_id == parse_uuid(campaign_id),
             PendingTransaction.is_processed == False
-        ).order_by(PendingTransaction.created_at.desc()).offset(skip).limit(limit)
+        )
+        
+        if sort_by == "amount":
+            if sort_order == "asc":
+                stmt = stmt.order_by(PendingTransaction.amount.asc(), PendingTransaction.created_at.desc())
+            else:
+                stmt = stmt.order_by(PendingTransaction.amount.desc(), PendingTransaction.created_at.desc())
+        else:
+            if sort_order == "asc":
+                stmt = stmt.order_by(PendingTransaction.created_at.asc())
+            else:
+                stmt = stmt.order_by(PendingTransaction.created_at.desc())
+                
+        stmt = stmt.offset(skip).limit(limit)
         
         items = self.db.execute(stmt).scalars().all()
         return items, total
@@ -214,7 +239,8 @@ class TransactionRepository:
     def fetch_inbox_history(
         self, owner_id: UUID, skip: int = 0, limit: int = 100, 
         status: Optional[str] = None, search: Optional[str] = None, 
-        date_from: Optional[str] = None, date_to: Optional[str] = None
+        date_from: Optional[str] = None, date_to: Optional[str] = None,
+        sort_by: Optional[str] = "date", sort_order: Optional[str] = "desc"
     ):
         """
         Retrieves processed inbox transactions for history.
@@ -256,7 +282,19 @@ class TransactionRepository:
                 pass
 
         total = query.count()
-        items = query.order_by(desc(PendingTransaction.processed_at)).offset(skip).limit(limit).all()
+        
+        if sort_by == "amount":
+            if sort_order == "asc":
+                query = query.order_by(PendingTransaction.amount.asc(), desc(PendingTransaction.processed_at))
+            else:
+                query = query.order_by(PendingTransaction.amount.desc(), desc(PendingTransaction.processed_at))
+        else:
+            if sort_order == "asc":
+                query = query.order_by(PendingTransaction.processed_at.asc())
+            else:
+                query = query.order_by(desc(PendingTransaction.processed_at))
+                
+        items = query.offset(skip).limit(limit).all()
 
         results = []
         for pending, fname, lname in items:

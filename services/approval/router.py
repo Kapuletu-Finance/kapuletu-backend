@@ -25,11 +25,13 @@ async def get_pending(
     search: Optional[str] = Query(None),
     filter: Optional[str] = Query(None),
     status: str = Query("pending"),
+    sort_by: Optional[str] = Query("date"),
+    sort_order: Optional[str] = Query("desc"),
     db: Session = Depends(get_db), 
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     repo = TransactionRepository(db)
-    items, total = repo.fetch_pending_transactions_by_owner(current_user.get("sub"), skip, limit, search, filter, status)
+    items, total = repo.fetch_pending_transactions_by_owner(current_user.get("sub"), skip, limit, search, filter, status, sort_by, sort_order)
     return {
         "items": items,
         "total_items": total,
@@ -61,6 +63,8 @@ async def get_history(
     search: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    sort_by: Optional[str] = Query("date"),
+    sort_order: Optional[str] = Query("desc"),
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
@@ -69,7 +73,8 @@ async def get_history(
         owner_id=current_user.get("sub"), 
         skip=skip, limit=limit, 
         status=status, search=search, 
-        date_from=date_from, date_to=date_to
+        date_from=date_from, date_to=date_to,
+        sort_by=sort_by, sort_order=sort_order
     )
     
     formatted_items = []

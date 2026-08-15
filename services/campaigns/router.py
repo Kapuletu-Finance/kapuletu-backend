@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.responses import StreamingResponse
@@ -327,6 +327,8 @@ async def get_campaign_transactions(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     search: str = Query(None),
+    sort_by: Optional[str] = Query("date"),
+    sort_order: Optional[str] = Query("desc"),
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
@@ -340,7 +342,19 @@ async def get_campaign_transactions(
         query = query.filter(Transaction.sender_name.ilike(f"%{search}%"))
         
     total_items = query.count()
-    transactions = query.order_by(Transaction.created_at.desc()).offset(skip).limit(limit).all()
+    
+    if sort_by == "amount":
+        if sort_order == "asc":
+            query = query.order_by(Transaction.amount.asc(), Transaction.created_at.desc())
+        else:
+            query = query.order_by(Transaction.amount.desc(), Transaction.created_at.desc())
+    else:
+        if sort_order == "asc":
+            query = query.order_by(Transaction.created_at.asc())
+        else:
+            query = query.order_by(Transaction.created_at.desc())
+            
+    transactions = query.offset(skip).limit(limit).all()
     
     return {
         "items": transactions,
@@ -356,6 +370,8 @@ async def get_campaign_inbox(
     campaign_id: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
+    sort_by: Optional[str] = Query("date"),
+    sort_order: Optional[str] = Query("desc"),
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
@@ -366,7 +382,7 @@ async def get_campaign_inbox(
     
     from repositories.transaction_repo import TransactionRepository
     repo = TransactionRepository(db)
-    items, total = repo.fetch_pending_transactions_by_campaign(campaign.campaign_id, current_user.get('sub'), skip, limit)
+    items, total = repo.fetch_pending_transactions_by_campaign(campaign.campaign_id, current_user.get('sub'), skip, limit, sort_by, sort_order)
     
     import math
     return {
