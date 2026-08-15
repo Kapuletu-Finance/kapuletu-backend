@@ -7,7 +7,7 @@ from models.campaign import Campaign
 from models.transaction import Transaction
 from common.utils import generate_slug, parse_uuid
 
-def create_campaign(db: Session, group_id: str, title: str, description: str = None, target_amount: float = 0.0, payment_instructions: str = None):
+def create_campaign(db: Session, group_id: str, title: str, description: str = None, target_amount: float = 0.0, payment_instructions: str = None, short_code: str = None):
     """Creates a new campaign for a specific group with full reporting metadata."""
     base_slug = generate_slug(title)
     slug = base_slug
@@ -34,6 +34,7 @@ def create_campaign(db: Session, group_id: str, title: str, description: str = N
         target_amount=target_amount,
         payment_instructions=payment_instructions,
         slug=slug,
+        short_code=short_code,
         settings_override=default_settings
     )
     db.add(new_campaign)

@@ -1,3 +1,4 @@
+from models import Campaign
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
@@ -7,6 +8,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func, cast, String
 import random
 import io
+import secrets
+import logging
 
 from common.database import get_db
 from common.config import get_config
@@ -48,7 +51,8 @@ async def create_campaign(
         title=payload.title,
         description=payload.description,
         target_amount=payload.target_amount,
-        payment_instructions=payload.payment_instructions
+        payment_instructions=payload.payment_instructions,
+        short_code=secrets.token_hex(3)
     )
     
     AuditService(db).log_action(
@@ -464,7 +468,12 @@ async def get_campaign_report_preview(
         
     remaining = max(0, float(campaign.target_amount) - float(raised))
     lines.append("*Progress Update:*")
-    lines.append(f"So far, we have raised Ksh {raised:,.2f} against our goal of Ksh {float(campaign.target_amount):,.2f}. We have an amount remaining of Ksh {remaining:,.2f} to meet our goal. Every contribution counts.")
+    
+    if float(raised) >= float(campaign.target_amount):
+        lines.append(f"So far, we have raised Ksh {raised:,.2f}, successfully surpassing our initial goal of Ksh {float(campaign.target_amount):,.2f}! Thank you to everyone who made this possible. The campaign remains open, and any further contributions are still greatly appreciated.")
+    else:
+        lines.append(f"So far, we have raised Ksh {raised:,.2f} against our goal of Ksh {float(campaign.target_amount):,.2f}. We have an amount remaining of Ksh {remaining:,.2f} to meet our goal. Every contribution counts.")
+    
     lines.append("")
     
     if pm_map["mpesa"] > 0:
@@ -523,8 +532,9 @@ async def get_campaign_report_preview(
         lines.append(footer)
         lines.append("")
         
-    frontend_url = get_config().FRONTEND_URL.rstrip('/')
-    public_url = f"{frontend_url}/report/w/{campaign.group.owner_id}/g/{campaign.group.slug or campaign.group_id}/c/{campaign.slug or campaign.campaign_id}"
+    frontend_url = "https://dev-app.kapuletu.co.ke"
+    short_code = campaign.short_code or campaign.campaign_id
+    public_url = f"{frontend_url}/r/{short_code}"
     
     lines.append("To view a more comprehensive report, click the link below:")
     lines.append(f"{public_url}")
@@ -631,23 +641,15 @@ async def export_campaign_pdf(
         headers={"Content-Disposition": f"attachment; filename=campaign_{campaign.slug}_contributions.pdf"}
     )
 
-@router.post("/public/workspaces/{workspace_id}/groups/{group_id}/campaigns/{campaign_id}/verify", response_model=PublicWebReportOut, summary="Fetch Secure Public Web Report", description="Authenticates the PIN (if required) and returns a structured, professional JSON payload for rendering the public campaign web report.")
+@router.post("/public/campaigns/{short_code}/verify", response_model=PublicWebReportOut, summary="Fetch Secure Public Web Report", description="Authenticates the PIN (if required) and returns a structured, professional JSON payload for rendering the public campaign web report.")
 async def public_verify_campaign(
-    workspace_id: str,
-    group_id: str,
-    campaign_id: str,
+    short_code: str,
     req: PublicVerifyRequest,
     db: Session = Depends(get_db)
 ):
-    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
+    campaign = db.query(Campaign).filter(Campaign.short_code == short_code).first()
     if not campaign or not campaign.group:
         raise HTTPException(status_code=404, detail="Campaign not found.")
-        
-    if str(campaign.group_id) != group_id and campaign.group.slug != group_id:
-        raise HTTPException(status_code=404, detail="Campaign not found in this group.")
-        
-    if str(campaign.group.owner_id) != workspace_id:
-        raise HTTPException(status_code=404, detail="Campaign not found in this workspace.")
         
     settings = campaign.settings_override or {}
     if settings.get("require_pin", True):
@@ -686,7 +688,7 @@ async def public_verify_campaign(
     transactions = transactions_query.offset(offset).limit(limit).all()
     
     target_amount = float(campaign.target_amount)
-    progress_percentage = (float(raised) / target_amount * 100) if target_amount > 0 else 0.0
+    progress = (float(raised) / target_amount * 100) if target_amount > 0 else 0.0
     surplus_amount = max(0.0, float(raised) - target_amount)
     
     try:
@@ -700,15 +702,16 @@ async def public_verify_campaign(
     footer_message = settings.get("report_footer", None)
     watermark = "Generated via KapuLetu" if not settings.get("remove_watermark", False) else None
     
-    frontend_url = get_config().FRONTEND_URL.rstrip('/')
-    public_url = f"{frontend_url}/report/w/{campaign.group.owner_id}/g/{campaign.group.slug or campaign.group_id}/c/{campaign.slug or campaign.campaign_id}"
+    frontend_url = "https://dev-app.kapuletu.co.ke"
+    public_url = f"{frontend_url}/r/{campaign.short_code or campaign.campaign_id}"
     
     return {
+        "campaign_id": str(campaign.campaign_id),
         "campaign_title": campaign.title,
         "campaign_description": campaign.description,
         "raised_amount": float(raised),
         "target_amount": target_amount,
-        "progress_percentage": round(progress_percentage, 2),
+        "progress_percentage": round(progress, 2),
         "surplus_amount": surplus_amount,
         "total_mpesa": pm_map["mpesa"],
         "total_cash": pm_map["cash"],
@@ -721,6 +724,9 @@ async def public_verify_campaign(
         "blank_slots_count": blank_slots,
         "payment_instructions": campaign.payment_instructions,
         "remaining_message": remaining_message,
+        "raised": float(raised),
+        "remaining": remaining,
+        "payment_methods": pm_map,
         "footer_message": footer_message,
         "watermark": watermark,
         "public_url": public_url

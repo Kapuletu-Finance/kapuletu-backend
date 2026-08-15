@@ -47,6 +47,7 @@ class CampaignOut(BaseModel):
     is_active: Optional[bool] = Field(True, json_schema_extra={"example": True})
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
     slug: Optional[str] = Field(None, json_schema_extra={"example": "medical-fund-jane-doe"})
+    short_code: Optional[str] = Field(None, json_schema_extra={"example": "a1b2c3"})
     is_favorite: Optional[bool] = Field(False, json_schema_extra={"example": True})
     end_date: Optional[datetime] = Field(None)
     

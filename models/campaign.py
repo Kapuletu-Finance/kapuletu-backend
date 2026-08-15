@@ -34,6 +34,7 @@ class Campaign(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     
     slug = Column(String, index=True, nullable=True)
+    short_code = Column(String(8), unique=True, index=True, nullable=True)
     is_favorite = Column(Boolean, default=False)
     end_date = Column(DateTime, nullable=True)
     
