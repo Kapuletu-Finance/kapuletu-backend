@@ -207,8 +207,9 @@ class ApprovalService:
     def split_transaction(self, pending_txn_id, treasurer_id, group_id, allocations, campaign_id=None):
         """
         Splits a single pending transaction into multiple member allocations.
+        Creates individual Transaction records per contributor to ensure they are tracked 
+        properly in campaign/group statistics.
         """
-        from models.review_allocation import ReviewAllocation
         import uuid
 
         # 1. Fetch record
@@ -227,37 +228,31 @@ class ApprovalService:
         if abs(total_split - float(pending.amount)) > 0.01:
             raise Exception(f"Math Error: Total split ({total_split}) does not match payment amount ({pending.amount})")
 
-        # 3. Create Parent Transaction
-        new_txn = Transaction(
-            owner_id=parse_uuid(treasurer_id),
-            group_id=parse_uuid(group_id),
-            campaign_id=parse_uuid(campaign_id) if campaign_id else None,
-            transaction_code=pending.transaction_code,
-            amount=pending.amount,
-            sender_phone=pending.sender_phone,
-            sender_name=f"{pending.sender_name} (Split)" if pending.sender_name else "Unknown (Split)",
-            payment_method=pending.payment_method,
-            source_evidence=pending.source_evidence,
-            status="approved"
-        )
-        self.db.add(new_txn)
-        self.db.flush()
-
-        # 4. Create Individual Allocations
-        for alloc in allocations:
-            item = ReviewAllocation(
-                allocation_id=uuid.uuid4(),
-                transaction_id=new_txn.transaction_id,
-                pending_id=pending.pending_id,
-                member_name=alloc["name"],
-                allocated_amount=alloc["amount"]
+        # 3. Create Individual Transactions
+        created_txns = []
+        for index, alloc in enumerate(allocations):
+            # Bypass unique constraint on (owner_id, transaction_code) by suffixing the transaction code.
+            base_code = pending.transaction_code or f"SYS-{str(uuid.uuid4())[:8]}"
+            suffixed_code = f"{base_code}-{index}"
+            
+            new_txn = Transaction(
+                owner_id=parse_uuid(treasurer_id),
+                group_id=parse_uuid(group_id),
+                campaign_id=parse_uuid(campaign_id) if campaign_id else None,
+                transaction_code=suffixed_code,
+                amount=alloc["amount"],
+                sender_phone=pending.sender_phone,
+                sender_name=alloc["name"],
+                payment_method=pending.payment_method,
+                source_evidence=pending.source_evidence,
+                status="approved"
             )
-            self.db.add(item)
+            self.db.add(new_txn)
+            self.db.flush()
+            self._write_to_ledger(new_txn)
+            created_txns.append(new_txn)
 
-        # 5. Ledger Commitment
-        self._write_to_ledger(new_txn)
-
-        # 6. Mark Processed
+        # 4. Mark Processed
         from datetime import datetime
         pending.is_processed = True
         pending.workflow_status = "split_approved"
@@ -280,15 +275,15 @@ class ApprovalService:
             actor_id=treasurer_id,
             action="TXN_SPLIT_APPROVED",
             entity_type="TRANSACTION",
-            entity_id=str(new_txn.transaction_id),
+            entity_id=str(created_txns[0].transaction_id) if created_txns else str(pending_txn_id),
             details={
                 "splits": len(allocations),
-                "message": f"Ksh. {float(new_txn.amount)} split across {len(allocations)} members for {target_name}",
+                "message": f"Ksh. {float(pending.amount)} split across {len(allocations)} members for {target_name}",
                 "campaign_id": str(campaign_id) if campaign_id else None
             }
         )
 
-        return new_txn
+        return created_txns[0] if created_txns else None
 
 
 
