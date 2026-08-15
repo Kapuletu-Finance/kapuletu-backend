@@ -335,9 +335,9 @@ class ApprovalService:
         logger.info(f"Transaction {pending_txn_id} rejected by treasurer {treasurer_id}.")
         return {"status": "rejected"}
 
-    def undo_rejection(self, pending_txn_id, treasurer_id):
+    def undo_action(self, pending_txn_id, treasurer_id):
         """
-        Reverts a rejected transaction back to the pending state.
+        Reverts an approved or rejected transaction back to the pending state.
         
         Args:
             pending_txn_id (UUID): The record to undo.
@@ -354,8 +354,27 @@ class ApprovalService:
         if not pending:
             raise Exception("Pending transaction not found or access denied")
             
-        if pending.workflow_status != "rejected" or not pending.is_processed:
-            raise Exception("Only rejected transactions can be undone.")
+        if not pending.is_processed:
+            raise Exception("Transaction is not processed yet.")
+            
+        # Undo approval: Delete the resulting Transaction (which deletes ReviewAllocations via DB cascade)
+        if pending.workflow_status in ["approved", "split_approved"]:
+            from models.review_allocation import ReviewAllocation
+            txn = self.db.query(Transaction).filter(
+                Transaction.transaction_code == pending.transaction_code,
+                Transaction.owner_id == parse_uuid(treasurer_id)
+            ).first()
+            if txn:
+                self.db.query(ReviewAllocation).filter(ReviewAllocation.transaction_id == txn.transaction_id).delete()
+                self.db.delete(txn)
+            action_log = "TXN_UNDO_APPROVE"
+            msg_log = "Transaction approval was undone"
+            
+        elif pending.workflow_status == "rejected":
+            action_log = "TXN_UNDO_REJECT"
+            msg_log = "Transaction rejection was undone"
+        else:
+            raise Exception(f"Cannot undo transaction in state: {pending.workflow_status}")
             
         pending.is_processed = False
         pending.workflow_status = "pending"
@@ -367,15 +386,15 @@ class ApprovalService:
         
         AuditService(self.db).log_action(
             actor_id=treasurer_id,
-            action="TXN_UNDO_REJECT",
+            action=action_log,
             entity_type="PENDING_TRANSACTION",
             entity_id=str(pending_txn_id),
             details={
-                "message": "Transaction rejection was undone"
+                "message": msg_log
             }
         )
         
-        logger.info(f"Rejection of transaction {pending_txn_id} was undone by treasurer {treasurer_id}.")
+        logger.info(f"{msg_log} for {pending_txn_id} by treasurer {treasurer_id}.")
         return pending
 
     def bulk_approve(self, pending_ids: list, treasurer_id, group_id, campaign_id=None):

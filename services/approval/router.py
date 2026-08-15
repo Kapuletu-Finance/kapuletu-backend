@@ -152,15 +152,15 @@ async def reject(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.post("/{pending_id}/undo", response_model=PendingTransactionOut, summary="Undo Rejection")
-async def undo_rejection(
+@router.post("/{pending_id}/undo", response_model=PendingTransactionOut, summary="Undo Action")
+async def undo_action(
     pending_id: str,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     service = ApprovalService(db)
     try:
-        pending = service.undo_rejection(pending_id, current_user.get("sub"))
+        pending = service.undo_action(pending_id, current_user.get("sub"))
         return pending
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
