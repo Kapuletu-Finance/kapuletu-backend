@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'add_short_code'
-down_revision: Union[str, None] = None
+down_revision: Union[str, Sequence[str], None] = 'hist_history123'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
