@@ -87,6 +87,7 @@ async def get_workspace_overview(
     for g in groups[:5]: # Return top 5 for overview
         active_groups.append(GroupOverview(
             group_id=str(g.group_id),
+            slug=g.slug,
             name=g.group_name,
             currency=g.currency or "KES",
             total_campaigns=campaign_counts.get(g.group_id, 0)

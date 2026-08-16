@@ -125,7 +125,7 @@ class TransactionRepository:
         from models.group import Group
         from models.campaign import Campaign
         
-        base_query = self.db.query(PendingTransaction, Group.group_name, Campaign.title).outerjoin(
+        base_query = self.db.query(PendingTransaction, Group.group_name, Campaign.title, Group.slug.label("group_slug"), Campaign.slug.label("campaign_slug")).outerjoin(
             Group, PendingTransaction.group_id == Group.group_id
         ).outerjoin(
             Campaign, PendingTransaction.campaign_id == Campaign.campaign_id
@@ -179,9 +179,11 @@ class TransactionRepository:
         results = base_query.offset(skip).limit(limit).all()
         
         items = []
-        for pending, group_name, campaign_title in results:
+        for pending, group_name, campaign_title, group_slug, campaign_slug in results:
             pending.assigned_group_name = group_name
+            pending.assigned_group_slug = group_slug
             pending.assigned_campaign_name = campaign_title
+            pending.assigned_campaign_slug = campaign_slug
             items.append(pending)
             
         return items, total

@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 class GroupOverview(BaseModel):
     group_id: str
+    slug: Optional[str] = None
     name: str
     currency: str
     total_campaigns: int

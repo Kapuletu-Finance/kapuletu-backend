@@ -273,7 +273,9 @@ def process_ingestion(body_str: str, config):
                     details={
                         "message": f"New campaign \"{title}\" created via WhatsApp",
                         "campaign_id": str(new_camp.campaign_id),
-                        "group_id": str(group.group_id)
+                        "group_id": str(group.group_id),
+                        "group_slug": group.slug,
+                        "campaign_slug": new_camp.slug
                     }
                 )
                 send_meta_reply(sender_phone, f"Success! Campaign '{title}' created under group '{group.group_name}'.", config)
@@ -455,7 +457,9 @@ def process_ingestion(body_str: str, config):
                                 details={
                                     "message": f"New campaign \"{title}\" created via WhatsApp",
                                     "campaign_id": str(new_camp.campaign_id),
-                                    "group_id": str(active_groups[0].group_id)
+                                    "group_id": str(active_groups[0].group_id),
+                                    "group_slug": active_groups[0].slug,
+                                    "campaign_slug": new_camp.slug
                                 }
                             )
                             send_meta_reply(sender_phone, f"Success! Campaign '{title}' created under your group '{active_groups[0].group_name}'.", config)

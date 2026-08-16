@@ -150,14 +150,21 @@ class ApprovalService:
         self.db.commit()
         
         target_name = "Unknown"
+        campaign_slug = None
+        group_slug = None
         if campaign_id:
             camp = self.db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
             if camp:
                 target_name = camp.title
+                campaign_slug = camp.slug
+                grp = self.db.query(Group).filter(Group.group_id == camp.group_id).first()
+                if grp:
+                    group_slug = grp.slug
         else:
             grp = self.db.query(Group).filter(Group.group_id == parse_uuid(group_id)).first()
             if grp:
                 target_name = grp.group_name
+                group_slug = grp.slug
 
         AuditService(self.db).log_action(
             actor_id=treasurer_id,
@@ -167,7 +174,9 @@ class ApprovalService:
             details={
                 "amount": float(new_txn.amount),
                 "message": f"Ksh. {float(new_txn.amount)} for {target_name} approved",
-                "campaign_id": str(campaign_id) if campaign_id else None
+                "campaign_id": str(campaign_id) if campaign_id else None,
+                "group_slug": group_slug,
+                "campaign_slug": campaign_slug
             }
         )
         
@@ -270,14 +279,21 @@ class ApprovalService:
         self.db.commit()
 
         target_name = "Unknown"
+        campaign_slug = None
+        group_slug = None
         if campaign_id:
             camp = self.db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
             if camp:
                 target_name = camp.title
+                campaign_slug = camp.slug
+                grp = self.db.query(Group).filter(Group.group_id == camp.group_id).first()
+                if grp:
+                    group_slug = grp.slug
         else:
             grp = self.db.query(Group).filter(Group.group_id == parse_uuid(group_id)).first()
             if grp:
                 target_name = grp.group_name
+                group_slug = grp.slug
 
         AuditService(self.db).log_action(
             actor_id=treasurer_id,
@@ -287,7 +303,9 @@ class ApprovalService:
             details={
                 "splits": len(allocations),
                 "message": f"Ksh. {float(pending.amount)} split across {len(allocations)} members for {target_name}",
-                "campaign_id": str(campaign_id) if campaign_id else None
+                "campaign_id": str(campaign_id) if campaign_id else None,
+                "group_slug": group_slug,
+                "campaign_slug": campaign_slug
             }
         )
 
