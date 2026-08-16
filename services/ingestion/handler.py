@@ -171,6 +171,22 @@ def process_ingestion(body_str: str, config):
             try:
                 report_text = generate_campaign_whatsapp_report(db, campaign_id)
                 send_meta_reply(sender_phone, report_text, config)
+                
+                from repositories.transaction_repo import TransactionRepository
+                repo = TransactionRepository(db)
+                owner = repo.resolve_owner_by_phone(sender_phone)
+                if owner:
+                    from services.audit.service import AuditService
+                    AuditService(db).log_action(
+                        actor_id=str(owner.user_id),
+                        action="REPORT_GENERATED",
+                        entity_type="CAMPAIGN",
+                        entity_id=campaign_id,
+                        details={
+                            "message": "Interactive WhatsApp report generated",
+                            "campaign_id": campaign_id
+                        }
+                    )
             except Exception as e:
                 logger.error(f"Failed to generate report for campaign {campaign_id}: {e}")
                 send_meta_reply(sender_phone, "Error generating report. Please try again.", config)
@@ -241,6 +257,19 @@ def process_ingestion(body_str: str, config):
                 )
                 db.add(new_camp)
                 db.commit()
+                
+                from services.audit.service import AuditService
+                AuditService(db).log_action(
+                    actor_id=str(group.owner_id),
+                    action="CAMPAIGN_CREATED",
+                    entity_type="CAMPAIGN",
+                    entity_id=str(new_camp.campaign_id),
+                    details={
+                        "message": f"Campaign '{title}' created via WhatsApp",
+                        "campaign_id": str(new_camp.campaign_id),
+                        "group_id": str(group.group_id)
+                    }
+                )
                 send_meta_reply(sender_phone, f"Success! Campaign '{title}' created under group '{group.group_name}'.", config)
             return {"statusCode": 200, "body": "OK"}
 
@@ -272,6 +301,18 @@ def process_ingestion(body_str: str, config):
                     # Only one campaign, send it directly
                     report_text = generate_campaign_whatsapp_report(db, str(active_campaigns[0].campaign_id))
                     send_meta_reply(sender_phone, report_text, config)
+                    
+                    from services.audit.service import AuditService
+                    AuditService(db).log_action(
+                        actor_id=str(owner.user_id),
+                        action="REPORT_GENERATED",
+                        entity_type="CAMPAIGN",
+                        entity_id=str(active_campaigns[0].campaign_id),
+                        details={
+                            "message": "WhatsApp report generated",
+                            "campaign_id": str(active_campaigns[0].campaign_id)
+                        }
+                    )
                 else:
                     # Multiple campaigns, construct an interactive list
                     rows = []
@@ -343,6 +384,18 @@ def process_ingestion(body_str: str, config):
                         )
                         db.add(new_group)
                         db.commit()
+                        
+                        from services.audit.service import AuditService
+                        AuditService(db).log_action(
+                            actor_id=str(owner.user_id),
+                            action="GROUP_CREATED",
+                            entity_type="GROUP",
+                            entity_id=str(new_group.group_id),
+                            details={
+                                "message": f"Group '{group_name}' created via WhatsApp",
+                                "group_id": str(new_group.group_id)
+                            }
+                        )
                         send_meta_reply(sender_phone, f"Success! I've created the group '{group_name}'.", config)
                         return {"statusCode": 200, "body": "OK"}
                         
@@ -386,6 +439,19 @@ def process_ingestion(body_str: str, config):
                             )
                             db.add(new_camp)
                             db.commit()
+                            
+                            from services.audit.service import AuditService
+                            AuditService(db).log_action(
+                                actor_id=str(owner.user_id),
+                                action="CAMPAIGN_CREATED",
+                                entity_type="CAMPAIGN",
+                                entity_id=str(new_camp.campaign_id),
+                                details={
+                                    "message": f"Campaign '{title}' created via WhatsApp",
+                                    "campaign_id": str(new_camp.campaign_id),
+                                    "group_id": str(active_groups[0].group_id)
+                                }
+                            )
                             send_meta_reply(sender_phone, f"Success! Campaign '{title}' created under your group '{active_groups[0].group_name}'.", config)
                         else:
                             encoded_title = base64.b64encode(title.encode('utf-8')).decode('utf-8')
