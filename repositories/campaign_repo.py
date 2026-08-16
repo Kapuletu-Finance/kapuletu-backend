@@ -10,6 +10,9 @@ from common.utils import generate_slug, parse_uuid
 def create_campaign(db: Session, group_id: str, title: str, description: str = None, target_amount: float = 0.0, payment_instructions: str = None, short_code: str = None):
     """Creates a new campaign for a specific group with full reporting metadata."""
     base_slug = generate_slug(title)
+    if not base_slug:
+        base_slug = f"campaign-{random.randint(1000, 9999)}"
+        
     slug = base_slug
     # Ensure slug uniqueness for this group
     while db.query(Campaign).filter(Campaign.group_id == parse_uuid(group_id), Campaign.slug == slug).first():
