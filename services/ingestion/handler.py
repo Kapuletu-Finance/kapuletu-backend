@@ -177,13 +177,19 @@ def process_ingestion(body_str: str, config):
                 owner = repo.resolve_owner_by_phone(sender_phone)
                 if owner:
                     from services.audit.service import AuditService
+                    # Ensure we have the campaign title
+                    campaign_title = "Campaign"
+                    campaign_record = db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
+                    if campaign_record:
+                        campaign_title = campaign_record.title
+                        
                     AuditService(db).log_action(
                         actor_id=str(owner.user_id),
                         action="REPORT_GENERATED",
-                        entity_type="CAMPAIGN",
+                        entity_type="campaign",
                         entity_id=campaign_id,
                         details={
-                            "message": "Interactive WhatsApp report generated",
+                            "message": f"WhatsApp report generated for \"{campaign_title}\"",
                             "campaign_id": campaign_id
                         }
                     )
@@ -262,10 +268,10 @@ def process_ingestion(body_str: str, config):
                 AuditService(db).log_action(
                     actor_id=str(group.owner_id),
                     action="CAMPAIGN_CREATED",
-                    entity_type="CAMPAIGN",
+                    entity_type="campaign",
                     entity_id=str(new_camp.campaign_id),
                     details={
-                        "message": f"Campaign '{title}' created via WhatsApp",
+                        "message": f"New campaign \"{title}\" created via WhatsApp",
                         "campaign_id": str(new_camp.campaign_id),
                         "group_id": str(group.group_id)
                     }
@@ -306,10 +312,10 @@ def process_ingestion(body_str: str, config):
                     AuditService(db).log_action(
                         actor_id=str(owner.user_id),
                         action="REPORT_GENERATED",
-                        entity_type="CAMPAIGN",
+                        entity_type="campaign",
                         entity_id=str(active_campaigns[0].campaign_id),
                         details={
-                            "message": "WhatsApp report generated",
+                            "message": f"WhatsApp report generated for \"{active_campaigns[0].title}\"",
                             "campaign_id": str(active_campaigns[0].campaign_id)
                         }
                     )
@@ -389,10 +395,10 @@ def process_ingestion(body_str: str, config):
                         AuditService(db).log_action(
                             actor_id=str(owner.user_id),
                             action="GROUP_CREATED",
-                            entity_type="GROUP",
+                            entity_type="group",
                             entity_id=str(new_group.group_id),
                             details={
-                                "message": f"Group '{group_name}' created via WhatsApp",
+                                "message": f"New group \"{group_name}\" created via WhatsApp",
                                 "group_id": str(new_group.group_id)
                             }
                         )
@@ -444,10 +450,10 @@ def process_ingestion(body_str: str, config):
                             AuditService(db).log_action(
                                 actor_id=str(owner.user_id),
                                 action="CAMPAIGN_CREATED",
-                                entity_type="CAMPAIGN",
+                                entity_type="campaign",
                                 entity_id=str(new_camp.campaign_id),
                                 details={
-                                    "message": f"Campaign '{title}' created via WhatsApp",
+                                    "message": f"New campaign \"{title}\" created via WhatsApp",
                                     "campaign_id": str(new_camp.campaign_id),
                                     "group_id": str(active_groups[0].group_id)
                                 }
