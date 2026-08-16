@@ -76,6 +76,7 @@ class ModelBasedParser:
             "provider": None,
             "transaction_date": None,
             "account": None,
+            "phone": None,
             "confidence_score": 0.0
         }
 
@@ -96,12 +97,18 @@ class ModelBasedParser:
                 data["transaction_date"] = ent.text
             elif ent.label_ == "ACCOUNT":
                 data["account"] = ent.text
+            elif ent.label_ == "PHONE":
+                data["phone"] = self._normalize_phone(ent.text)
 
         # 2. Heuristic Safeguard (Regex Fallback)
         # If the AI model missed critical fields (common with unstructured SMS),
         # we run deterministic regex patterns to 'catch' the data.
         if not data["amount"] or not data["sender_name"] or not data["transaction_code"]:
             data = self._safeguard_heuristics(message_text, data)
+            
+        # Unconditionally check for phone number if not found by AI
+        if not data["phone"]:
+            data = self._extract_phone_heuristic(message_text, data)
 
         # 3. Confidence Calculation
         # In production, this would be based on the model's 'prob' output.
@@ -143,6 +150,29 @@ class ModelBasedParser:
             return float(clean_str)
         except (ValueError, TypeError):
             return 0.0
+
+    def _extract_phone_heuristic(self, text: str, existing_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extracts phone numbers using Kenyan mobile number formats (e.g. 07xx, 2547xx).
+        """
+        # Look for 9 to 12 digit numbers matching Safaricom, Airtel, Telkom patterns
+        phone_match = re.search(r"\b(?:07|01|2547|2541|\+2547|\+2541)\d{8}\b", text)
+        if phone_match:
+            existing_data["phone"] = self._normalize_phone(phone_match.group(0))
+        return existing_data
+
+    def _normalize_phone(self, phone_str: str) -> str:
+        """
+        Normalizes any valid Kenyan phone format to international E.164 (+254...)
+        """
+        clean_phone = re.sub(r"[^\d+]", "", phone_str)
+        if clean_phone.startswith("07") or clean_phone.startswith("01"):
+            return "+254" + clean_phone[1:]
+        elif clean_phone.startswith("254"):
+            return "+" + clean_phone
+        elif clean_phone.startswith("+254"):
+            return clean_phone
+        return phone_str
 
 _parser_instance = None
 
