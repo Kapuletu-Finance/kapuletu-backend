@@ -34,7 +34,8 @@ class SettingsService:
             return Plan(name="Free", allowed_features={
                 "automation_enabled": True, 
                 "allow_whatsapp_approvals": True,
-                "allow_whatsapp_creation": True
+                "allow_whatsapp_creation": True,
+                "ai_auto_approve": True
             })
         return plan
 
