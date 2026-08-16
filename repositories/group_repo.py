@@ -11,6 +11,9 @@ def create_group(db: Session, owner_id: str, name: str, description: str = None,
     """Creates a new community group."""
     owner_id_uuid = owner_id if isinstance(owner_id, uuid.UUID) else uuid.UUID(owner_id)
     base_slug = generate_slug(name)
+    if not base_slug:
+        base_slug = f"group-{random.randint(1000, 9999)}"
+        
     slug = base_slug
     # Ensure slug uniqueness for this owner
     while db.query(Group).filter(Group.owner_id == parse_uuid(owner_id_uuid), Group.slug == slug).first():
