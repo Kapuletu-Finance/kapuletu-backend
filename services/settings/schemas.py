@@ -10,6 +10,7 @@ class SecuritySettings(BaseModel):
 
 class AutomationSettings(BaseModel):
     auto_approve_enabled: bool = Field(False)
+    allow_whatsapp_approvals: bool = Field(False)
     confidence_threshold: float = Field(0.90)
     default_group_id: Optional[str] = Field(None)
     fallback_action: str = Field("REVIEW_INBOX", description="REVIEW_INBOX, REJECT")
@@ -27,6 +28,7 @@ class NotificationSettings(BaseModel):
     alert_channels: List[str] = Field(default_factory=lambda: ["WHATSAPP"])
 
 class ReportingSettings(BaseModel):
+    allow_whatsapp_reports: bool = Field(False)
     auto_report_frequency: str = Field("none", description="daily, weekly, monthly, none")
     global_header_template: Optional[str] = Field(None)
     global_footer_template: Optional[str] = Field(None)

@@ -165,7 +165,7 @@ def process_ingestion(body_str: str, config):
         from models.group import Group
         from services.reporting.daily_summary import generate_campaign_whatsapp_report
         
-        # 3.1 Check if it's an interactive menu selection for a report
+        # 3.1 Check if it's an interactive menu selection for a report or approval
         if interactive_id and interactive_id.startswith("REPORT_CAMPAIGN_"):
             campaign_id = interactive_id.replace("REPORT_CAMPAIGN_", "")
             try:
@@ -176,6 +176,41 @@ def process_ingestion(body_str: str, config):
                 send_meta_reply(sender_phone, "Error generating report. Please try again.", config)
             return {"statusCode": 200, "body": "OK"}
             
+        if interactive_id and interactive_id.startswith("APPROVE_"):
+            # Format: APPROVE_{pending_id}_{campaign_id}
+            parts = interactive_id.split("_")
+            if len(parts) >= 3:
+                pending_id = parts[1]
+                campaign_id = parts[2]
+                
+                from services.approval.service import ApprovalService
+                from models.campaign import Campaign
+                from models.pending_transaction import PendingTransaction
+                
+                campaign = db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
+                if not campaign:
+                    send_meta_reply(sender_phone, "Error: Campaign not found.", config)
+                    return {"statusCode": 200, "body": "OK"}
+                    
+                pending = db.query(PendingTransaction).filter(PendingTransaction.pending_id == parse_uuid(pending_id)).first()
+                if not pending:
+                    send_meta_reply(sender_phone, "Error: Transaction not found.", config)
+                    return {"statusCode": 200, "body": "OK"}
+
+                approval_service = ApprovalService(db)
+                try:
+                    approval_service.approve_transaction(
+                        pending_txn_id=pending_id,
+                        treasurer_id=str(campaign.group.owner_id),
+                        group_id=str(campaign.group_id),
+                        campaign_id=campaign_id
+                    )
+                    send_meta_reply(sender_phone, "Success! The transaction has been approved and recorded in the ledger.", config)
+                except Exception as e:
+                    logger.error(f"Failed to approve transaction {pending_id}: {e}")
+                    send_meta_reply(sender_phone, f"Error approving transaction: {e}", config)
+            return {"statusCode": 200, "body": "OK"}
+            
         # 3.2 Check if the user is explicitly requesting a report
         if msg_type == "text" and message_body.strip().upper() == "REPORT":
             repo = TransactionRepository(db)
@@ -184,6 +219,14 @@ def process_ingestion(body_str: str, config):
             if not owner:
                 send_meta_reply(sender_phone, "Unauthorized: Your phone number is not registered.", config)
             else:
+                from services.settings.settings_service import SettingsService
+                settings_service = SettingsService(db)
+                user_settings = settings_service.get_global_settings(str(owner.user_id))
+                
+                if not user_settings.reporting.allow_whatsapp_reports:
+                    send_meta_reply(sender_phone, "WhatsApp reporting is currently disabled. Please enable it in your KapuLetu portal settings.", config)
+                    return {"statusCode": 200, "body": "OK"}
+                    
                 # Query all active campaigns for the user
                 active_campaigns = db.query(Campaign).join(Group).filter(
                     Group.owner_id == parse_uuid(owner.user_id),
@@ -221,19 +264,59 @@ def process_ingestion(body_str: str, config):
         ingestion_service = IngestionService(db)
         result = ingestion_service.process_webhook(normalized_payload)
         
-        # Determine reply text
+        # Determine reply text and interactive list if configured
         if result["status"] == "ignored":
             reply_text = "You have already submitted this transaction. It is currently pending review."
+            send_meta_reply(sender_phone, reply_text, config)
         elif result["status"] == "error":
             reply_text = f"Unauthorized: Your phone number is not registered as a treasurer for any KapuLetu group. Please contact an admin or visit {config.FRONTEND_URL.rstrip('/')}/signup to create an account."
+            send_meta_reply(sender_phone, reply_text, config)
         else:
             parsed = result.get("parsed_data", {})
             amt = f"KES {parsed.get('amount', 0.0):,.2f}" if parsed.get('amount') else "the transaction"
             name = parsed.get("sender_name") or parsed.get("provider") or "the sender"
-            reply_text = f"Success! We received {amt} from {name}. It is now awaiting for your approval in your kapuletu workspace"
+            pending_id = result.get("pending_id")
+            
+            # Check if interactive approvals are enabled
+            interactive_sent = False
+            if pending_id:
+                from repositories.transaction_repo import TransactionRepository
+                repo = TransactionRepository(db)
+                owner = repo.resolve_owner_by_phone(sender_phone)
+                
+                if owner:
+                    from services.settings.settings_service import SettingsService
+                    settings_service = SettingsService(db)
+                    user_settings = settings_service.get_global_settings(str(owner.user_id))
+                    
+                    if user_settings.automation.allow_whatsapp_approvals:
+                        from models.campaign import Campaign
+                        from models.group import Group
+                        active_campaigns = db.query(Campaign).join(Group).filter(
+                            Group.owner_id == parse_uuid(owner.user_id),
+                            Campaign.is_active == True
+                        ).order_by(Campaign.created_at.desc()).limit(10).all()
+                        
+                        if active_campaigns:
+                            rows = []
+                            for c in active_campaigns:
+                                rows.append({
+                                    "id": f"APPROVE_{pending_id}_{c.campaign_id}",
+                                    "title": c.title[:24]
+                                })
+                            
+                            sections = [{
+                                "title": "Approve to Campaign",
+                                "rows": rows
+                            }]
+                            
+                            body_text = f"Success! We received {amt} from {name}. Select a campaign below to instantly approve it, or ignore this to leave it pending."
+                            send_meta_interactive_list(sender_phone, body_text, "Approve Transaction", sections, config)
+                            interactive_sent = True
 
-        # 5. Send Reply via Meta Graph API
-        send_meta_reply(sender_phone, reply_text, config)
+            if not interactive_sent:
+                reply_text = f"Success! We received {amt} from {name}. It is now awaiting for your approval in your kapuletu workspace"
+                send_meta_reply(sender_phone, reply_text, config)
 
         # Acknowledge receipt immediately to Meta
         return {
