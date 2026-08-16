@@ -391,6 +391,9 @@ def process_ingestion(body_str: str, config):
         elif result["status"] == "error":
             reply_text = f"Unauthorized: Your phone number is not registered as a treasurer for any KapuLetu group. Please contact an admin or visit {config.FRONTEND_URL.rstrip('/')}/signup to create an account."
             send_meta_reply(sender_phone, reply_text, config)
+        elif result["status"] == "invalid":
+            reply_text = "I'm sorry, I couldn't understand that. Please forward a valid M-Pesa transaction, or use commands like 'Report', 'Create a group', or 'Create a campaign'."
+            send_meta_reply(sender_phone, reply_text, config)
         else:
             parsed = result.get("parsed_data", {})
             amt = f"KES {parsed.get('amount', 0.0):,.2f}" if parsed.get('amount') else "the transaction"

@@ -60,6 +60,16 @@ class IngestionService:
         # The parser extracts sender name, amount, and transaction codes from the message text.
         parsed_data = parse_message(message_body)
         
+        # 2.1 Minimum Viable Data (MVD) Validation
+        # Reject non-transactional or senseless messages ("Hey", "dwjnaljksc")
+        amount = parsed_data.get("amount") or 0.0
+        sender_name = parsed_data.get("sender_name")
+        txn_code_parsed = parsed_data.get("transaction_code")
+        
+        if amount <= 0 and not sender_name and not txn_code_parsed:
+            logger.warning(f"Validation Guardrail: Message failed MVD threshold. Not a valid transaction.")
+            return {"status": "invalid", "message": "unrecognized_format"}
+        
         # 3. Idempotency Check (Duplicate Prevention)
         # We ensure every transaction is processed EXACTLY once.
         # Logic: 
