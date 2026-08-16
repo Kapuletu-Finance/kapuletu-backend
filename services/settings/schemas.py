@@ -11,6 +11,7 @@ class SecuritySettings(BaseModel):
 class AutomationSettings(BaseModel):
     auto_approve_enabled: bool = Field(False)
     allow_whatsapp_approvals: bool = Field(False)
+    allow_whatsapp_creation: bool = Field(False)
     confidence_threshold: float = Field(0.90)
     default_group_id: Optional[str] = Field(None)
     fallback_action: str = Field("REVIEW_INBOX", description="REVIEW_INBOX, REJECT")

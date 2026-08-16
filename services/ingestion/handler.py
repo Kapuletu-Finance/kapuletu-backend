@@ -209,8 +209,41 @@ def process_ingestion(body_str: str, config):
                 except Exception as e:
                     logger.error(f"Failed to approve transaction {pending_id}: {e}")
                     send_meta_reply(sender_phone, f"Error approving transaction: {e}", config)
+                    send_meta_reply(sender_phone, f"Error approving transaction: {e}", config)
             return {"statusCode": 200, "body": "OK"}
             
+        if interactive_id and interactive_id.startswith("NEW_CAMP_"):
+            # Format: NEW_CAMP_{group_id}_{base64_encoded_title}
+            parts = interactive_id.split("_", 3)
+            if len(parts) >= 4:
+                group_id = parts[2]
+                import base64
+                try:
+                    title = base64.b64decode(parts[3]).decode('utf-8')
+                except Exception:
+                    title = "New Campaign"
+                
+                from models.group import Group
+                from models.campaign import Campaign
+                import uuid
+                
+                group = db.query(Group).filter(Group.group_id == parse_uuid(group_id)).first()
+                if not group:
+                    send_meta_reply(sender_phone, "Error: Group not found.", config)
+                    return {"statusCode": 200, "body": "OK"}
+                    
+                new_camp = Campaign(
+                    campaign_id=uuid.uuid4(),
+                    group_id=group.group_id,
+                    title=title,
+                    status="active",
+                    is_active=True
+                )
+                db.add(new_camp)
+                db.commit()
+                send_meta_reply(sender_phone, f"Success! Campaign '{title}' created under group '{group.group_name}'.", config)
+            return {"statusCode": 200, "body": "OK"}
+
         # 3.2 Check if the user is explicitly requesting a report
         if msg_type == "text" and message_body.strip().upper() == "REPORT":
             repo = TransactionRepository(db)
@@ -259,6 +292,93 @@ def process_ingestion(body_str: str, config):
                     send_meta_interactive_list(sender_phone, body_text, "Select Campaign", sections, config)
             
             return {"statusCode": 200, "body": "OK"}
+
+        # 3.3 Check conversational NLP intents (Kapuletu AI)
+        if msg_type == "text":
+            from services.ingestion.local_intent_parser import intent_parser
+            from repositories.transaction_repo import TransactionRepository
+            from services.settings.settings_service import SettingsService
+            
+            repo = TransactionRepository(db)
+            owner = repo.resolve_owner_by_phone(sender_phone)
+            
+            if owner:
+                settings_service = SettingsService(db)
+                user_settings = settings_service.get_global_settings(str(owner.user_id))
+                
+                parsed_intent = intent_parser.detect_intent(message_body)
+                
+                if parsed_intent["intent"] in ["create_group", "create_campaign"]:
+                    if not user_settings.automation.allow_whatsapp_creation:
+                        send_meta_reply(sender_phone, "WhatsApp creation commands are currently disabled. Please enable 'WhatsApp Creation' in your KapuLetu portal settings.", config)
+                        return {"statusCode": 200, "body": "OK"}
+                        
+                    if parsed_intent["intent"] == "create_group":
+                        group_name = parsed_intent["entities"].get("group_name")
+                        if not group_name:
+                            send_meta_reply(sender_phone, "I understood you want to create a group, but I couldn't catch the name. Please try again (e.g. 'Create a group called Welfare').", config)
+                            return {"statusCode": 200, "body": "OK"}
+                            
+                        from models.group import Group
+                        import uuid
+                        new_group = Group(
+                            group_id=uuid.uuid4(),
+                            owner_id=owner.user_id,
+                            group_name=group_name,
+                            status="active",
+                            is_active=True
+                        )
+                        db.add(new_group)
+                        db.commit()
+                        send_meta_reply(sender_phone, f"Success! I've created the group '{group_name}'.", config)
+                        return {"statusCode": 200, "body": "OK"}
+                        
+                    elif parsed_intent["intent"] == "create_campaign":
+                        title = parsed_intent["entities"].get("campaign_title")
+                        if not title:
+                            send_meta_reply(sender_phone, "I understood you want to create a campaign, but I couldn't catch the title. Please try again.", config)
+                            return {"statusCode": 200, "body": "OK"}
+                            
+                        from models.group import Group
+                        from models.campaign import Campaign
+                        import uuid
+                        import base64
+                        
+                        active_groups = db.query(Group).filter(
+                            Group.owner_id == owner.user_id,
+                            Group.is_active == True
+                        ).all()
+                        
+                        if len(active_groups) == 0:
+                            send_meta_reply(sender_phone, "You need to create a group first before creating a campaign.", config)
+                        elif len(active_groups) == 1:
+                            new_camp = Campaign(
+                                campaign_id=uuid.uuid4(),
+                                group_id=active_groups[0].group_id,
+                                title=title,
+                                status="active",
+                                is_active=True
+                            )
+                            db.add(new_camp)
+                            db.commit()
+                            send_meta_reply(sender_phone, f"Success! Campaign '{title}' created under your group '{active_groups[0].group_name}'.", config)
+                        else:
+                            encoded_title = base64.b64encode(title.encode('utf-8')).decode('utf-8')
+                            rows = []
+                            for g in active_groups[:10]:
+                                rows.append({
+                                    "id": f"NEW_CAMP_{g.group_id}_{encoded_title}",
+                                    "title": g.group_name[:24]
+                                })
+                            
+                            sections = [{
+                                "title": "Your Groups",
+                                "rows": rows
+                            }]
+                            
+                            send_meta_interactive_list(sender_phone, f"Which group should the campaign '{title}' belong to?", "Select Group", sections, config)
+                            
+                        return {"statusCode": 200, "body": "OK"}
 
         # 4. Invoke Ingestion Service Logic
         ingestion_service = IngestionService(db)
