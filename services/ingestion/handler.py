@@ -437,7 +437,27 @@ def process_ingestion(body_str: str, config):
                     settings_service = SettingsService(db)
                     user_settings = settings_service.get_global_settings(str(owner.user_id))
                     
-                    if user_settings.automation.allow_whatsapp_approvals:
+                    if user_settings.automation.auto_approve_enabled and user_settings.automation.auto_approve_campaign_id and user_settings.automation.auto_approve_group_id:
+                        from services.approval.service import ApprovalService
+                        from models.campaign import Campaign
+                        
+                        auto_campaign = db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(user_settings.automation.auto_approve_campaign_id)).first()
+                        if auto_campaign:
+                            try:
+                                approval_service = ApprovalService(db)
+                                approval_service.approve_transaction(
+                                    pending_txn_id=pending_id,
+                                    treasurer_id=str(owner.user_id),
+                                    group_id=user_settings.automation.auto_approve_group_id,
+                                    campaign_id=user_settings.automation.auto_approve_campaign_id
+                                )
+                                reply_text = f"Success! We received {amt} from {name}. It was automatically approved to your campaign '{auto_campaign.title}'."
+                                send_meta_reply(sender_phone, reply_text, config)
+                                interactive_sent = True
+                            except Exception as e:
+                                logger.error(f"Failed to auto-approve transaction {pending_id}: {e}")
+                                
+                    if not interactive_sent and user_settings.automation.allow_whatsapp_approvals:
                         from models.campaign import Campaign
                         from models.group import Group
                         active_campaigns = db.query(Campaign).join(Group).filter(

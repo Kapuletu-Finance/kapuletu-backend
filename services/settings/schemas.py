@@ -10,6 +10,8 @@ class SecuritySettings(BaseModel):
 
 class AutomationSettings(BaseModel):
     auto_approve_enabled: bool = Field(False)
+    auto_approve_group_id: Optional[str] = Field(None)
+    auto_approve_campaign_id: Optional[str] = Field(None)
     allow_whatsapp_approvals: bool = Field(False)
     allow_whatsapp_creation: bool = Field(False)
     confidence_threshold: float = Field(0.90)
