@@ -120,22 +120,34 @@ def process_ingestion(body_str: str, config):
         
     message_info = value["messages"][0]
     
-    # We only care about text messages currently
-    if message_info.get("type") != "text":
-        logger.info(f"Ignoring non-text message type: {message_info.get('type')}")
+    # We care about text and interactive messages
+    msg_type = message_info.get("type")
+    if msg_type not in ["text", "interactive"]:
+        logger.info(f"Ignoring message type: {msg_type}")
         return {"statusCode": 200, "body": "OK"}
 
-    # Extract required fields for IngestionService compatibility
+    # Extract required fields
     sender_phone = message_info.get("from")
-    message_body = message_info.get("text", {}).get("body")
-    
-    if not message_body or not sender_phone:
-        return {"statusCode": 400, "body": "Missing message body or sender"}
-
+    if not sender_phone:
+        return {"statusCode": 400, "body": "Missing sender phone"}
+        
     # Meta sends phone numbers without the '+' sign (e.g., 254712345678).
-    # We must prepend the '+' so it matches the standardized format in our database.
     if not sender_phone.startswith("+"):
         sender_phone = f"+{sender_phone}"
+
+    message_body = ""
+    interactive_id = None
+    
+    if msg_type == "text":
+        message_body = message_info.get("text", {}).get("body", "")
+    elif msg_type == "interactive":
+        interactive = message_info.get("interactive", {})
+        if interactive.get("type") == "list_reply":
+            interactive_id = interactive.get("list_reply", {}).get("id")
+            message_body = interactive.get("list_reply", {}).get("title", "")
+    
+    if not message_body and not interactive_id:
+        return {"statusCode": 400, "body": "Missing message content"}
 
     # Normalize payload for the existing service architecture
     normalized_payload = {
@@ -148,29 +160,60 @@ def process_ingestion(body_str: str, config):
     
     try:
         # --- Interactive Report Flow ---
-        if message_body.strip().upper() == "REPORT":
-            from repositories.transaction_repo import TransactionRepository
-            from models.campaign import Campaign
-            from models.group import Group
-            from services.reporting.daily_summary import generate_campaign_whatsapp_report
+        from repositories.transaction_repo import TransactionRepository
+        from models.campaign import Campaign
+        from models.group import Group
+        from services.reporting.daily_summary import generate_campaign_whatsapp_report
+        
+        # 3.1 Check if it's an interactive menu selection for a report
+        if interactive_id and interactive_id.startswith("REPORT_CAMPAIGN_"):
+            campaign_id = interactive_id.replace("REPORT_CAMPAIGN_", "")
+            try:
+                report_text = generate_campaign_whatsapp_report(db, campaign_id)
+                send_meta_reply(sender_phone, report_text, config)
+            except Exception as e:
+                logger.error(f"Failed to generate report for campaign {campaign_id}: {e}")
+                send_meta_reply(sender_phone, "Error generating report. Please try again.", config)
+            return {"statusCode": 200, "body": "OK"}
             
+        # 3.2 Check if the user is explicitly requesting a report
+        if msg_type == "text" and message_body.strip().upper() == "REPORT":
             repo = TransactionRepository(db)
             owner = repo.resolve_owner_by_phone(sender_phone)
             
             if not owner:
                 send_meta_reply(sender_phone, "Unauthorized: Your phone number is not registered.", config)
             else:
-                # Resolve the user's most recent active campaign
-                campaign = db.query(Campaign).join(Group).filter(
+                # Query all active campaigns for the user
+                active_campaigns = db.query(Campaign).join(Group).filter(
                     Group.owner_id == parse_uuid(owner.user_id),
                     Campaign.is_active == True
-                ).order_by(Campaign.created_at.desc()).first()
+                ).order_by(Campaign.created_at.desc()).all()
                 
-                if campaign:
-                    report_text = generate_campaign_whatsapp_report(db, str(campaign.campaign_id))
+                if len(active_campaigns) == 0:
+                    send_meta_reply(sender_phone, "Notice: You do not have any active campaigns.", config)
+                elif len(active_campaigns) == 1:
+                    # Only one campaign, send it directly
+                    report_text = generate_campaign_whatsapp_report(db, str(active_campaigns[0].campaign_id))
                     send_meta_reply(sender_phone, report_text, config)
                 else:
-                    send_meta_reply(sender_phone, "Notice: You do not have any active campaigns.", config)
+                    # Multiple campaigns, construct an interactive list
+                    rows = []
+                    for c in active_campaigns[:10]: # WhatsApp limits to 10 rows per list
+                        # Title is limited to 24 chars
+                        title = c.title[:24]
+                        rows.append({
+                            "id": f"REPORT_CAMPAIGN_{c.campaign_id}",
+                            "title": title
+                        })
+                    
+                    sections = [{
+                        "title": "Active Campaigns",
+                        "rows": rows
+                    }]
+                    
+                    body_text = "You have multiple active campaigns. Please select the campaign you want to generate a report for:"
+                    send_meta_interactive_list(sender_phone, body_text, "Select Campaign", sections, config)
             
             return {"statusCode": 200, "body": "OK"}
 
@@ -241,5 +284,47 @@ def send_meta_reply(to_phone: str, message_text: str, config):
             logger.error(f"Failed to send Meta reply. Status: {response.status_code}, Response: {response.text}")
         else:
             logger.info("Successfully sent outgoing Meta reply.")
+    except Exception as e:
+        logger.error(f"Error executing outgoing Meta HTTP request: {e}")
+
+def send_meta_interactive_list(to_phone: str, body_text: str, button_text: str, sections: list, config):
+    """
+    Helper function to send an outgoing Interactive List message via the Meta WhatsApp Cloud API.
+    sections format: [{"title": "Section Name", "rows": [{"id": "row_id", "title": "Row Title", "description": "Optional"}]}]
+    """
+    if not config.META_ACCESS_TOKEN or not config.META_PHONE_NUMBER_ID:
+        logger.warning("Skipping outgoing WhatsApp reply: META_ACCESS_TOKEN or META_PHONE_NUMBER_ID not configured.")
+        return
+
+    url = f"https://graph.facebook.com/v19.0/{config.META_PHONE_NUMBER_ID}/messages"
+    
+    headers = {
+        "Authorization": f"Bearer {config.META_ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to_phone,
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "body": {
+                "text": body_text
+            },
+            "action": {
+                "button": button_text[:20],  # Max 20 chars
+                "sections": sections
+            }
+        }
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=5)
+        if response.status_code not in (200, 201):
+            logger.error(f"Failed to send Meta interactive list. Status: {response.status_code}, Response: {response.text}")
+        else:
+            logger.info("Successfully sent outgoing Meta interactive list.")
     except Exception as e:
         logger.error(f"Error executing outgoing Meta HTTP request: {e}")
