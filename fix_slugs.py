@@ -4,6 +4,8 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
+load_dotenv()
 from common.database import SessionLocal
 from models.campaign import Campaign
 from models.group import Group
