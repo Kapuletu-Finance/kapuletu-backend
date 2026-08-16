@@ -43,12 +43,19 @@ async def get_workspace_overview(
         .all()
     )
         
-    # Get top 10 recent campaigns
+    # Get top 10 recent campaigns based on latest activity
+    latest_txn_sq = (
+        db.query(func.max(Transaction.created_at))
+        .filter(Transaction.campaign_id == Campaign.campaign_id)
+        .correlate(Campaign)
+        .scalar_subquery()
+    )
+    
     recent_campaigns_query = (
         db.query(Campaign, Group.group_name, Group.currency, Group.slug.label("group_slug"))
         .join(Group)
         .filter(Group.owner_id == parse_uuid(parse_uuid(owner_id)))
-        .order_by(Campaign.created_at.desc())
+        .order_by(func.coalesce(latest_txn_sq, Campaign.created_at).desc())
         .limit(10)
         .all()
     )
@@ -72,7 +79,8 @@ async def get_workspace_overview(
             amount_raised=float(amount_raised),
             currency=currency or "KES",
             status=camp.status,
-            updated_at=camp.created_at # Using created_at since updated_at is missing
+            updated_at=camp.created_at # Note: sorting is now by latest_activity dynamically
+
         ))
         
     active_groups = []
