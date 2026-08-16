@@ -78,8 +78,6 @@ class LocalIntentParser:
                 # Fallback if dependency parser fails or it's a blank model
                 # Just take the rest of the string
                 result["entities"]["group_name"] = text[doc[end-1].idx + len(doc[end-1].text):].strip(" :-'\"")
-                if not result["entities"]["group_name"]:
-                    result["intent"] = "unknown" # Invalid if no name
                     
         elif intent_label == "CREATE_CAMPAIGN":
             result["intent"] = "create_campaign"
@@ -88,8 +86,6 @@ class LocalIntentParser:
                 result["entities"]["campaign_title"] = title
             else:
                 result["entities"]["campaign_title"] = text[doc[end-1].idx + len(doc[end-1].text):].strip(" :-'\"")
-                if not result["entities"]["campaign_title"]:
-                    result["intent"] = "unknown"
 
         # Basic fallback: if someone just types "NEW GROUP: Welfare", the substring logic captures "Welfare"
         # We can clean up the extracted text:

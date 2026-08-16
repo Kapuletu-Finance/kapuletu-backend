@@ -316,11 +316,24 @@ def process_ingestion(body_str: str, config):
                     if parsed_intent["intent"] == "create_group":
                         group_name = parsed_intent["entities"].get("group_name")
                         if not group_name:
-                            send_meta_reply(sender_phone, "I understood you want to create a group, but I couldn't catch the name. Please try again (e.g. 'Create a group called Welfare').", config)
+                            send_meta_reply(sender_phone, "I see you want to create a group! To do this, please reply in the format: *Create group [Group Name]* (e.g., Create group Welfare).", config)
                             return {"statusCode": 200, "body": "OK"}
                             
                         from models.group import Group
                         import uuid
+                        import datetime
+                        
+                        # Check daily limit: Max 2 groups per day
+                        yesterday = datetime.datetime.utcnow() - datetime.timedelta(days=1)
+                        daily_group_count = db.query(Group).filter(
+                            Group.owner_id == owner.user_id,
+                            Group.created_at >= yesterday
+                        ).count()
+                        
+                        if daily_group_count >= 2:
+                            send_meta_reply(sender_phone, "You have reached the daily limit (2) for creating new groups via WhatsApp. Please try again tomorrow, or use the web portal.", config)
+                            return {"statusCode": 200, "body": "OK"}
+                            
                         new_group = Group(
                             group_id=uuid.uuid4(),
                             owner_id=owner.user_id,
@@ -336,14 +349,26 @@ def process_ingestion(body_str: str, config):
                     elif parsed_intent["intent"] == "create_campaign":
                         title = parsed_intent["entities"].get("campaign_title")
                         if not title:
-                            send_meta_reply(sender_phone, "I understood you want to create a campaign, but I couldn't catch the title. Please try again.", config)
+                            send_meta_reply(sender_phone, "I see you want to create a campaign! To do this, please reply in the format: *Create campaign [Campaign Title]*.", config)
                             return {"statusCode": 200, "body": "OK"}
                             
                         from models.group import Group
                         from models.campaign import Campaign
                         import uuid
                         import base64
+                        import datetime
                         
+                        # Check daily limit: Max 2 campaigns per day across any groups
+                        yesterday = datetime.datetime.utcnow() - datetime.timedelta(days=1)
+                        daily_camp_count = db.query(Campaign).join(Group).filter(
+                            Group.owner_id == owner.user_id,
+                            Campaign.created_at >= yesterday
+                        ).count()
+                        
+                        if daily_camp_count >= 2:
+                            send_meta_reply(sender_phone, "You have reached the daily limit (2) for creating new campaigns via WhatsApp. Please try again tomorrow, or use the web portal.", config)
+                            return {"statusCode": 200, "body": "OK"}
+                            
                         active_groups = db.query(Group).filter(
                             Group.owner_id == owner.user_id,
                             Group.is_active == True
