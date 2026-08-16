@@ -222,7 +222,7 @@ async def edit_tx(
     if payload.extracted_sender_name is not None:
         pending.sender_name = payload.extracted_sender_name
     if payload.extracted_code is not None:
-        pending.transaction_code = payload.extracted_code
+        pending.transaction_code = payload.extracted_code if payload.extracted_code.strip() != "" else None
         
     db.commit()
     db.refresh(pending)
