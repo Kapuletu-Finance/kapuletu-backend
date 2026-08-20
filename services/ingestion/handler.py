@@ -159,6 +159,26 @@ def process_ingestion(body_str: str, config):
     db = SessionLocal()
     
     try:
+        from models.whatsapp_blocklist import WhatsAppBlocklist
+        import datetime
+        
+        # 3.0 Check if user is blocked
+        blocked_record = db.query(WhatsAppBlocklist).filter(WhatsAppBlocklist.phone_number == sender_phone).first()
+        if blocked_record and blocked_record.is_blocked:
+            # Auto-unblock if last attempt was more than 24 hours ago
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            last_attempt = blocked_record.last_attempt_at
+            if last_attempt and last_attempt.tzinfo is None:
+                last_attempt = last_attempt.replace(tzinfo=datetime.timezone.utc)
+                
+            if last_attempt and (now_utc - last_attempt).total_seconds() > 86400:
+                blocked_record.is_blocked = False
+                blocked_record.attempt_count = 0
+                db.commit()
+            else:
+                # Still blocked, silently drop the request
+                return {"statusCode": 200, "body": "OK"}
+
         # --- Interactive Report Flow ---
         from repositories.transaction_repo import TransactionRepository
         from models.campaign import Campaign
@@ -166,11 +186,36 @@ def process_ingestion(body_str: str, config):
         from services.reporting.daily_summary import generate_campaign_whatsapp_report
         
         # 3.1 Check if it's an interactive menu selection for a report or approval
+        if interactive_id:
+            if interactive_id == "GREETING_WORKSPACE":
+                send_meta_reply(sender_phone, f"You can access your KapuLetu dashboard here: {config.FRONTEND_URL.rstrip('/')}/treasurer", config)
+                return {"statusCode": 200, "body": "OK"}
+            elif interactive_id == "GREETING_APPROVALS":
+                send_meta_reply(sender_phone, f"To review and approve pending member transactions, please visit your dashboard: {config.FRONTEND_URL.rstrip('/')}/treasurer", config)
+                return {"statusCode": 200, "body": "OK"}
+            elif interactive_id == "GREETING_HELP":
+                send_whatsapp_help_menu(sender_phone, config)
+                return {"statusCode": 200, "body": "OK"}
+            elif interactive_id == "HELP_GROUP":
+                send_meta_reply(sender_phone, "To create a new savings group, log in to your online workspace and navigate to the 'Groups' tab. Click 'New Group' and follow the setup wizard.", config)
+                return {"statusCode": 200, "body": "OK"}
+            elif interactive_id == "HELP_CAMPAIGN":
+                send_meta_reply(sender_phone, "Once a group is active, you can create a campaign directly via WhatsApp by typing 'NEW CAMPAIGN', or through the 'Campaigns' tab in your online workspace.", config)
+                return {"statusCode": 200, "body": "OK"}
+            elif interactive_id == "HELP_APPROVE":
+                send_meta_reply(sender_phone, "When members send payments, you will receive a notification. You can approve pending contributions by selecting 'Pending Contributions' from the main menu, or by reviewing them in the web dashboard.", config)
+                return {"statusCode": 200, "body": "OK"}
+            elif interactive_id == "HELP_BOT":
+                send_meta_reply(sender_phone, "You can text the bot at any time using commands like 'REPORT' to get your campaign status, or 'HELP' to view this guide.", config)
+                return {"statusCode": 200, "body": "OK"}
+            elif interactive_id == "HELP_SETTINGS":
+                send_meta_reply(sender_phone, "To customize your report formats, toggle WhatsApp features, or manage permissions, please visit the 'Settings' section of your online workspace.", config)
+                return {"statusCode": 200, "body": "OK"}
         if interactive_id and interactive_id.startswith("REPORT_CAMPAIGN_"):
             campaign_id = interactive_id.replace("REPORT_CAMPAIGN_", "")
             try:
                 report_text = generate_campaign_whatsapp_report(db, campaign_id)
-                send_meta_reply(sender_phone, report_text, config)
+                dispatch_whatsapp_report(db, sender_phone, campaign_id, report_text, config)
                 
                 from repositories.transaction_repo import TransactionRepository
                 repo = TransactionRepository(db)
@@ -281,14 +326,33 @@ def process_ingestion(body_str: str, config):
                 send_meta_reply(sender_phone, f"Success! Campaign '{title}' created under group '{group.group_name}'.", config)
             return {"statusCode": 200, "body": "OK"}
 
-        # 3.2 Check if the user is explicitly requesting a report
-        if msg_type == "text" and message_body.strip().upper() == "REPORT":
+        # 3.2 Check if the user is explicitly requesting a text command
+        if msg_type == "text":
             repo = TransactionRepository(db)
             owner = repo.resolve_owner_by_phone(sender_phone)
             
-            if not owner:
-                send_meta_reply(sender_phone, "Unauthorized: Your phone number is not registered.", config)
-            else:
+            message_upper = message_body.strip().upper()
+            greetings = ["HI", "HELLO", "HOLLA", "HOLA", "HEY", "GOOD MORNING", "GOOD AFTERNOON", "GOOD EVENING", "JAMBO", "SASA"]
+            
+            if message_upper in greetings:
+                if not owner:
+                    handle_unauthorized_access(sender_phone, config, db)
+                    return {"statusCode": 200, "body": "OK"}
+                send_whatsapp_main_menu(sender_phone, config)
+                return {"statusCode": 200, "body": "OK"}
+                
+            if message_upper == "HELP":
+                if not owner:
+                    handle_unauthorized_access(sender_phone, config, db)
+                    return {"statusCode": 200, "body": "OK"}
+                send_whatsapp_help_menu(sender_phone, config)
+                return {"statusCode": 200, "body": "OK"}
+                
+            if message_upper == "REPORT":
+                if not owner:
+                    handle_unauthorized_access(sender_phone, config, db)
+                    return {"statusCode": 200, "body": "OK"}
+                
                 from services.settings.settings_service import SettingsService
                 settings_service = SettingsService(db)
                 user_settings = settings_service.get_global_settings(str(owner.user_id))
@@ -308,7 +372,7 @@ def process_ingestion(body_str: str, config):
                 elif len(active_campaigns) == 1:
                     # Only one campaign, send it directly
                     report_text = generate_campaign_whatsapp_report(db, str(active_campaigns[0].campaign_id))
-                    send_meta_reply(sender_phone, report_text, config)
+                    dispatch_whatsapp_report(db, sender_phone, str(active_campaigns[0].campaign_id), report_text, config)
                     
                     from services.audit.service import AuditService
                     AuditService(db).log_action(
@@ -340,7 +404,7 @@ def process_ingestion(body_str: str, config):
                     body_text = "You have multiple active campaigns. Please select the campaign you want to generate a report for:"
                     send_meta_interactive_list(sender_phone, body_text, "Select Campaign", sections, config)
             
-            return {"statusCode": 200, "body": "OK"}
+                return {"statusCode": 200, "body": "OK"}
 
         # 3.3 Check conversational NLP intents (Kapuletu AI)
         if msg_type == "text":
@@ -490,11 +554,10 @@ def process_ingestion(body_str: str, config):
             reply_text = "You have already submitted this transaction. It is currently pending review."
             send_meta_reply(sender_phone, reply_text, config)
         elif result["status"] == "error":
-            reply_text = f"Unauthorized: Your phone number is not registered as a treasurer for any KapuLetu group. Please contact an admin or visit {config.FRONTEND_URL.rstrip('/')}/signup to create an account."
-            send_meta_reply(sender_phone, reply_text, config)
+            handle_unauthorized_access(sender_phone, config, db)
         elif result["status"] == "invalid":
-            reply_text = "I'm sorry, I couldn't understand that. Please forward a valid M-Pesa transaction, or use commands like 'Report', 'Create a group', or 'Create a campaign'."
-            send_meta_reply(sender_phone, reply_text, config)
+            reply_text = "I'm sorry, I didn't understand that request. Please forward a valid M-Pesa transaction receipt, or select an option from the menu below to get started."
+            send_whatsapp_main_menu(sender_phone, config, reply_text)
         else:
             parsed = result.get("parsed_data", {})
             amt = f"KES {parsed.get('amount', 0.0):,.2f}" if parsed.get('amount') else "the transaction"
@@ -579,6 +642,45 @@ def process_ingestion(body_str: str, config):
         db.close()
 
 
+def handle_unauthorized_access(phone: str, config, db_session):
+    from models.whatsapp_blocklist import WhatsAppBlocklist
+    
+    record = db_session.query(WhatsAppBlocklist).filter(WhatsAppBlocklist.phone_number == phone).first()
+    if not record:
+        record = WhatsAppBlocklist(phone_number=phone, attempt_count=1, is_blocked=False)
+        db_session.add(record)
+        send_meta_reply(phone, f"Unauthorized Access: Your phone number is not registered as a KapuLetu treasurer. Please visit {config.FRONTEND_URL.rstrip('/')}/signup to create an account.", config)
+    else:
+        record.attempt_count += 1
+        if record.attempt_count >= 3 and not record.is_blocked:
+            record.is_blocked = True
+            send_meta_reply(phone, "Security Alert: This phone number has been temporarily blocked from accessing KapuLetu due to multiple unauthorized attempts.", config)
+        elif not record.is_blocked:
+            send_meta_reply(phone, f"Unauthorized Access: Your phone number is not registered as a KapuLetu treasurer. Please visit {config.FRONTEND_URL.rstrip('/')}/signup to create an account.", config)
+    
+    db_session.commit()
+
+
+def dispatch_whatsapp_report(db, sender_phone, campaign_id, report_text, config):
+    if len(report_text) > 4000:
+        from models.campaign import Campaign
+        from common.utils import parse_uuid
+        campaign = db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
+        if campaign:
+            frontend_url = config.FRONTEND_URL.rstrip('/')
+            group_slug = campaign.group.slug or campaign.group_id
+            camp_slug = campaign.slug or campaign.campaign_id
+            
+            fallback_text = (
+                f"*The comprehensive report for \"{campaign.title}\" is ready.*\n\n"
+                f"*To view the full list of contributors and detailed metrics, please log in to your KapuLetu dashboard:*\n"
+                f"{frontend_url}/treasurer/groups/{group_slug}/campaigns/{camp_slug}"
+            )
+            send_meta_reply(sender_phone, fallback_text, config)
+            return
+    send_meta_reply(sender_phone, report_text, config)
+
+
 def send_meta_reply(to_phone: str, message_text: str, config):
     """
     Helper function to send an outgoing text message via the Meta WhatsApp Cloud API.
@@ -613,6 +715,33 @@ def send_meta_reply(to_phone: str, message_text: str, config):
             logger.info("Successfully sent outgoing Meta reply.")
     except Exception as e:
         logger.error(f"Error executing outgoing Meta HTTP request: {e}")
+
+def send_whatsapp_main_menu(to_phone: str, config, prompt_text: str = None):
+    text = prompt_text or "Hello! Welcome to KapuLetu. I am your automated treasury assistant. I can assist you with managing your campaigns, reviewing transactions, and accessing your workspace. Please select an option from the menu below."
+    sections = [{
+        "title": "Options",
+        "rows": [
+            {"id": "GREETING_WORKSPACE", "title": "Check your workspace", "description": "Link to KapuLetu dashboard"},
+            {"id": "GREETING_APPROVALS", "title": "Pending Contributions", "description": "Review member transactions"},
+            {"id": "GREETING_HELP", "title": "Help", "description": "Interactive KapuLetu guide"}
+        ]
+    }]
+    send_meta_interactive_list(to_phone, text, "Main Menu", sections, config)
+
+def send_whatsapp_help_menu(to_phone: str, config):
+    text = "Welcome to the KapuLetu Help Center. Please select a topic from the menu below to view detailed instructions."
+    sections = [{
+        "title": "Topics",
+        "rows": [
+            {"id": "HELP_GROUP", "title": "Creating a Group"},
+            {"id": "HELP_CAMPAIGN", "title": "Creating a Campaign"},
+            {"id": "HELP_APPROVE", "title": "Approving Contributions"},
+            {"id": "HELP_BOT", "title": "Using the WhatsApp Bot"},
+            {"id": "HELP_SETTINGS", "title": "Settings"}
+        ]
+    }]
+    send_meta_interactive_list(to_phone, text, "Help Topics", sections, config)
+
 
 def send_meta_interactive_list(to_phone: str, body_text: str, button_text: str, sections: list, config):
     """

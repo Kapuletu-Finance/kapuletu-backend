@@ -20,3 +20,4 @@ from .ai_feedback import AIFeedback, ActiveLearningSample
 from .support_ticket import SupportTicket
 from .token_blacklist import TokenBlacklist
 from .notification import Notification
+from .whatsapp_blocklist import WhatsAppBlocklist
