@@ -162,22 +162,26 @@ def process_ingestion(body_str: str, config):
         from models.whatsapp_blocklist import WhatsAppBlocklist
         import datetime
         
-        # 3.0 Check if user is blocked
-        blocked_record = db.query(WhatsAppBlocklist).filter(WhatsAppBlocklist.phone_number == sender_phone).first()
-        if blocked_record and blocked_record.is_blocked:
-            # Auto-unblock if last attempt was more than 24 hours ago
-            now_utc = datetime.datetime.now(datetime.timezone.utc)
-            last_attempt = blocked_record.last_attempt_at
-            if last_attempt and last_attempt.tzinfo is None:
-                last_attempt = last_attempt.replace(tzinfo=datetime.timezone.utc)
-                
-            if last_attempt and (now_utc - last_attempt).total_seconds() > 86400:
-                blocked_record.is_blocked = False
-                blocked_record.attempt_count = 0
-                db.commit()
-            else:
-                # Still blocked, silently drop the request
-                return {"statusCode": 200, "body": "OK"}
+        # 3.0 Check if user is blocked (gracefully handles missing table during migration window)
+        try:
+            blocked_record = db.query(WhatsAppBlocklist).filter(WhatsAppBlocklist.phone_number == sender_phone).first()
+            if blocked_record and blocked_record.is_blocked:
+                # Auto-unblock if last attempt was more than 24 hours ago
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                last_attempt = blocked_record.last_attempt_at
+                if last_attempt and last_attempt.tzinfo is None:
+                    last_attempt = last_attempt.replace(tzinfo=datetime.timezone.utc)
+                    
+                if last_attempt and (now_utc - last_attempt).total_seconds() > 86400:
+                    blocked_record.is_blocked = False
+                    blocked_record.attempt_count = 0
+                    db.commit()
+                else:
+                    # Still blocked, silently drop the request
+                    return {"statusCode": 200, "body": "OK"}
+        except Exception as _blocklist_err:
+            logger.warning(f"Blocklist table not available yet, skipping check: {_blocklist_err}")
+            db.rollback()
 
         # --- Interactive Report Flow ---
         from repositories.transaction_repo import TransactionRepository
