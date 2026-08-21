@@ -131,7 +131,7 @@ class UserService:
                 "created_at": g.created_at.isoformat(),
                 "campaigns": [{
                     "campaign_id": str(c.campaign_id),
-                    "name": c.name,
+                    "name": c.title,
                     "target_amount": c.target_amount,
                     "status": c.status
                 } for c in campaigns]
@@ -153,7 +153,7 @@ class UserService:
             
         logs = self.db.query(AuditLog).filter(
             AuditLog.actor_id == user.user_id
-        ).order_by(AuditLog.timestamp.desc()).limit(limit).all()
+        ).order_by(AuditLog.created_at.desc()).limit(limit).all()
         
         return [{
             "log_id": str(l.log_id),
@@ -161,7 +161,7 @@ class UserService:
             "entity_type": l.entity_type,
             "entity_id": str(l.entity_id) if l.entity_id else None,
             "details": l.details,
-            "timestamp": l.timestamp.isoformat()
+            "timestamp": l.created_at.isoformat()
         } for l in logs]
 
     def update_user_status(self, identifier: str, is_active: bool, reason: str = None):
