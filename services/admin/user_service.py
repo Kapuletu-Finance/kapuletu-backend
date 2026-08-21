@@ -2,8 +2,12 @@ from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from models.users import User
 from models.group import Group
-from models.subscription import SubscriptionPayment
+from models.subscription import SubscriptionPayment, Subscription, Plan
+from models.audit_log import AuditLog
+from models.campaign import Campaign
 import uuid
+import datetime
+from sqlalchemy import func, or_
 
 class UserService:
     """
@@ -16,8 +20,11 @@ class UserService:
         """
         Lists all treasurers with high-level metadata.
         """
-        from sqlalchemy import or_
-        query = self.db.query(User).filter(User.role == "treasurer")
+        query = self.db.query(User, Plan.name.label("plan_name")).outerjoin(
+            Subscription, User.user_id == Subscription.user_id
+        ).outerjoin(
+            Plan, Subscription.plan_id == Plan.plan_id
+        ).filter(User.role == "treasurer")
         
         if status == "active":
             query = query.filter(User.is_active == True)
@@ -35,12 +42,27 @@ class UserService:
             )
             
         total = query.count()
-        users = query.offset((page - 1) * limit).limit(limit).all()
+        users_with_plans = query.offset((page - 1) * limit).limit(limit).all()
+        
+        # Calculate KPIs
+        now = datetime.datetime.utcnow()
+        start_of_month = datetime.datetime(now.year, now.month, 1)
+        
+        total_treasurers = self.db.query(func.count(User.user_id)).filter(User.role == "treasurer").scalar() or 0
+        active_treasurers = self.db.query(func.count(User.user_id)).filter(User.role == "treasurer", User.is_active == True).scalar() or 0
+        suspended_treasurers = total_treasurers - active_treasurers
+        new_this_month = self.db.query(func.count(User.user_id)).filter(User.role == "treasurer", User.created_at >= start_of_month).scalar() or 0
         
         return {
             "total": total,
             "page": page,
             "limit": limit,
+            "kpis": {
+                "total": total_treasurers,
+                "active": active_treasurers,
+                "suspended": suspended_treasurers,
+                "new_this_month": new_this_month
+            },
             "users": [{
                 "user_id": str(u.user_id),
                 "slug": u.slug or str(u.user_id),
@@ -48,8 +70,9 @@ class UserService:
                 "email": u.email,
                 "phone": u.phone_number,
                 "is_active": u.is_active,
+                "plan_name": plan_name or "Basic",
                 "created_at": u.created_at.isoformat() if u.created_at else None
-            } for u in users]
+            } for u, plan_name in users_with_plans]
         }
 
     def get_treasurer_details(self, identifier: str):
@@ -97,12 +120,49 @@ class UserService:
         if not user: return []
         
         groups = self.db.query(Group).filter(Group.owner_id == user.user_id).all()
+        
+        result = []
+        for g in groups:
+            campaigns = self.db.query(Campaign).filter(Campaign.group_id == g.group_id).all()
+            result.append({
+                "group_id": str(g.group_id),
+                "name": g.group_name,
+                "description": g.description,
+                "created_at": g.created_at.isoformat(),
+                "campaigns": [{
+                    "campaign_id": str(c.campaign_id),
+                    "name": c.name,
+                    "target_amount": c.target_amount,
+                    "status": c.status
+                } for c in campaigns]
+            })
+        return result
+
+    def get_user_recent_activity(self, identifier: str, limit: int = 50):
+        """
+        Retrieves recent audit log actions performed by this user.
+        """
+        try:
+            uid = parse_uuid(identifier)
+            user = self.db.query(User).filter(User.user_id == uid).first()
+        except ValueError:
+            user = self.db.query(User).filter(User.slug == identifier).first()
+            
+        if not user:
+            return []
+            
+        logs = self.db.query(AuditLog).filter(
+            AuditLog.actor_id == user.user_id
+        ).order_by(AuditLog.timestamp.desc()).limit(limit).all()
+        
         return [{
-            "group_id": str(g.group_id),
-            "name": g.group_name,
-            "description": g.description,
-            "created_at": g.created_at.isoformat()
-        } for g in groups]
+            "log_id": str(l.log_id),
+            "action": l.action,
+            "entity_type": l.entity_type,
+            "entity_id": str(l.entity_id) if l.entity_id else None,
+            "details": l.details,
+            "timestamp": l.timestamp.isoformat()
+        } for l in logs]
 
     def update_user_status(self, identifier: str, is_active: bool, reason: str = None):
         """

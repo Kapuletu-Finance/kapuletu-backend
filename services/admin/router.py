@@ -122,6 +122,15 @@ async def upgrade_user_plan(
         raise HTTPException(status_code=400, detail="Override failed")
     return {"message": "User plan upgraded successfully"}
 
+@router.get("/users/treasurers/{identifier}/activity", summary="Get User Activity Log")
+async def get_user_activity(
+    identifier: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = UserService(db)
+    return service.get_user_recent_activity(identifier)
+
 # --- Module C: AI Parser Governance ---
 @router.get("/ai/parser/feedback-queue", summary="Get AI Feedback Queue")
 async def get_feedback_queue(
