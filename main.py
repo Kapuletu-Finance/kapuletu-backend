@@ -29,6 +29,8 @@ def handler(event, context):
             from alembic import command
             from sqlalchemy import create_engine, text, inspect
             from common.config import get_config
+            from common.database import SessionLocal
+            from services.admin.audit_service import AuditService
                 
             alembic_cfg = Config("alembic.ini")
             
@@ -48,6 +50,9 @@ def handler(event, context):
                     command.stamp(alembic_cfg, "e291751da8fb")
             except Exception as e:
                 logger.error(f"Failed during self-healing check: {e}")
+                db = SessionLocal()
+                AuditService.log_action(db, actor_id=None, action="migration_failed", entity_type="system", details={"error": "self_healing_failed", "message": str(e), "traceback": traceback.format_exc()})
+                db.close()
                 return {
                     "statusCode": 500,
                     "body": json.dumps({"error": "self_healing_failed", "message": str(e), "traceback": traceback.format_exc()})
@@ -56,23 +61,36 @@ def handler(event, context):
             try:
                 command.upgrade(alembic_cfg, "head")
             except Exception as e:
+                db = SessionLocal()
+                AuditService.log_action(db, actor_id=None, action="migration_failed", entity_type="system", details={"error": "migration_upgrade_failed", "message": str(e), "traceback": traceback.format_exc()})
+                db.close()
                 return {
                     "statusCode": 500,
                     "body": json.dumps({"error": "migration_upgrade_failed", "message": str(e), "traceback": traceback.format_exc()})
                 }
             
             logger.info("Database migration completed successfully.")
+            db = SessionLocal()
+            AuditService.log_action(db, actor_id=None, action="migration_success", entity_type="system", details={"message": "Database migration upgraded to head successfully."})
+            db.close()
             return {"statusCode": 200, "body": "Migration successful"}
             
-        # 3. Intercept seeding tasks
         if isinstance(event, dict) and event.get("task") == "seed_plans":
             logger.info("Executing seed plans task...")
+            from common.database import SessionLocal
+            from services.admin.audit_service import AuditService
             try:
                 from scripts.seed_plans import seed_plans
                 seed_plans()
                 logger.info("Seed plans completed successfully.")
+                db = SessionLocal()
+                AuditService.log_action(db, actor_id=None, action="seed_success", entity_type="system", details={"message": "Seed plans completed successfully."})
+                db.close()
                 return {"statusCode": 200, "body": "Seed successful"}
             except Exception as e:
+                db = SessionLocal()
+                AuditService.log_action(db, actor_id=None, action="seed_failed", entity_type="system", details={"error": "seed_failed", "message": str(e), "traceback": traceback.format_exc()})
+                db.close()
                 return {
                     "statusCode": 500,
                     "body": json.dumps({"error": "seed_failed", "message": str(e), "traceback": traceback.format_exc()})

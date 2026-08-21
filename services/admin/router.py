@@ -10,6 +10,7 @@ from services.admin.ai_governance_service import AIGovernanceService
 from services.admin.finance_service import FinanceService
 from services.admin.crm_service import CRMService
 from services.audit.service import AuditService
+from services.admin.audit_service import AuditService as AdminAuditService
 
 router = APIRouter(prefix="/admin", tags=["11. Admin & Governance"])
 
@@ -248,6 +249,30 @@ async def send_broadcast(
         raise HTTPException(status_code=400, detail="Missing message")
     result = service.send_broadcast(payload["message"], payload.get("channels", ["sms"]))
     return result
+
+# --- Module F: System & Audit Logs ---
+@router.get("/audit/logs", summary="List System & Audit Logs")
+async def list_audit_logs(
+    actor_id: Optional[str] = Query(None),
+    entity_type: Optional[str] = Query(None),
+    action: Optional[str] = Query(None),
+    q: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = AdminAuditService(db)
+    filters = {
+        "actor_id": actor_id,
+        "entity_type": entity_type,
+        "action": action,
+        "query": q,
+        "page": page,
+        "limit": limit
+    }
+    return service.search_logs(filters)
+
 
 @router.get("/crm/tickets", summary="List Support Tickets")
 async def list_tickets(

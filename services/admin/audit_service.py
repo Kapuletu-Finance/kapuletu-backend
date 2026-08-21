@@ -1,6 +1,7 @@
 from common.utils import parse_uuid
 from sqlalchemy.orm import Session
 from models.audit_log import AuditLog
+from models.users import User
 from sqlalchemy import or_
 
 class AuditService:
@@ -15,7 +16,7 @@ class AuditService:
         Advanced search for forensic logs.
         Supports filtering by actor, entity type, action, and time.
         """
-        query = self.db.query(AuditLog)
+        query = self.db.query(AuditLog, User).outerjoin(User, AuditLog.actor_id == User.user_id)
         
         if filters.get("actor_id"):
             query = query.filter(AuditLog.actor_id == parse_uuid(filters["actor_id"]))
@@ -27,32 +28,35 @@ class AuditService:
             query = query.filter(AuditLog.action == filters["action"])
             
         if filters.get("query"):
-            # Text search in details or action
             search_text = f"%{filters['query']}%"
             query = query.filter(or_(
                 AuditLog.action.ilike(search_text),
-                AuditLog.entity_id.ilike(search_text)
+                AuditLog.entity_id.ilike(search_text),
+                User.first_name.ilike(search_text),
+                User.last_name.ilike(search_text),
+                User.email.ilike(search_text)
             ))
 
-        # Pagination
         limit = int(filters.get("limit", 50))
         page = int(filters.get("page", 1))
         
         total = query.count()
-        logs = query.order_by(AuditLog.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+        logs_with_users = query.order_by(AuditLog.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
         
         return {
             "total": total,
             "page": page,
             "logs": [{
-                "log_id": str(l.log_id),
-                "actor_id": str(l.actor_id) if l.actor_id else None,
-                "action": l.action,
-                "entity_type": l.entity_type,
-                "entity_id": l.entity_id,
-                "details": l.details,
-                "timestamp": l.created_at.isoformat()
-            } for l in logs]
+                "log_id": str(log.log_id),
+                "actor_id": str(log.actor_id) if log.actor_id else None,
+                "actor_name": f"{user.first_name} {user.last_name}" if user else "System",
+                "actor_email": user.email if user else None,
+                "action": log.action,
+                "entity_type": log.entity_type,
+                "entity_id": log.entity_id,
+                "details": log.details,
+                "timestamp": log.created_at.isoformat()
+            } for log, user in logs_with_users]
         }
 
     @staticmethod

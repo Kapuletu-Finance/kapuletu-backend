@@ -98,6 +98,37 @@ app.add_middleware(SlowAPIMiddleware)
 
 from fastapi.middleware.cors import CORSMiddleware
 from common.config import get_config
+import traceback
+from common.database import SessionLocal
+from services.admin.audit_service import AuditService
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_trace = traceback.format_exc()
+    logging.error(f"GLOBAL EXCEPTION: {error_trace}")
+    
+    try:
+        db = SessionLocal()
+        AuditService.log_action(
+            db=db,
+            actor_id=None,
+            action="server_crash",
+            entity_type="system",
+            details={
+                "message": str(exc),
+                "traceback": error_trace,
+                "path": request.url.path,
+                "method": request.method
+            }
+        )
+        db.close()
+    except Exception as db_e:
+        logging.error(f"Failed to log exception to audit: {db_e}")
+        
+    return CustomORJSONResponse(
+        status_code=500,
+        content={"error": "internal_server_error", "message": "An unexpected error occurred."}
+    )
 
 app.add_middleware(
     CORSMiddleware,
