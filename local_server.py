@@ -46,7 +46,8 @@ openapi_tags = [
     {"name": "12. Audit Logs", "description": "System-wide immutable audit trail."},
     {"name": "13. Enterprise Settings", "description": "Global and entity-level configuration settings."},
     {"name": "14. Admin Governance Suite", "description": "Platform-wide administrative controls."},
-    {"name": "15. System Health & Admin", "description": "Service health checks and metrics."}
+    {"name": "15. System Health & Admin", "description": "Service health checks and metrics."},
+    {"name": "16. User Feedback", "description": "Structured product feedback and improvement suggestions from users."},
 ]
 
 import orjson
@@ -483,6 +484,9 @@ app.include_router(notifications_router) # 13
 app.include_router(health)
 from services.admin.router import router as admin_router
 app.include_router(admin_router)
+
+from services.feedback.router import router as feedback_router
+app.include_router(feedback_router)  # 16. User Feedback
 
 app.include_router(checkout_router, tags=["6. Finance & Subscriptions"], prefix="/finance", dependencies=[Depends(get_verified_user)])
 
