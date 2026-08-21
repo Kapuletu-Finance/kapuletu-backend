@@ -98,6 +98,40 @@ class FeedbackService:
             "pages": (total + limit - 1) // limit,
         }
 
+    def get_feedback_details(self, feedback_id: str) -> Optional[dict]:
+        """
+        Returns a single feedback item with user details.
+        """
+        row = (
+            self.db.query(AppFeedback, User)
+            .join(User, AppFeedback.user_id == User.user_id)
+            .filter(AppFeedback.feedback_id == feedback_id)
+            .first()
+        )
+        if not row:
+            return None
+        
+        fb, user = row
+        return {
+            "feedback_id": str(fb.feedback_id),
+            "user_id": str(fb.user_id),
+            "user_name": f"{user.first_name} {user.last_name}",
+            "user_email": user.email,
+            "feedback_type": fb.feedback_type,
+            "app_area": fb.app_area,
+            "severity": fb.severity,
+            "title": fb.title,
+            "description": fb.description,
+            "what_works": fb.what_works,
+            "what_needs_improvement": fb.what_needs_improvement,
+            "steps_to_reproduce": fb.steps_to_reproduce,
+            "expected_behavior": fb.expected_behavior,
+            "overall_rating": fb.overall_rating,
+            "status": fb.status,
+            "admin_response": fb.admin_response,
+            "created_at": fb.created_at.isoformat(),
+        }
+
     def update_feedback(self, feedback_id: str, admin_id: str, updates: dict) -> bool:
         """
         Updates the status and/or admin response for a feedback record.

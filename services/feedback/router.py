@@ -71,6 +71,19 @@ async def list_feedback(
     )
 
 
+@router.get("/admin/{feedback_id}", summary="Get Feedback Details (Admin)")
+async def get_feedback_details(
+    feedback_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user),
+):
+    service = FeedbackService(db)
+    details = service.get_feedback_details(feedback_id)
+    if not details:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    return details
+
+
 @router.patch("/admin/{feedback_id}", summary="Update Feedback Status (Admin)")
 async def update_feedback(
     feedback_id: str,
