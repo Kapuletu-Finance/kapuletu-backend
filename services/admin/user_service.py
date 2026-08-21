@@ -43,6 +43,7 @@ class UserService:
             "limit": limit,
             "users": [{
                 "user_id": str(u.user_id),
+                "slug": u.slug or str(u.user_id),
                 "full_name": f"{u.first_name} {u.last_name}",
                 "email": u.email,
                 "phone": u.phone_number,
@@ -51,19 +52,25 @@ class UserService:
             } for u in users]
         }
 
-    def get_treasurer_details(self, user_id: str):
+    def get_treasurer_details(self, identifier: str):
         """
         Retrieves deep-dive data for a specific treasurer.
         """
-        user = self.db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(user_id))).first()
+        try:
+            uid = parse_uuid(identifier)
+            user = self.db.query(User).filter(User.user_id == uid).first()
+        except ValueError:
+            user = self.db.query(User).filter(User.slug == identifier).first()
+            
         if not user:
             return None
             
-        group_count = self.db.query(Group).filter(Group.owner_id ==parse_uuid(parse_uuid(user_id))).count()
+        group_count = self.db.query(Group).filter(Group.owner_id == user.user_id).count()
         
         return {
             "profile": {
                 "user_id": str(user.user_id),
+                "slug": user.slug,
                 "first_name": user.first_name,
                 "last_name": user.last_name,
                 "email": user.email,
@@ -77,11 +84,19 @@ class UserService:
             }
         }
 
-    def get_user_groups(self, user_id: str):
+    def get_user_groups(self, identifier: str):
         """
         Lists all community groups owned by the treasurer.
         """
-        groups = self.db.query(Group).filter(Group.owner_id ==parse_uuid(parse_uuid(user_id))).all()
+        try:
+            uid = parse_uuid(identifier)
+            user = self.db.query(User).filter(User.user_id == uid).first()
+        except ValueError:
+            user = self.db.query(User).filter(User.slug == identifier).first()
+        
+        if not user: return []
+        
+        groups = self.db.query(Group).filter(Group.owner_id == user.user_id).all()
         return [{
             "group_id": str(g.group_id),
             "name": g.group_name,
@@ -89,11 +104,16 @@ class UserService:
             "created_at": g.created_at.isoformat()
         } for g in groups]
 
-    def update_user_status(self, user_id: str, is_active: bool, reason: str = None):
+    def update_user_status(self, identifier: str, is_active: bool, reason: str = None):
         """
         Suspends or reactivates a user account.
         """
-        user = self.db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(user_id))).first()
+        try:
+            uid = parse_uuid(identifier)
+            user = self.db.query(User).filter(User.user_id == uid).first()
+        except ValueError:
+            user = self.db.query(User).filter(User.slug == identifier).first()
+            
         if not user:
             return False
             
@@ -105,11 +125,16 @@ class UserService:
         
         return True
 
-    def escalated_update(self, user_id: str, updates: dict):
+    def escalated_update(self, identifier: str, updates: dict):
         """
         Allows an admin to manually correct user profile data.
         """
-        user = self.db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(user_id))).first()
+        try:
+            uid = parse_uuid(identifier)
+            user = self.db.query(User).filter(User.user_id == uid).first()
+        except ValueError:
+            user = self.db.query(User).filter(User.slug == identifier).first()
+            
         if not user:
             return False
             
@@ -121,7 +146,7 @@ class UserService:
         self.db.commit()
         return True
 
-    def upgrade_user_role(self, user_id: str, new_role: str):
+    def upgrade_user_role(self, identifier: str, new_role: str):
         """
         Upgrades or changes the user's role (e.g. treasurer to admin).
         """
@@ -130,7 +155,12 @@ class UserService:
         if new_role not in valid_roles:
             raise ValueError(f"Invalid role. Must be one of {valid_roles}")
             
-        user = self.db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(user_id))).first()
+        try:
+            uid = parse_uuid(identifier)
+            user = self.db.query(User).filter(User.user_id == uid).first()
+        except ValueError:
+            user = self.db.query(User).filter(User.slug == identifier).first()
+            
         if not user:
             return False
             

@@ -26,6 +26,9 @@ class User(Base):
     last_name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False)
     
+    # URL-friendly slug for routing (e.g. dorothy-kahenya)
+    slug = Column(String, unique=True, index=True, nullable=True)
+    
     # Primary identifier for incoming webhook messages (Twilio/WhatsApp)
     # Must be a verified WhatsApp number via Cognito Custom Sender
     phone_number = Column(String, unique=True, nullable=False)

@@ -71,22 +71,22 @@ async def list_feedback(
     )
 
 
-@router.get("/admin/{feedback_id}", summary="Get Feedback Details (Admin)")
+@router.get("/admin/{identifier}", summary="Get Feedback Details (Admin)")
 async def get_feedback_details(
-    feedback_id: str,
+    identifier: str,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user),
 ):
     service = FeedbackService(db)
-    details = service.get_feedback_details(feedback_id)
+    details = service.get_feedback_details(identifier)
     if not details:
         raise HTTPException(status_code=404, detail="Feedback not found")
     return details
 
 
-@router.patch("/admin/{feedback_id}", summary="Update Feedback Status (Admin)")
+@router.patch("/admin/{identifier}", summary="Update Feedback Status (Admin)")
 async def update_feedback(
-    feedback_id: str,
+    identifier: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user),
@@ -95,7 +95,7 @@ async def update_feedback(
         raise HTTPException(status_code=422, detail="Invalid status value")
 
     service = FeedbackService(db)
-    success = service.update_feedback(feedback_id, current_user["sub"], payload)
+    success = service.update_feedback(identifier, current_user["sub"], payload)
     if not success:
         raise HTTPException(status_code=404, detail="Feedback not found")
     return {"message": "Feedback updated"}

@@ -21,7 +21,10 @@ class AppFeedback(Base):
     __tablename__ = "app_feedback"
 
     feedback_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False, index=True)
+    
+    # Human-readable ticket number (e.g. FBK-8B2A)
+    reference_number = Column(String, unique=True, index=True, nullable=True)
 
     # --- Classification ---
     # feedback_type: "bug" | "feature_request" | "ux_issue" | "performance" | "general"

@@ -2,6 +2,7 @@ import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
+from common.utils import parse_uuid
 
 from models.app_feedback import AppFeedback
 from models.users import User
@@ -71,6 +72,7 @@ class FeedbackService:
         items = [
             {
                 "feedback_id": str(fb.feedback_id),
+                "reference_number": fb.reference_number or str(fb.feedback_id)[:8].upper(),
                 "user_id": str(fb.user_id),
                 "user_name": f"{user.first_name} {user.last_name}",
                 "feedback_type": fb.feedback_type,
@@ -98,22 +100,25 @@ class FeedbackService:
             "pages": (total + limit - 1) // limit,
         }
 
-    def get_feedback_details(self, feedback_id: str) -> Optional[dict]:
+    def get_feedback_details(self, identifier: str) -> Optional[dict]:
         """
         Returns a single feedback item with user details.
         """
-        row = (
-            self.db.query(AppFeedback, User)
-            .join(User, AppFeedback.user_id == User.user_id)
-            .filter(AppFeedback.feedback_id == feedback_id)
-            .first()
-        )
+        query = self.db.query(AppFeedback, User).join(User, AppFeedback.user_id == User.user_id)
+        
+        try:
+            uid = parse_uuid(identifier)
+            row = query.filter(AppFeedback.feedback_id == uid).first()
+        except ValueError:
+            row = query.filter(AppFeedback.reference_number == identifier).first()
+            
         if not row:
             return None
         
         fb, user = row
         return {
             "feedback_id": str(fb.feedback_id),
+            "reference_number": fb.reference_number or str(fb.feedback_id)[:8].upper(),
             "user_id": str(fb.user_id),
             "user_name": f"{user.first_name} {user.last_name}",
             "user_email": user.email,
@@ -132,16 +137,18 @@ class FeedbackService:
             "created_at": fb.created_at.isoformat(),
         }
 
-    def update_feedback(self, feedback_id: str, admin_id: str, updates: dict) -> bool:
+    def update_feedback(self, identifier: str, admin_id: str, updates: dict) -> bool:
         """
         Updates the status and/or admin response for a feedback record.
         Sets reviewed_by and reviewed_at on first admin interaction.
         """
-        record = (
-            self.db.query(AppFeedback)
-            .filter(AppFeedback.feedback_id == feedback_id)
-            .first()
-        )
+        query = self.db.query(AppFeedback)
+        try:
+            uid = parse_uuid(identifier)
+            record = query.filter(AppFeedback.feedback_id == uid).first()
+        except ValueError:
+            record = query.filter(AppFeedback.reference_number == identifier).first()
+            
         if not record:
             return False
 

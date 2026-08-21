@@ -36,30 +36,30 @@ async def list_treasurers(
     service = UserService(db)
     return service.list_treasurers(page=page, limit=limit, status=status, q=q)
 
-@router.get("/users/treasurers/{user_id}", summary="Get Treasurer Details")
+@router.get("/users/treasurers/{identifier}", summary="Get Treasurer Details")
 async def get_treasurer_details(
-    user_id: str,
+    identifier: str,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     service = UserService(db)
-    data = service.get_treasurer_details(user_id)
+    data = service.get_treasurer_details(identifier)
     if not data:
         raise HTTPException(status_code=404, detail="User not found")
     return data
 
-@router.get("/users/treasurers/{user_id}/groups", summary="Get User Groups")
+@router.get("/users/treasurers/{identifier}/groups", summary="Get User Groups")
 async def get_user_groups(
-    user_id: str,
+    identifier: str,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     service = UserService(db)
-    return service.get_user_groups(user_id)
+    return service.get_user_groups(identifier)
 
-@router.post("/users/treasurers/{user_id}/status", summary="Update User Status")
+@router.post("/users/treasurers/{identifier}/status", summary="Update User Status")
 async def update_user_status(
-    user_id: str,
+    identifier: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
@@ -67,27 +67,27 @@ async def update_user_status(
     service = UserService(db)
     new_status = payload.get("status") == "active"
     reason = payload.get("reason")
-    success = service.update_user_status(user_id, new_status, reason)
+    success = service.update_user_status(identifier, new_status, reason)
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Status updated"}
 
-@router.patch("/users/treasurers/{user_id}", summary="Escalated Profile Update")
+@router.patch("/users/treasurers/{identifier}", summary="Escalated Profile Update")
 async def escalated_update(
-    user_id: str,
+    identifier: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     service = UserService(db)
-    success = service.escalated_update(user_id, payload)
+    success = service.escalated_update(identifier, payload)
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Profile updated"}
 
-@router.patch("/users/treasurers/{user_id}/role", summary="Upgrade User Role")
+@router.patch("/users/treasurers/{identifier}/role", summary="Upgrade User Role")
 async def upgrade_user_role(
-    user_id: str,
+    identifier: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
@@ -98,16 +98,16 @@ async def upgrade_user_role(
         raise HTTPException(status_code=400, detail="Missing role in payload")
         
     try:
-        success = service.upgrade_user_role(user_id, new_role)
+        success = service.upgrade_user_role(identifier, new_role)
         if not success:
             raise HTTPException(status_code=404, detail="User not found")
         return {"message": f"User upgraded to {new_role}"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/users/treasurers/{user_id}/plan", summary="Upgrade User Plan")
+@router.post("/users/treasurers/{identifier}/plan", summary="Upgrade User Plan")
 async def upgrade_user_plan(
-    user_id: str,
+    identifier: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
@@ -117,7 +117,7 @@ async def upgrade_user_plan(
     if not plan_id:
         raise HTTPException(status_code=400, detail="Missing plan_id in payload")
         
-    success = service.manual_override_subscription(user_id, plan_id, payload.get("duration", 30))
+    success = service.manual_override_subscription(identifier, plan_id, payload.get("duration", 30))
     if not success:
         raise HTTPException(status_code=400, detail="Override failed")
     return {"message": "User plan upgraded successfully"}
