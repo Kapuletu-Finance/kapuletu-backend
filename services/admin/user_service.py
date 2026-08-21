@@ -12,16 +12,27 @@ class UserService:
     def __init__(self, db: Session):
         self.db = db
 
-    def list_treasurers(self, page=1, limit=50, status=None):
+    def list_treasurers(self, page=1, limit=50, status=None, q=None):
         """
         Lists all treasurers with high-level metadata.
         """
+        from sqlalchemy import or_
         query = self.db.query(User).filter(User.role == "treasurer")
         
         if status == "active":
             query = query.filter(User.is_active == True)
         elif status == "suspended":
             query = query.filter(User.is_active == False)
+            
+        if q:
+            search_term = f"%{q}%"
+            query = query.filter(
+                or_(
+                    User.first_name.ilike(search_term),
+                    User.last_name.ilike(search_term),
+                    User.email.ilike(search_term)
+                )
+            )
             
         total = query.count()
         users = query.offset((page - 1) * limit).limit(limit).all()
@@ -36,7 +47,7 @@ class UserService:
                 "email": u.email,
                 "phone": u.phone_number,
                 "is_active": u.is_active,
-                "created_at": u.created_at.isoformat()
+                "created_at": u.created_at.isoformat() if u.created_at else None
             } for u in users]
         }
 

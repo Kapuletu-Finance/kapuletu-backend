@@ -26,12 +26,14 @@ async def get_overview(
 @router.get("/users/treasurers", summary="List Treasurers")
 async def list_treasurers(
     status: Optional[str] = Query(None),
+    q: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     service = UserService(db)
-    return service.list_treasurers(page=page, status=status)
+    return service.list_treasurers(page=page, limit=limit, status=status, q=q)
 
 @router.get("/users/treasurers/{user_id}", summary="Get Treasurer Details")
 async def get_treasurer_details(
