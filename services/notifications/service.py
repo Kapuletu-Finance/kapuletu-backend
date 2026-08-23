@@ -8,6 +8,8 @@ from datetime import datetime
 from models.notification import Notification
 from models.users import User
 from services.notifications.schemas import BroadcastIn, TargetType, BroadcastChannel
+from services.notifications.providers.resend_client import ResendClient
+from services.notifications.providers.whatsapp_client import WhatsAppClient
 
 def _uid(user_id):
     """Convert a string or UUID to a uuid.UUID object for DB queries."""
@@ -103,16 +105,30 @@ def broadcast_notification(db: Session, payload: BroadcastIn) -> dict:
             db.commit()
             in_app_count = len(new_notifications)
 
-    # 2. Handle Email Delivery (Mocked integration)
+    # 2. Handle Email Delivery
     if BroadcastChannel.email in payload.channels:
-        # TODO: Hook into actual Kapuletu email service (e.g., SES/SendGrid)
-        # For now, we simulate dispatch.
-        email_count = len(target_users)
+        resend_client = ResendClient()
+        for user in target_users:
+            if user.email:
+                success = resend_client.send_email(
+                    to_email=user.email,
+                    subject=payload.title,
+                    html_body=f"<p>{payload.message}</p>"
+                )
+                if success:
+                    email_count += 1
         
-    # 3. Handle WhatsApp Delivery (Mocked integration)
+    # 3. Handle WhatsApp Delivery
     if BroadcastChannel.whatsapp in payload.channels:
-        # TODO: Hook into actual Kapuletu WhatsApp service (e.g., Twilio/Infobip)
-        whatsapp_count = len(target_users)
+        whatsapp_client = WhatsAppClient()
+        for user in target_users:
+            if user.phone_number:
+                success = whatsapp_client.send_text_message(
+                    to_phone=user.phone_number,
+                    message=f"*{payload.title}*\n\n{payload.message}"
+                )
+                if success:
+                    whatsapp_count += 1
 
     return {
         "status": "success",
