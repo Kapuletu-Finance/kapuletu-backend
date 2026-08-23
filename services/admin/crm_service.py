@@ -75,6 +75,9 @@ class CRMService:
             "ticket_id": str(ticket.ticket_id),
             "user_id": str(ticket.user_id),
             "user_name": f"{user.first_name} {user.last_name}" if user else "Unknown",
+            "user_email": user.email if user else None,
+            "user_phone": user.phone_number if user else None,
+            "user_kyc": "Verified" if (user and user.email_verified and user.phone_number_verified) else "Pending",
             "subject": ticket.subject,
             "category": ticket.category,
             "status": ticket.status,
@@ -86,6 +89,7 @@ class CRMService:
             "messages": [{
                 "message_id": str(m.message_id),
                 "sender_id": str(m.sender_id),
+                "sender_name": f"{self.db.query(User).filter_by(user_id=m.sender_id).first().first_name} {self.db.query(User).filter_by(user_id=m.sender_id).first().last_name}" if self.db.query(User).filter_by(user_id=m.sender_id).first() else "Unknown",
                 "message": m.message,
                 "is_internal": m.is_internal,
                 "created_at": m.created_at.isoformat()
@@ -134,13 +138,22 @@ class CRMService:
         
         # Trigger Notification
         user = self.db.query(User).filter_by(user_id=ticket.user_id).first()
+        admin = self.db.query(User).filter_by(user_id=admin_id).first()
+        admin_name = f"{admin.first_name} {admin.last_name}" if admin else "Kapuletu Support"
+        
         if user and user.email:
             from services.notifications.providers.resend_client import ResendClient
-            ResendClient().send_email(
-                to_email=user.email,
-                subject=f"Re: {ticket.subject}",
-                html_body=f"<p>An admin has replied to your ticket:</p><p><i>{message}</i></p>"
-            )
+            from services.notifications.email_templates import get_ticket_reply_template
+            
+            reply_html = get_ticket_reply_template(ticket.subject, message, admin_name, is_admin=True)
+            try:
+                ResendClient().send_email(
+                    to_email=user.email,
+                    subject=f"Re: {ticket.subject}",
+                    html_body=reply_html
+                )
+            except Exception:
+                pass # Fail gracefully
             
         return True
 

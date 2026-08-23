@@ -33,6 +33,10 @@ class SupportService:
         return datetime.datetime.utcnow() + datetime.timedelta(hours=sla_hours)
 
     def create_ticket(self, user_id, subject: str, message: str, category: str, priority: str):
+        from models.users import User
+        from services.notifications.providers.resend_client import ResendClient
+        from services.notifications.email_templates import get_ticket_created_template, get_admin_new_ticket_alert
+        
         sla_deadline = self.calculate_sla_deadline(user_id, priority)
         
         ticket = SupportTicket(
@@ -56,20 +60,53 @@ class SupportService:
         )
         self.db.add(msg)
         self.db.commit()
-        
+
+        try:
+            creator = self.db.query(User).filter_by(user_id=user_id).first()
+            if creator:
+                creator_name = f"{creator.first_name} {creator.last_name}"
+                resend = ResendClient()
+                if creator.email:
+                    resend.send_email(
+                        creator.email, 
+                        "Ticket Received - Kapuletu Support", 
+                        get_ticket_created_template(creator_name, subject, str(ticket.ticket_id))
+                    )
+                
+                admins = self.db.query(User).filter_by(role="admin").all()
+                admin_html = get_admin_new_ticket_alert(creator_name, subject, priority)
+                for adm in admins:
+                    if adm.email:
+                        resend.send_email(adm.email, f"New Ticket: {subject}", admin_html)
+        except Exception:
+            pass # Fail gracefully
+            
         return ticket
 
     def list_user_tickets(self, user_id):
         return self.db.query(SupportTicket).filter_by(user_id=user_id).order_by(SupportTicket.updated_at.desc()).all()
 
     def get_ticket_details(self, user_id, ticket_id):
+        from models.users import User
         ticket = self.db.query(SupportTicket).filter_by(user_id=user_id, ticket_id=ticket_id).first()
         if not ticket:
             return None, []
         messages = self.db.query(SupportTicketMessage).filter_by(ticket_id=ticket_id, is_internal=False).order_by(SupportTicketMessage.created_at.asc()).all()
+        
+        for m in messages:
+            sender = self.db.query(User).filter_by(user_id=m.sender_id).first()
+            if sender:
+                m.sender_name = f"{sender.first_name} {sender.last_name}"
+            else:
+                m.sender_name = "Unknown"
+        
         return ticket, messages
         
     def reply_to_ticket(self, user_id, ticket_id, message: str):
+        from models.users import User
+        from services.notifications.providers.resend_client import ResendClient
+        from services.notifications.email_templates import get_ticket_reply_template
+        
         ticket = self.db.query(SupportTicket).filter_by(user_id=user_id, ticket_id=ticket_id).first()
         if not ticket:
             raise ValueError("Ticket not found")
@@ -85,4 +122,24 @@ class SupportService:
         
         self.db.add(msg)
         self.db.commit()
+        
+        try:
+            creator = self.db.query(User).filter_by(user_id=user_id).first()
+            if creator:
+                creator_name = f"{creator.first_name} {creator.last_name}"
+                admin_ids = [ticket.assigned_admin_id] if ticket.assigned_admin_id else []
+                if not admin_ids:
+                    admins = self.db.query(User).filter_by(role="admin").all()
+                    admin_ids = [adm.user_id for adm in admins]
+                
+                resend = ResendClient()
+                reply_html = get_ticket_reply_template(ticket.subject, message, creator_name, is_admin=False)
+                
+                for aid in admin_ids:
+                    adm = self.db.query(User).filter_by(user_id=aid).first()
+                    if adm and adm.email:
+                        resend.send_email(adm.email, f"New Reply: {ticket.subject}", reply_html)
+        except Exception:
+            pass # Fail gracefully
+            
         return msg

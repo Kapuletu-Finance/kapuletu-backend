@@ -15,6 +15,7 @@ class TicketReply(BaseModel):
 class TicketMessageOut(BaseModel):
     message_id: UUID
     sender_id: UUID
+    sender_name: Optional[str] = None
     message: str
     created_at: datetime
     
