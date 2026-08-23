@@ -4,6 +4,8 @@ from models.subscription import Plan, Subscription, SubscriptionPayment
 import uuid
 import datetime
 
+from models.users import User
+
 class FinanceService:
     """
     FinanceService: Manages platform-wide monetization, plans, and billing overrides.
@@ -44,15 +46,31 @@ class FinanceService:
         """
         Platform-wide financial audit stream.
         """
-        payments = self.db.query(SubscriptionPayment).order_by(SubscriptionPayment.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
-        return [{
-            "payment_id": str(p.payment_id),
-            "user_id": str(p.user_id),
-            "amount": p.amount,
-            "status": p.status,
-            "method": p.payment_method,
-            "created_at": p.created_at.isoformat()
-        } for p in payments]
+        results = self.db.query(SubscriptionPayment, User, Plan).join(
+            User, SubscriptionPayment.user_id == User.user_id
+        ).outerjoin(
+            Subscription, SubscriptionPayment.subscription_id == Subscription.subscription_id
+        ).outerjoin(
+            Plan, Subscription.plan_id == Plan.plan_id
+        ).order_by(SubscriptionPayment.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+        
+        total = self.db.query(SubscriptionPayment).count()
+
+        return {
+            "items": [{
+                "payment_id": str(p.payment_id),
+                "user_id": str(p.user_id),
+                "user_name": f"{u.first_name} {u.last_name}".strip() if u else "Unknown User",
+                "plan_name": pl.name if pl else "Unknown Plan",
+                "amount": p.amount,
+                "status": p.status,
+                "method": p.payment_method,
+                "created_at": p.created_at.isoformat() if p.created_at else None
+            } for p, u, pl in results],
+            "total": total,
+            "page": page,
+            "limit": limit
+        }
 
     def manual_override_subscription(self, user_id: str, plan_id: str, duration_days: int = 30):
         """
