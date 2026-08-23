@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
@@ -11,6 +11,13 @@ class TicketCreate(BaseModel):
 
 class TicketReply(BaseModel):
     message: str
+
+class TicketRatingCreate(BaseModel):
+    issue_resolved: bool
+    satisfaction_level: int = Field(..., ge=1, le=5)
+    response_quality: Optional[int] = Field(None, ge=1, le=5)
+    response_speed: Optional[int] = Field(None, ge=1, le=5)
+    comment: Optional[str] = None
 
 class TicketMessageOut(BaseModel):
     message_id: UUID
@@ -33,6 +40,7 @@ class TicketOut(BaseModel):
     updated_at: datetime
     sla_deadline: Optional[datetime] = None
     assigned_admin_id: Optional[UUID] = None
+    has_rating: Optional[bool] = False
     
     class Config:
         orm_mode = True
