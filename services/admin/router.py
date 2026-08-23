@@ -9,7 +9,6 @@ from services.admin.user_service import UserService
 from services.admin.ai_governance_service import AIGovernanceService
 from services.admin.finance_service import FinanceService
 from services.admin.crm_service import CRMService
-from services.audit.service import AuditService
 from services.admin.audit_service import AuditService as AdminAuditService
 
 router = APIRouter(prefix="/admin", tags=["11. Admin & Governance"])
@@ -332,25 +331,4 @@ async def reply_ticket(
         raise HTTPException(status_code=404, detail="Ticket not found")
     return {"message": "Reply sent successfully"}
 
-# --- Module F: Forensic Audit & Forensics ---
-@router.get("/audit/logs", summary="Search Audit Logs")
-async def search_logs(
-    actor_id: Optional[str] = Query(None),
-    entity_type: Optional[str] = Query(None),
-    action: Optional[str] = Query(None),
-    q: Optional[str] = Query(None),
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
-):
-    service = AuditService(db)
-    filters = {
-        "actor_id": actor_id,
-        "entity_type": entity_type,
-        "action": action,
-        "query": q,
-        "page": page,
-        "limit": limit
-    }
-    return service.search_logs(filters)
+
