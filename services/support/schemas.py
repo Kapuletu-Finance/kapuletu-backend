@@ -30,6 +30,7 @@ class TicketOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     sla_deadline: Optional[datetime] = None
+    assigned_admin_id: Optional[UUID] = None
     
     class Config:
         orm_mode = True

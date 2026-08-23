@@ -80,6 +80,7 @@ class CRMService:
             "status": ticket.status,
             "priority": ticket.priority,
             "sla_deadline": ticket.sla_deadline.isoformat() if ticket.sla_deadline else None,
+            "assigned_admin_id": str(ticket.assigned_admin_id) if ticket.assigned_admin_id else None,
             "internal_notes": ticket.internal_notes,
             "created_at": ticket.created_at.isoformat(),
             "messages": [{
