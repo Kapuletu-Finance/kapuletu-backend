@@ -1,9 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from common.auth_dependencies import get_current_user_id
+from typing import Dict, Any
+from common.auth_dependencies import get_verified_user
 from common.database import get_db
 from .schemas import TicketCreate, TicketReply, TicketOut, TicketDetailOut, TicketMessageOut
 from .service import SupportService
+
+def get_current_user_id(current_user: Dict[str, Any] = Depends(get_verified_user)) -> str:
+    return current_user.get('sub')
+
 
 router = APIRouter(prefix="/support", tags=["Support"])
 
