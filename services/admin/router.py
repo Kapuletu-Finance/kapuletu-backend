@@ -23,6 +23,14 @@ async def get_overview(
     return service.get_platform_overview()
 
 # --- Module B: User Lifecycle & Support ---
+@router.get("/users/activity", summary="Recent and Active Users")
+async def get_user_activity(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = UserService(db)
+    return service.get_recent_activity()
+
 @router.get("/users/treasurers", summary="List Treasurers")
 async def list_treasurers(
     status: Optional[str] = Query(None),

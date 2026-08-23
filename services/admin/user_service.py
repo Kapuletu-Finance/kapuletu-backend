@@ -75,6 +75,44 @@ class UserService:
             } for u, plan_name in users_with_plans]
         }
 
+    def get_recent_activity(self):
+        """
+        Returns recent users segmented into 'active_now' (last 15 mins) and 'recent' (last 24 hours).
+        """
+        now = datetime.datetime.utcnow()
+        fifteen_mins_ago = now - datetime.timedelta(minutes=15)
+        twenty_four_hours_ago = now - datetime.timedelta(hours=24)
+        
+        users = self.db.query(User).filter(
+            User.last_active_at >= twenty_four_hours_ago
+        ).order_by(User.last_active_at.desc()).all()
+        
+        active_now = []
+        recent = []
+        
+        for u in users:
+            data = {
+                "user_id": str(u.user_id),
+                "slug": u.slug or str(u.user_id),
+                "full_name": f"{u.first_name} {u.last_name}",
+                "email": u.email,
+                "role": u.role,
+                "last_active_at": u.last_active_at.isoformat() if u.last_active_at else None
+            }
+            if u.last_active_at >= fifteen_mins_ago:
+                active_now.append(data)
+            else:
+                recent.append(data)
+                
+        return {
+            "active_now": active_now,
+            "recent": recent,
+            "kpis": {
+                "active_now_count": len(active_now),
+                "recent_count": len(recent)
+            }
+        }
+
     def get_treasurer_details(self, identifier: str):
         """
         Retrieves deep-dive data for a specific treasurer.
