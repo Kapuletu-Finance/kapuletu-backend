@@ -512,6 +512,8 @@ from services.audit.router import router as audit_router
 app.include_router(audit_router) # 12
 from services.notifications.router import router as notifications_router
 app.include_router(notifications_router) # 13
+from services.support.router import router as support_router
+app.include_router(support_router)
 app.include_router(health)
 from services.admin.router import router as admin_router
 app.include_router(admin_router)

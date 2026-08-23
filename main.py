@@ -19,6 +19,8 @@ def handler(event, context):
             if record.get("eventSource") == "aws:sqs":
                 logger.info("Processing SQS Event for Ingestion")
                 from services.ingestion.handler import process_sqs_record
+                from services.notifications.router import router as notifications_router
+                from services.support.router import router as support_router
                 result = process_sqs_record(record)
                 return result
 

@@ -26,9 +26,16 @@ class SupportTicket(Base):
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     resolved_at = Column(DateTime)
     
+    # Enterprise SLA tracking
+    sla_deadline = Column(DateTime)
+    last_reply_at = Column(DateTime, default=datetime.datetime.utcnow)
+    
     # Admin context
     assigned_admin_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"))
     internal_notes = Column(Text)
 
     user = relationship("User", foreign_keys=[user_id])
     assigned_admin = relationship("User", foreign_keys=[assigned_admin_id])
+    
+    # Relationship to thread messages
+    messages = relationship("SupportTicketMessage", back_populates="ticket", cascade="all, delete-orphan", order_by="SupportTicketMessage.created_at")

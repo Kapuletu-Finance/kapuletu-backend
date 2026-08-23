@@ -292,6 +292,18 @@ async def list_tickets(
     service = CRMService(db)
     return service.list_tickets(status=status)
 
+@router.get("/crm/tickets/{ticket_id}", summary="Get Support Ticket Details")
+async def get_ticket_details(
+    ticket_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = CRMService(db)
+    details = service.get_ticket_details(ticket_id)
+    if not details:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return details
+
 @router.patch("/crm/tickets/{ticket_id}", summary="Update Support Ticket")
 async def update_ticket(
     ticket_id: str,
@@ -304,6 +316,21 @@ async def update_ticket(
     if not success:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return {"message": "Ticket updated"}
+
+@router.post("/crm/tickets/{ticket_id}/reply", summary="Admin Reply to Support Ticket")
+async def reply_ticket(
+    ticket_id: str,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = CRMService(db)
+    if "message" not in payload:
+        raise HTTPException(status_code=400, detail="Missing message")
+    success = service.reply_to_ticket(ticket_id, current_user.get("sub"), payload["message"])
+    if not success:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return {"message": "Reply sent successfully"}
 
 # --- Module F: Forensic Audit & Forensics ---
 @router.get("/audit/logs", summary="Search Audit Logs")

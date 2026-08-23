@@ -10,6 +10,8 @@ from .review_action import ReviewAction
 from .review_allocation import ReviewAllocation
 from .subscription import Plan, Subscription, UsageTracking, SubscriptionPayment
 from .group import Group
+from .support_ticket import SupportTicket
+from .support_ticket_message import SupportTicketMessage
 from .transaction import Transaction
 from .users import User
 from .system_config import SystemConfig

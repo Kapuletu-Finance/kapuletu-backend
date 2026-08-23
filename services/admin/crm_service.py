@@ -1,10 +1,11 @@
 import boto3
 import json
 import os
+import datetime
 from sqlalchemy.orm import Session
 from models.support_ticket import SupportTicket
+from models.support_ticket_message import SupportTicketMessage
 from models.users import User
-import datetime
 
 class CRMService:
     """
@@ -43,18 +44,52 @@ class CRMService:
 
     def list_tickets(self, status: str = "open"):
         """
-        Retrieves support tickets filtered by status.
+        Retrieves support tickets filtered by status, returning user names and ordered by SLA.
         """
-        tickets = self.db.query(SupportTicket).filter(SupportTicket.status == status).order_by(SupportTicket.created_at.desc()).all()
+        results = self.db.query(SupportTicket, User).join(User, SupportTicket.user_id == User.user_id).filter(
+            SupportTicket.status == status
+        ).order_by(SupportTicket.sla_deadline.asc().nulls_last()).all()
+        
         return [{
-            "ticket_id": str(t.ticket_id),
-            "user_id": str(t.user_id),
-            "subject": t.subject,
-            "category": t.category,
-            "status": t.status,
-            "priority": t.priority,
-            "created_at": t.created_at.isoformat()
-        } for t in tickets]
+            "ticket_id": str(t.SupportTicket.ticket_id),
+            "user_id": str(t.SupportTicket.user_id),
+            "user_name": f"{t.User.first_name} {t.User.last_name}",
+            "email": t.User.email,
+            "subject": t.SupportTicket.subject,
+            "category": t.SupportTicket.category,
+            "status": t.SupportTicket.status,
+            "priority": t.SupportTicket.priority,
+            "sla_deadline": t.SupportTicket.sla_deadline.isoformat() if t.SupportTicket.sla_deadline else None,
+            "last_reply_at": t.SupportTicket.last_reply_at.isoformat() if t.SupportTicket.last_reply_at else None,
+            "created_at": t.SupportTicket.created_at.isoformat()
+        } for t in results]
+
+    def get_ticket_details(self, ticket_id: str):
+        ticket = self.db.query(SupportTicket).filter(SupportTicket.ticket_id == ticket_id).first()
+        if not ticket:
+            return None
+        messages = self.db.query(SupportTicketMessage).filter_by(ticket_id=ticket_id).order_by(SupportTicketMessage.created_at.asc()).all()
+        user = self.db.query(User).filter_by(user_id=ticket.user_id).first()
+        
+        return {
+            "ticket_id": str(ticket.ticket_id),
+            "user_id": str(ticket.user_id),
+            "user_name": f"{user.first_name} {user.last_name}" if user else "Unknown",
+            "subject": ticket.subject,
+            "category": ticket.category,
+            "status": ticket.status,
+            "priority": ticket.priority,
+            "sla_deadline": ticket.sla_deadline.isoformat() if ticket.sla_deadline else None,
+            "internal_notes": ticket.internal_notes,
+            "created_at": ticket.created_at.isoformat(),
+            "messages": [{
+                "message_id": str(m.message_id),
+                "sender_id": str(m.sender_id),
+                "message": m.message,
+                "is_internal": m.is_internal,
+                "created_at": m.created_at.isoformat()
+            } for m in messages]
+        }
 
     def update_ticket(self, ticket_id: str, admin_id: str, updates: dict):
         """
@@ -74,6 +109,38 @@ class CRMService:
         
         ticket.assigned_admin_id = admin_id
         self.db.commit()
+        return True
+        
+    def reply_to_ticket(self, ticket_id: str, admin_id: str, message: str):
+        """
+        Posts an admin reply to a ticket thread and notifies the user via Email.
+        """
+        ticket = self.db.query(SupportTicket).filter(SupportTicket.ticket_id == ticket_id).first()
+        if not ticket:
+            return False
+            
+        msg = SupportTicketMessage(
+            ticket_id=ticket.ticket_id,
+            sender_id=admin_id,
+            message=message
+        )
+        ticket.updated_at = datetime.datetime.utcnow()
+        ticket.last_reply_at = datetime.datetime.utcnow()
+        ticket.assigned_admin_id = admin_id
+        
+        self.db.add(msg)
+        self.db.commit()
+        
+        # Trigger Notification
+        user = self.db.query(User).filter_by(user_id=ticket.user_id).first()
+        if user and user.email:
+            from services.notifications.providers.resend_client import ResendClient
+            ResendClient().send_email(
+                to_email=user.email,
+                subject=f"Re: {ticket.subject}",
+                html_body=f"<p>An admin has replied to your ticket:</p><p><i>{message}</i></p>"
+            )
+            
         return True
 
     def get_suggestions(self):
