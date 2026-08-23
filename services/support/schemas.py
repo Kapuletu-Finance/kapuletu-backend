@@ -24,6 +24,7 @@ class TicketMessageOut(BaseModel):
 
 class TicketOut(BaseModel):
     ticket_id: UUID
+    user_id: UUID
     subject: str
     category: str
     priority: str
