@@ -32,7 +32,12 @@ class FinanceService:
         """
         Retrieves a specific plan.
         """
-        p = self.db.query(Plan).filter(Plan.plan_id == parse_uuid(plan_id)).first()
+        try:
+            parsed_id = parse_uuid(plan_id)
+        except ValueError:
+            return None
+            
+        p = self.db.query(Plan).filter(Plan.plan_id == parsed_id).first()
         if not p: return None
         return {
             "plan_id": str(p.plan_id),
@@ -48,7 +53,12 @@ class FinanceService:
         """
         Updates an existing plan dynamically.
         """
-        p = self.db.query(Plan).filter(Plan.plan_id == parse_uuid(plan_id)).first()
+        try:
+            parsed_id = parse_uuid(plan_id)
+        except ValueError:
+            return False
+            
+        p = self.db.query(Plan).filter(Plan.plan_id == parsed_id).first()
         if not p: return False
         
         if "name" in data: p.name = data["name"]
