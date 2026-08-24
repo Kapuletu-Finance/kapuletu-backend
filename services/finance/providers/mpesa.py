@@ -41,7 +41,8 @@ class MpesaProvider(PaymentProvider):
             raise ValueError(f"M-Pesa connection failed: {str(e)}")
             
         if response.status_code != 200:
-            raise ValueError(f"M-Pesa auth failed. Status: {response.status_code}. Response: {response.text}")
+            safe_key = c_key[:4] + "***" if len(c_key) > 4 else "EMPTY"
+            raise ValueError(f"M-Pesa auth failed (Key: {safe_key}). Status: {response.status_code}. Response: {response.text}")
         
         try:
             return response.json().get('access_token')
