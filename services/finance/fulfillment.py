@@ -60,7 +60,12 @@ class FulfillmentService:
         # 4. Record Payment
         if pending_payment:
             pending_payment.status = "success"
-            pending_payment.provider_reference = provider_ref # Update to the receipt number if it changed
+            
+            # Store receipt number safely without overwriting the correlation ID
+            # that the frontend is actively polling for.
+            new_meta = dict(pending_payment.payment_metadata) if pending_payment.payment_metadata else {}
+            new_meta["receipt_number"] = provider_ref
+            pending_payment.payment_metadata = new_meta
         else:
             payment = SubscriptionPayment(
                 user_id=user_id,
