@@ -20,7 +20,9 @@ class MpesaProvider(PaymentProvider):
 
     def _get_access_token(self):
         """Fetches the OAuth2 token from Daraja"""
-        auth_string = f"{self.consumer_key}:{self.consumer_secret}"
+        c_key = self.consumer_key.strip() if self.consumer_key else ""
+        c_sec = self.consumer_secret.strip() if self.consumer_secret else ""
+        auth_string = f"{c_key}:{c_sec}"
         encoded_auth = base64.b64encode(auth_string.encode()).decode()
         
         headers = {"Authorization": f"Basic {encoded_auth}"}

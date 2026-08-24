@@ -5,6 +5,8 @@ from models.audit_log import AuditLog
 import datetime
 import uuid
 import logging
+from services.notifications.providers.resend_client import ResendClient
+from services.notifications.service import create_notification
 
 logger = logging.getLogger(__name__)
 
@@ -81,5 +83,42 @@ class FulfillmentService:
         self.db.add(audit)
 
         self.db.commit()
-        logger.info(f"Fulfillment Successful: User {user_id} upgraded to {plan_id}")
+        
+        # 6. Dispatch Email Receipt
+        email = metadata.get("email") if metadata else None
+        name = metadata.get("name", "KapuLetu User") if metadata else "KapuLetu User"
+        if email:
+            try:
+                resend = ResendClient()
+                subject = f"Your KapuLetu {plan.name} Receipt"
+                html_body = f'''
+                <div style="font-family: sans-serif; max-width: 600px; margin: auto;">
+                    <h2>Payment Successful!</h2>
+                    <p>Hi {name},</p>
+                    <p>Thank you for subscribing to KapuLetu <strong>{plan.name}</strong>.</p>
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Amount Paid:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">Ksh {amount:,.2f}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>M-Pesa Receipt:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{provider_ref}</td></tr>
+                    </table>
+                    <p style="margin-top: 20px;">Your workspace has been successfully upgraded. Welcome aboard!</p>
+                </div>
+                '''
+                resend.send_email(email, subject, html_body)
+            except Exception as e:
+                logger.error(f"Failed to send email receipt: {e}")
+                
+        # 7. In-App Notification
+        try:
+            create_notification(
+                db=self.db,
+                user_id=user_id,
+                title="Subscription Upgraded",
+                message=f"We received your payment of Ksh {amount:,.2f}. Your workspace is now on the {plan.name} tier. Receipt: {provider_ref}",
+                type="subscription_update",
+                related_entity_id=str(sub.subscription_id)
+            )
+        except Exception as e:
+            logger.error(f"Failed to create in-app notification: {e}")
+
+        logger.info(f"Fulfillment Successful: User {user_id} upgraded to {plan.name}")
         return True
