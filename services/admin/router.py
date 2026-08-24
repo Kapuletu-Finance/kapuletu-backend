@@ -218,6 +218,31 @@ async def list_plans(
     service = FinanceService(db)
     return service.list_plans()
 
+@router.get("/finance/plans/{plan_id}", summary="Get Subscription Plan Details")
+async def get_plan(
+    plan_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = FinanceService(db)
+    plan = service.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    return plan
+
+@router.patch("/finance/plans/{plan_id}", summary="Update Subscription Plan")
+async def update_plan(
+    plan_id: str,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = FinanceService(db)
+    success = service.update_plan(plan_id, payload)
+    if not success:
+        raise HTTPException(status_code=404, detail="Plan not found or update failed")
+    return {"message": "Plan updated successfully"}
+
 @router.post("/finance/plans", summary="Create Subscription Plan")
 async def create_plan(
     payload: Dict[str, Any],
@@ -227,6 +252,20 @@ async def create_plan(
     service = FinanceService(db)
     plan_id = service.create_plan(payload)
     return {"message": "Plan created", "id": plan_id}
+
+@router.post("/finance/payments/{payment_id}/refund", summary="Process Refund")
+async def process_refund(
+    payment_id: str,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = FinanceService(db)
+    reason = payload.get("reason", "")
+    success = service.process_refund(payment_id, reason)
+    if not success:
+        raise HTTPException(status_code=400, detail="Could not process refund (invalid payment or already refunded)")
+    return {"message": "Refund processed"}
 
 @router.get("/finance/payments", summary="List All Payments")
 async def list_payments(

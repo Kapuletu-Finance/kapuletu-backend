@@ -24,8 +24,42 @@ class FinanceService:
             "price": p.price,
             "max_groups": p.max_groups,
             "max_campaigns": p.max_campaigns,
-            "max_transactions": p.max_transactions_per_month
+            "max_transactions": p.max_transactions_per_month,
+            "allowed_features": p.allowed_features or []
         } for p in plans]
+
+    def get_plan(self, plan_id: str):
+        """
+        Retrieves a specific plan.
+        """
+        p = self.db.query(Plan).filter(Plan.plan_id == parse_uuid(plan_id)).first()
+        if not p: return None
+        return {
+            "plan_id": str(p.plan_id),
+            "name": p.name,
+            "price": p.price,
+            "max_groups": p.max_groups,
+            "max_campaigns": p.max_campaigns,
+            "max_transactions": p.max_transactions_per_month,
+            "allowed_features": p.allowed_features or []
+        }
+
+    def update_plan(self, plan_id: str, data: dict):
+        """
+        Updates an existing plan dynamically.
+        """
+        p = self.db.query(Plan).filter(Plan.plan_id == parse_uuid(plan_id)).first()
+        if not p: return False
+        
+        if "name" in data: p.name = data["name"]
+        if "price" in data: p.price = data["price"]
+        if "max_groups" in data: p.max_groups = data["max_groups"]
+        if "max_campaigns" in data: p.max_campaigns = data["max_campaigns"]
+        if "max_transactions" in data: p.max_transactions_per_month = data["max_transactions"]
+        if "allowed_features" in data: p.allowed_features = data["allowed_features"]
+        
+        self.db.commit()
+        return True
 
     def create_plan(self, data: dict):
         """
@@ -36,7 +70,8 @@ class FinanceService:
             price=data["price"],
             max_groups=data.get("max_groups", 1),
             max_campaigns=data.get("max_campaigns", 5),
-            max_transactions_per_month=data.get("max_transactions", 100)
+            max_transactions_per_month=data.get("max_transactions", 100),
+            allowed_features=data.get("allowed_features", [])
         )
         self.db.add(plan)
         self.db.commit()
@@ -65,12 +100,43 @@ class FinanceService:
                 "amount": p.amount,
                 "status": p.status,
                 "method": p.payment_method,
+                "transaction_type": p.transaction_type,
                 "created_at": p.created_at.isoformat() if p.created_at else None
             } for p, u, pl in results],
             "total": total,
             "page": page,
             "limit": limit
         }
+
+    def process_refund(self, payment_id: str, reason: str = ""):
+        """
+        Processes a Record-Only refund for a payment.
+        """
+        original_payment = self.db.query(SubscriptionPayment).filter(
+            SubscriptionPayment.payment_id == parse_uuid(payment_id)
+        ).first()
+        
+        if not original_payment or original_payment.status != "success":
+            return False
+            
+        # Create a negative ledger entry
+        refund_payment = SubscriptionPayment(
+            user_id=original_payment.user_id,
+            subscription_id=original_payment.subscription_id,
+            amount=-abs(original_payment.amount),
+            currency=original_payment.currency,
+            status="success",
+            payment_method="admin_refund",
+            transaction_type="refund",
+            provider_reference=original_payment.provider_reference,
+            payment_metadata={"reason": reason, "original_payment_id": str(original_payment.payment_id)}
+        )
+        
+        # We also might want to downgrade the user, but for now just process the refund ledger
+        
+        self.db.add(refund_payment)
+        self.db.commit()
+        return True
 
     def manual_override_subscription(self, user_id: str, plan_id: str, duration_days: int = 30):
         """
