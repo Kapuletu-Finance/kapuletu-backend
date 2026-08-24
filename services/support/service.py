@@ -84,7 +84,12 @@ class SupportService:
         return ticket
 
     def list_user_tickets(self, user_id):
-        return self.db.query(SupportTicket).filter_by(user_id=user_id).order_by(SupportTicket.updated_at.desc()).all()
+        from models.support_session_rating import SupportSessionRating
+        tickets = self.db.query(SupportTicket).filter_by(user_id=user_id).order_by(SupportTicket.updated_at.desc()).all()
+        for t in tickets:
+            rating = self.db.query(SupportSessionRating).filter_by(ticket_id=t.ticket_id).first()
+            t.has_rating = rating is not None
+        return tickets
 
     def get_ticket_details(self, user_id, ticket_id):
         from models.users import User
@@ -93,12 +98,16 @@ class SupportService:
             return None, []
         messages = self.db.query(SupportTicketMessage).filter_by(ticket_id=ticket_id, is_internal=False).order_by(SupportTicketMessage.created_at.asc()).all()
         
+        from models.support_session_rating import SupportSessionRating
         for m in messages:
             sender = self.db.query(User).filter_by(user_id=m.sender_id).first()
             if sender:
                 m.sender_name = f"{sender.first_name} {sender.last_name}"
             else:
                 m.sender_name = "Unknown"
+        
+        rating = self.db.query(SupportSessionRating).filter_by(ticket_id=ticket_id).first()
+        ticket.has_rating = rating is not None
         
         return ticket, messages
         
@@ -143,3 +152,37 @@ class SupportService:
             pass # Fail gracefully
             
         return msg
+
+    def rate_ticket(self, user_id, ticket_id: str, issue_resolved: bool,
+                    satisfaction_level: int, response_quality=None,
+                    response_speed=None, comment=None):
+        """
+        Stores a post-session satisfaction rating submitted by the treasurer.
+        Returns (rating_obj, error_code) where error_code is None on success,
+        'not_found' if the ticket doesn't exist, 'forbidden' if wrong owner,
+        or 'already_rated' if a rating already exists.
+        """
+        from models.support_session_rating import SupportSessionRating
+        import uuid as _uuid
+        ticket = self.db.query(SupportTicket).filter_by(ticket_id=ticket_id).first()
+        if not ticket:
+            return None, "not_found"
+        if str(ticket.user_id) != str(user_id):
+            return None, "forbidden"
+        existing = self.db.query(SupportSessionRating).filter_by(ticket_id=ticket.ticket_id).first()
+        if existing:
+            return None, "already_rated"
+
+        rating = SupportSessionRating(
+            rating_id=_uuid.uuid4(),
+            ticket_id=ticket.ticket_id,
+            user_id=ticket.user_id,
+            issue_resolved=issue_resolved,
+            satisfaction_level=satisfaction_level,
+            response_quality=response_quality,
+            response_speed=response_speed,
+            comment=comment,
+        )
+        self.db.add(rating)
+        self.db.commit()
+        return rating, None

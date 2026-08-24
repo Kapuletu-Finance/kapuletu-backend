@@ -46,9 +46,13 @@ class CRMService:
         """
         Retrieves support tickets filtered by status, returning user names and ordered by SLA.
         """
+        from models.support_session_rating import SupportSessionRating
         results = self.db.query(SupportTicket, User).join(User, SupportTicket.user_id == User.user_id).filter(
             SupportTicket.status == status
         ).order_by(SupportTicket.sla_deadline.asc().nulls_last()).all()
+        
+        def _rating_for(ticket_id):
+            return self.db.query(SupportSessionRating).filter_by(ticket_id=ticket_id).first()
         
         return [{
             "ticket_id": str(t.SupportTicket.ticket_id),
@@ -61,15 +65,19 @@ class CRMService:
             "priority": t.SupportTicket.priority,
             "sla_deadline": t.SupportTicket.sla_deadline.isoformat() if t.SupportTicket.sla_deadline else None,
             "last_reply_at": t.SupportTicket.last_reply_at.isoformat() if t.SupportTicket.last_reply_at else None,
-            "created_at": t.SupportTicket.created_at.isoformat()
+            "created_at": t.SupportTicket.created_at.isoformat(),
+            "has_rating": _rating_for(t.SupportTicket.ticket_id) is not None,
+            "satisfaction_level": (_rating_for(t.SupportTicket.ticket_id) or type('', (), {'satisfaction_level': None})()).satisfaction_level,
         } for t in results]
 
     def get_ticket_details(self, ticket_id: str):
+        from models.support_session_rating import SupportSessionRating
         ticket = self.db.query(SupportTicket).filter(SupportTicket.ticket_id == ticket_id).first()
         if not ticket:
             return None
         messages = self.db.query(SupportTicketMessage).filter_by(ticket_id=ticket_id).order_by(SupportTicketMessage.created_at.asc()).all()
         user = self.db.query(User).filter_by(user_id=ticket.user_id).first()
+        rating = self.db.query(SupportSessionRating).filter_by(ticket_id=ticket.ticket_id).first()
         
         return {
             "ticket_id": str(ticket.ticket_id),
@@ -86,6 +94,15 @@ class CRMService:
             "assigned_admin_id": str(ticket.assigned_admin_id) if ticket.assigned_admin_id else None,
             "internal_notes": ticket.internal_notes,
             "created_at": ticket.created_at.isoformat(),
+            "has_rating": rating is not None,
+            "rating": {
+                "issue_resolved": rating.issue_resolved,
+                "satisfaction_level": rating.satisfaction_level,
+                "response_quality": rating.response_quality,
+                "response_speed": rating.response_speed,
+                "comment": rating.comment,
+                "created_at": rating.created_at.isoformat(),
+            } if rating else None,
             "messages": [{
                 "message_id": str(m.message_id),
                 "sender_id": str(m.sender_id),

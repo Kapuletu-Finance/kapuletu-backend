@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any
 from common.auth_dependencies import get_verified_user
 from common.database import get_db
-from .schemas import TicketCreate, TicketReply, TicketOut, TicketDetailOut, TicketMessageOut
+from .schemas import TicketCreate, TicketReply, TicketRatingCreate, TicketOut, TicketDetailOut, TicketMessageOut
 from .service import SupportService
 
 def get_current_user_id(current_user: Dict[str, Any] = Depends(get_verified_user)) -> str:
@@ -49,3 +49,24 @@ def reply_ticket(ticket_id: str, payload: TicketReply, db: Session = Depends(get
         return msg
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+@router.post("/tickets/{ticket_id}/rate", status_code=201)
+def rate_ticket(ticket_id: str, payload: TicketRatingCreate, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """Submit a post-session satisfaction rating for a resolved support ticket."""
+    svc = SupportService(db)
+    rating, err = svc.rate_ticket(
+        user_id=user_id,
+        ticket_id=ticket_id,
+        issue_resolved=payload.issue_resolved,
+        satisfaction_level=payload.satisfaction_level,
+        response_quality=payload.response_quality,
+        response_speed=payload.response_speed,
+        comment=payload.comment,
+    )
+    if err == "not_found":
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if err == "forbidden":
+        raise HTTPException(status_code=403, detail="Not your ticket")
+    if err == "already_rated":
+        raise HTTPException(status_code=409, detail="This session has already been rated")
+    return {"message": "Thank you for your feedback! Your rating has been recorded.", "rating_id": str(rating.rating_id)}
