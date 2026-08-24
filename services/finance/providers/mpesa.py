@@ -25,7 +25,13 @@ class MpesaProvider(PaymentProvider):
         
         headers = {"Authorization": f"Basic {encoded_auth}"}
         response = requests.get(f"{self.base_url}/oauth/v1/generate?grant_type=client_credentials", headers=headers)
-        return response.json().get('access_token')
+        if response.status_code != 200:
+            raise ValueError(f"M-Pesa auth failed. Status: {response.status_code}")
+        
+        try:
+            return response.json().get('access_token')
+        except Exception:
+            raise ValueError("Invalid response from M-Pesa authentication server.")
 
     def initiate_checkout(self, user_id: str, plan_id: str, amount: float, metadata: Dict[str, Any]) -> Dict[str, Any]:
         token = self._get_access_token()
@@ -51,7 +57,13 @@ class MpesaProvider(PaymentProvider):
         
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         response = requests.post(f"{self.base_url}/mpesa/stkpush/v1/processrequest", json=payload, headers=headers)
-        res_data = response.json()
+        if response.status_code != 200:
+            raise ValueError(f"M-Pesa STK push failed. Status: {response.status_code}")
+            
+        try:
+            res_data = response.json()
+        except Exception:
+            raise ValueError("Invalid response from M-Pesa STK Push server.")
         
         return {
             "correlation_id": res_data.get("CheckoutRequestID"),

@@ -114,7 +114,10 @@ async def initiate_checkout(
     else:
         raise HTTPException(status_code=400, detail="Unsupported provider")
         
-    result = provider.initiate_checkout(user_id, str(plan.plan_id), plan.price, metadata)
+    try:
+        result = provider.initiate_checkout(user_id, str(plan.plan_id), plan.price, metadata)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     
     # Save the pending checkout attempt
     if result.get("status") == "initiated":
