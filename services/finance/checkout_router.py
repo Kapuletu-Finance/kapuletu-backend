@@ -117,6 +117,8 @@ async def initiate_checkout(
     try:
         result = provider.initiate_checkout(user_id, str(plan.plan_id), plan.price, metadata)
     except ValueError as e:
+        import logging
+        logging.error(f"Checkout Provider Error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     
     # Save the pending checkout attempt
