@@ -241,15 +241,34 @@ async def get_cohort_retention(
 
 @router.get("/finance/analytics/export", summary="Export Financial Data")
 async def export_financial_data(
+    format: str = Query("csv", description="Export format (csv, excel, pdf)"),
+    start_date: str = Query(None, description="Start date in ISO format"),
+    end_date: str = Query(None, description="End date in ISO format"),
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     engine = FinancialAnalyticsEngine(db)
-    csv_data = engine.generate_export_csv()
+    
+    parsed_start = datetime.datetime.fromisoformat(start_date) if start_date else None
+    parsed_end = datetime.datetime.fromisoformat(end_date) if end_date else None
+    
+    file_data, mime_type = engine.generate_export(
+        start_date=parsed_start, 
+        end_date=parsed_end, 
+        format=format
+    )
+    
+    extension = "csv"
+    if format == "excel":
+        extension = "xlsx"
+    elif format == "pdf":
+        extension = "pdf"
+        
+    filename = f"financial_export_{datetime.datetime.utcnow().strftime('%Y%m%d')}.{extension}"
     
     # Return as downloadable file
-    response = StreamingResponse(iter([csv_data]), media_type="text/csv")
-    response.headers["Content-Disposition"] = f"attachment; filename=financial_export_{datetime.datetime.utcnow().strftime('%Y%m%d')}.csv"
+    response = StreamingResponse(iter([file_data]), media_type=mime_type)
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
     return response
 
 @router.get("/finance/plans", summary="List Subscription Plans")

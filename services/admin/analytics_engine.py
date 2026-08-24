@@ -4,6 +4,11 @@ import datetime
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract, and_, desc
+import openpyxl
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet
 
 from models.subscription import Subscription, SubscriptionPayment, Plan
 from models.users import User
@@ -67,11 +72,11 @@ class FinancialAnalyticsEngine:
             start_date = datetime.datetime.utcnow() - datetime.timedelta(days=180)
             
         # Standardize grouping based on PostgreSQL / SQLite dialect 
-        # Using a simpler string format approach compatible with most DBs
-        group_format = '%Y-%m' if interval == 'month' else '%Y-%W'
+        # PostgreSQL uses to_char
+        group_format = 'YYYY-MM' if interval == 'month' else 'IYYY-IW'
 
         results = self.db.query(
-            func.strftime(group_format, SubscriptionPayment.created_at).label("period"),
+            func.to_char(SubscriptionPayment.created_at, group_format).label("period"),
             Plan.name.label("plan_name"),
             func.sum(SubscriptionPayment.amount).label("revenue")
         ).join(
@@ -98,9 +103,10 @@ class FinancialAnalyticsEngine:
             
         return list(flow_data.values())
 
-    def generate_export_csv(self, start_date: datetime.datetime = None, end_date: datetime.datetime = None) -> str:
+    def generate_export(self, start_date: datetime.datetime = None, end_date: datetime.datetime = None, format: str = "csv") -> tuple[Any, str]:
         """
         Generates a robust financial export format ready for Excel/Pandas consumption.
+        Returns a tuple of (file_data_bytes_or_string, mime_type)
         """
         query = self.db.query(
             SubscriptionPayment.payment_id,
@@ -128,26 +134,94 @@ class FinancialAnalyticsEngine:
         query = query.order_by(desc(SubscriptionPayment.created_at))
         records = query.all()
 
-        output = StringIO()
-        writer = csv.writer(output)
-        writer.writerow([
-            "Payment ID", "Date", "User Email", "User Name", 
-            "Plan Tier", "Amount", "Currency", "Method", "Status"
-        ])
-        
-        for r in records:
-            writer.writerow([
-                str(r.payment_id),
-                r.created_at.isoformat(),
-                r.email,
-                r.full_name,
-                r.plan_name,
-                r.amount,
-                r.currency,
-                r.payment_method,
-            ])
+        headers = ["Payment ID", "Date", "User Email", "User Name", "Plan Tier", "Amount", "Currency", "Method", "Status"]
+
+        if format == "csv":
+            output = StringIO()
+            writer = csv.writer(output)
+            writer.writerow(headers)
             
-        return output.getvalue()
+            for r in records:
+                writer.writerow([
+                    str(r.payment_id),
+                    r.created_at.isoformat(),
+                    r.email,
+                    r.full_name,
+                    r.plan_name,
+                    r.amount,
+                    r.currency,
+                    r.payment_method,
+                    r.status,
+                ])
+            return output.getvalue(), "text/csv"
+            
+        elif format == "excel":
+            import io
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Financial Records"
+            
+            ws.append(headers)
+            for col in range(1, 10):
+                ws.cell(row=1, column=col).font = openpyxl.styles.Font(bold=True)
+                
+            for r in records:
+                ws.append([
+                    str(r.payment_id),
+                    r.created_at.strftime("%Y-%m-%d %H:%M"),
+                    r.email,
+                    r.full_name,
+                    r.plan_name,
+                    float(r.amount) if r.amount else 0.0,
+                    r.currency,
+                    r.payment_method,
+                    r.status,
+                ])
+                
+            output = io.BytesIO()
+            wb.save(output)
+            return output.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            
+        elif format == "pdf":
+            import io
+            output = io.BytesIO()
+            doc = SimpleDocTemplate(output, pagesize=letter)
+            elements = []
+            
+            styles = getSampleStyleSheet()
+            elements.append(Paragraph("Financial Export Report", styles['Title']))
+            elements.append(Paragraph(f"Generated at: {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
+            
+            # Prepare data for table
+            data = [headers]
+            for r in records:
+                data.append([
+                    str(r.payment_id)[:8] + "...", # truncate UUID for PDF space
+                    r.created_at.strftime("%Y-%m-%d"),
+                    r.email[:15] + "..." if len(r.email) > 15 else r.email,
+                    r.full_name[:15] + "..." if r.full_name else "",
+                    r.plan_name,
+                    str(r.amount),
+                    r.currency,
+                    r.payment_method,
+                    r.status,
+                ])
+                
+            t = Table(data, style=[
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                ('GRID', (0,0), (-1,-1), 1, colors.black)
+            ])
+            elements.append(t)
+            doc.build(elements)
+            return output.getvalue(), "application/pdf"
+            
+        return "", "text/plain"
 
     def get_cohort_retention(self) -> List[Dict[str, Any]]:
         """
@@ -156,7 +230,7 @@ class FinancialAnalyticsEngine:
         """
         users = self.db.query(
             User.user_id,
-            func.strftime('%Y-%m', User.created_at).label("cohort")
+            func.to_char(User.created_at, 'YYYY-MM').label("cohort")
         ).all()
         
         cohorts = {}
