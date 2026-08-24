@@ -11,6 +11,7 @@ from services.admin.finance_service import FinanceService
 from services.admin.crm_service import CRMService
 from services.admin.audit_service import AuditService as AdminAuditService
 from services.admin.analytics_engine import FinancialAnalyticsEngine
+from services.admin.performance_service import PerformanceService
 from fastapi.responses import StreamingResponse
 import io
 import datetime
@@ -25,6 +26,39 @@ async def get_overview(
 ):
     service = AnalyticsService(db)
     return service.get_platform_overview()
+
+# --- Module A2: Platform Performance ---
+@router.get("/performance/health", summary="Get System Health KPIs")
+async def get_system_health(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = PerformanceService(db)
+    return service.get_system_health()
+
+@router.get("/performance/activity-trend", summary="Get Activity Trend")
+async def get_activity_trend(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = PerformanceService(db)
+    return service.get_activity_trend()
+
+@router.get("/performance/active-users", summary="Get Detailed Active Users")
+async def get_extended_active_users(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = PerformanceService(db)
+    return service.get_extended_active_users()
+
+@router.get("/performance/events", summary="Get System Events Log")
+async def get_system_events(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = PerformanceService(db)
+    return service.get_system_events()
 
 # --- Module B: User Lifecycle & Support ---
 @router.get("/users/activity", summary="Recent and Active Users")
