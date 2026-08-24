@@ -217,6 +217,55 @@ async def cancel_subscription(
     db.commit()
     return {"status": "success", "message": "Auto-renewal cancelled. Your subscription will downgrade upon expiration."}
 
+@router.post("/webhook/flutterwave", summary="Flutterwave Webhook")
+async def flutterwave_webhook(request: Request, db: Session = Depends(get_db)):
+    payload = await request.json()
+    fulfillment = FulfillmentService(db)
+    result = fulfillment.process_webhook("flutterwave", payload, request.headers)
+    return {"status": result}
+
+@router.post("/activate-trial", summary="Activate 21-Day Pro Trial")
+async def activate_trial(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    user_id = parse_uuid(current_user.get("sub"))
+    user = db.execute(select(User).where(User.user_id == user_id)).scalars().first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    if getattr(user, 'has_used_trial', False):
+        raise HTTPException(status_code=400, detail="You have already consumed your free trial.")
+        
+    pro_plan = db.execute(select(Plan).where(Plan.name == "Professional")).scalars().first()
+    if not pro_plan:
+        raise HTTPException(status_code=500, detail="Professional plan not found in system")
+        
+    sub = db.execute(select(Subscription).where(Subscription.user_id == user_id)).scalars().first()
+    
+    if not sub:
+        sub = Subscription(
+            user_id=user_id,
+            plan_id=pro_plan.plan_id,
+            status="active",
+            start_date=datetime.datetime.utcnow(),
+            end_date=datetime.datetime.utcnow() + datetime.timedelta(days=21),
+            is_auto_renew=False
+        )
+        db.add(sub)
+    else:
+        sub.plan_id = pro_plan.plan_id
+        sub.status = "active"
+        sub.start_date = datetime.datetime.utcnow()
+        sub.end_date = datetime.datetime.utcnow() + datetime.timedelta(days=21)
+        sub.is_auto_renew = False
+        
+    user.has_used_trial = True
+    db.commit()
+    
+    return {"message": "Trial activated successfully", "plan": pro_plan.name}
+
 @router.post("/webhooks/{provider}", summary="Payment Webhook")
 async def webhook_callback(provider: str, request: Request, db: Session = Depends(get_db)):
     body_bytes = await request.body()
