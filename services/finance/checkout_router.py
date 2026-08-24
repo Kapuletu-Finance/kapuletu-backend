@@ -166,12 +166,29 @@ async def get_payment_status(
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     user_id = current_user.get("sub")
-    payment = db.execute(
-        select(SubscriptionPayment).where(
-            SubscriptionPayment.user_id == parse_uuid(user_id),
-            (SubscriptionPayment.provider_reference == checkout_id) | (SubscriptionPayment.payment_id == checkout_id)
-        )
-    ).scalars().first()
+    
+    import uuid
+    is_uuid = False
+    try:
+        uuid.UUID(str(checkout_id))
+        is_uuid = True
+    except ValueError:
+        pass
+
+    if is_uuid:
+        payment = db.execute(
+            select(SubscriptionPayment).where(
+                SubscriptionPayment.user_id == parse_uuid(user_id),
+                (SubscriptionPayment.provider_reference == checkout_id) | (SubscriptionPayment.payment_id == checkout_id)
+            )
+        ).scalars().first()
+    else:
+        payment = db.execute(
+            select(SubscriptionPayment).where(
+                SubscriptionPayment.user_id == parse_uuid(user_id),
+                SubscriptionPayment.provider_reference == checkout_id
+            )
+        ).scalars().first()
     
     if not payment:
         return PaymentStatusOut(status="pending", confirmed_at=None, plan=None)
