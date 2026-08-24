@@ -14,6 +14,7 @@ from services.finance.checkout_schemas import (
 from models.subscription import Plan, Subscription, SubscriptionPayment
 from models.group import Group
 from models.campaign import Campaign
+from models.users import User
 from services.finance.providers.mpesa import MpesaProvider
 from services.finance.providers.flutterwave import FlutterwaveProvider
 from services.finance.fulfillment import FulfillmentService
