@@ -1,0 +1,200 @@
+import csv
+from io import StringIO
+import datetime
+from typing import Dict, Any, List
+from sqlalchemy.orm import Session
+from sqlalchemy import func, extract, and_, desc
+
+from models.subscription import Subscription, SubscriptionPayment, Plan
+from models.users import User
+
+class FinancialAnalyticsEngine:
+    """
+    Advanced financial analytics engine capable of calculating MRR,
+    Revenue Flows, Churn rates, and generating exportable reports.
+    """
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_health_metrics(self, start_date: datetime.datetime = None, end_date: datetime.datetime = None) -> Dict[str, Any]:
+        """
+        Generates point-in-time financial snapshots including MRR and active subscribers.
+        """
+        now = datetime.datetime.utcnow()
+        if not end_date: end_date = now
+        
+        # Base query for active subscriptions
+        active_subs_query = self.db.query(Subscription).filter(
+            Subscription.status == "active",
+            Subscription.end_date == None
+        )
+        
+        total_active_subscribers = active_subs_query.count()
+        
+        # Calculate MRR by summing the prices of active subscriptions
+        mrr = self.db.query(func.sum(Plan.price)).select_from(Subscription).join(
+            Plan, Subscription.plan_id == Plan.plan_id
+        ).filter(
+            Subscription.status == "active",
+            Subscription.end_date == None
+        ).scalar() or 0
+
+        # Calculate Churn Rate (simplified: expired subs in last 30 days / total subs)
+        thirty_days_ago = now - datetime.timedelta(days=30)
+        recently_expired = self.db.query(Subscription).filter(
+            Subscription.status == "active", # Some may just have an end_date that passed
+            Subscription.end_date != None,
+            Subscription.end_date >= thirty_days_ago,
+            Subscription.end_date <= now
+        ).count()
+        
+        total_subs = total_active_subscribers + recently_expired
+        churn_rate = (recently_expired / total_subs * 100) if total_subs > 0 else 0
+
+        return {
+            "mrr": mrr,
+            "active_subscribers": total_active_subscribers,
+            "churn_rate_percent": round(churn_rate, 2),
+            "generated_at": now.isoformat()
+        }
+
+    def get_revenue_flow(self, interval: str = "month", start_date: datetime.datetime = None) -> List[Dict[str, Any]]:
+        """
+        Groups revenue records over a time-series interval (week/month).
+        """
+        if not start_date:
+            # Default to last 6 months
+            start_date = datetime.datetime.utcnow() - datetime.timedelta(days=180)
+            
+        # Standardize grouping based on PostgreSQL / SQLite dialect 
+        # Using a simpler string format approach compatible with most DBs
+        group_format = '%Y-%m' if interval == 'month' else '%Y-%W'
+
+        results = self.db.query(
+            func.strftime(group_format, SubscriptionPayment.created_at).label("period"),
+            Plan.name.label("plan_name"),
+            func.sum(SubscriptionPayment.amount).label("revenue")
+        ).join(
+            Subscription, SubscriptionPayment.subscription_id == Subscription.subscription_id
+        ).join(
+            Plan, Subscription.plan_id == Plan.plan_id
+        ).filter(
+            SubscriptionPayment.created_at >= start_date,
+            SubscriptionPayment.status == "success"
+        ).group_by(
+            "period", "plan_name"
+        ).order_by("period").all()
+
+        # Reshape data for Recharts stacked area chart
+        # Target format: [{ period: "2023-01", "Basic": 0, "Silver": 500 }, ...]
+        flow_data = {}
+        for row in results:
+            period = row.period
+            plan = row.plan_name
+            revenue = row.revenue
+            if period not in flow_data:
+                flow_data[period] = {"period": period}
+            flow_data[period][plan] = revenue
+            
+        return list(flow_data.values())
+
+    def generate_export_csv(self, start_date: datetime.datetime = None, end_date: datetime.datetime = None) -> str:
+        """
+        Generates a robust financial export format ready for Excel/Pandas consumption.
+        """
+        query = self.db.query(
+            SubscriptionPayment.payment_id,
+            SubscriptionPayment.amount,
+            SubscriptionPayment.currency,
+            SubscriptionPayment.status,
+            SubscriptionPayment.payment_method,
+            SubscriptionPayment.created_at,
+            User.email,
+            User.full_name,
+            Plan.name.label("plan_name")
+        ).join(
+            User, SubscriptionPayment.user_id == User.user_id
+        ).join(
+            Subscription, SubscriptionPayment.subscription_id == Subscription.subscription_id
+        ).join(
+            Plan, Subscription.plan_id == Plan.plan_id
+        )
+
+        if start_date:
+            query = query.filter(SubscriptionPayment.created_at >= start_date)
+        if end_date:
+            query = query.filter(SubscriptionPayment.created_at <= end_date)
+
+        query = query.order_by(desc(SubscriptionPayment.created_at))
+        records = query.all()
+
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "Payment ID", "Date", "User Email", "User Name", 
+            "Plan Tier", "Amount", "Currency", "Method", "Status"
+        ])
+        
+        for r in records:
+            writer.writerow([
+                str(r.payment_id),
+                r.created_at.isoformat(),
+                r.email,
+                r.full_name,
+                r.plan_name,
+                r.amount,
+                r.currency,
+                r.payment_method,
+            ])
+            
+        return output.getvalue()
+
+    def get_cohort_retention(self) -> List[Dict[str, Any]]:
+        """
+        Calculates user retention grouped by signup month (cohort).
+        Returns a list of cohorts with their retention percentages over 12 months.
+        """
+        users = self.db.query(
+            User.user_id,
+            func.strftime('%Y-%m', User.created_at).label("cohort")
+        ).all()
+        
+        cohorts = {}
+        for u in users:
+            if u.cohort not in cohorts:
+                cohorts[u.cohort] = {"total": 0, "users": []}
+            cohorts[u.cohort]["total"] += 1
+            cohorts[u.cohort]["users"].append(u.user_id)
+            
+        results = []
+        now = datetime.datetime.utcnow()
+        
+        for cohort_month, data in sorted(cohorts.items(), reverse=True):
+            retention = []
+            cohort_date = datetime.datetime.strptime(cohort_month, "%Y-%m")
+            
+            for month_offset in range(12):
+                check_date = cohort_date + datetime.timedelta(days=30 * month_offset)
+                if check_date > now:
+                    break
+                    
+                # To accurately check retention at month M, we check active subs in that window
+                active_users = self.db.query(Subscription.user_id).filter(
+                    Subscription.user_id.in_(data["users"]),
+                    Subscription.status == "active",
+                    Subscription.start_date <= check_date
+                ).distinct().count()
+                
+                if month_offset == 0:
+                    retention.append(100)
+                else:
+                    perc = int((active_users / data["total"]) * 100) if data["total"] > 0 else 0
+                    retention.append(perc)
+                    
+            results.append({
+                "cohort": cohort_month,
+                "users": data["total"],
+                "retention": retention
+            })
+            
+        return results

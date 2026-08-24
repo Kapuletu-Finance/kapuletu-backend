@@ -10,6 +10,10 @@ from services.admin.ai_governance_service import AIGovernanceService
 from services.admin.finance_service import FinanceService
 from services.admin.crm_service import CRMService
 from services.admin.audit_service import AuditService as AdminAuditService
+from services.admin.analytics_engine import FinancialAnalyticsEngine
+from fastapi.responses import StreamingResponse
+import io
+import datetime
 
 router = APIRouter(prefix="/admin", tags=["11. Admin & Governance"])
 
@@ -210,6 +214,44 @@ async def update_config(
     return {"message": "AI configuration updated"}
 
 # --- Module D: Subscription Revenue & Plans ---
+@router.get("/finance/analytics/health-metrics", summary="Get Financial Health Metrics")
+async def get_health_metrics(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    engine = FinancialAnalyticsEngine(db)
+    return engine.get_health_metrics()
+
+@router.get("/finance/analytics/revenue-flow", summary="Get Revenue Flow Time-Series")
+async def get_revenue_flow(
+    interval: str = Query("month", description="week or month"),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    engine = FinancialAnalyticsEngine(db)
+    return engine.get_revenue_flow(interval=interval)
+
+@router.get("/finance/analytics/cohorts", summary="Get Cohort Retention")
+async def get_cohort_retention(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    engine = FinancialAnalyticsEngine(db)
+    return engine.get_cohort_retention()
+
+@router.get("/finance/analytics/export", summary="Export Financial Data")
+async def export_financial_data(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    engine = FinancialAnalyticsEngine(db)
+    csv_data = engine.generate_export_csv()
+    
+    # Return as downloadable file
+    response = StreamingResponse(iter([csv_data]), media_type="text/csv")
+    response.headers["Content-Disposition"] = f"attachment; filename=financial_export_{datetime.datetime.utcnow().strftime('%Y%m%d')}.csv"
+    return response
+
 @router.get("/finance/plans", summary="List Subscription Plans")
 async def list_plans(
     db: Session = Depends(get_db),
