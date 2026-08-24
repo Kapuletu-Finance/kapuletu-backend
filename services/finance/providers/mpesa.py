@@ -15,7 +15,7 @@ class MpesaProvider(PaymentProvider):
         self.consumer_secret = os.environ.get('MPESA_CONSUMER_SECRET')
         self.shortcode = os.environ.get('MPESA_SHORTCODE')
         self.passkey = os.environ.get('MPESA_PASSKEY')
-        self.base_url = os.environ.get('MPESA_BASE_URL', "https://sandbox.safaricom.co.ke")
+        self.base_url = os.environ.get('MPESA_BASE_URL', "https://sandbox.safaricom.co.ke").rstrip('/')
         self.callback_url = os.environ.get('MPESA_CALLBACK_URL')
 
     def _get_access_token(self):
@@ -72,9 +72,17 @@ class MpesaProvider(PaymentProvider):
         }
         
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        response = requests.post(f"{self.base_url}/mpesa/stkpush/v1/processrequest", json=payload, headers=headers)
+        url = f"{self.base_url}/mpesa/stkpush/v1/processrequest"
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Initiating STK Push to: {url}")
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=15)
+        logger.info(f"STK Push Response Code: {response.status_code}")
+        logger.info(f"STK Push Raw Response: {response.text}")
+        
         if response.status_code != 200:
-            raise ValueError(f"M-Pesa STK push failed. Status: {response.status_code}")
+            raise ValueError(f"M-Pesa STK push failed. Status: {response.status_code}. Response: {response.text}")
             
         try:
             res_data = response.json()
