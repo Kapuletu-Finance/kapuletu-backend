@@ -295,8 +295,13 @@ async def activate_trial(
 
 @router.post("/webhooks/{provider}", summary="Payment Webhook")
 async def webhook_callback(provider: str, request: Request, db: Session = Depends(get_db)):
+    import logging
+    logger = logging.getLogger(__name__)
+    
     body_bytes = await request.body()
     body_str = body_bytes.decode("utf-8")
+    logger.info(f"WEBHOOK RECEIVED [{provider}]: {body_str}")
+    
     import json
     payload = json.loads(body_str) if body_str else {}
     
@@ -308,30 +313,52 @@ async def webhook_callback(provider: str, request: Request, db: Session = Depend
         raise HTTPException(status_code=400, detail="Unknown provider")
         
     if not provider_svc.verify_webhook(body_str, dict(request.headers)):
+        logger.error(f"WEBHOOK SIGNATURE INVALID for {provider}")
         raise HTTPException(status_code=401, detail="Invalid signature")
         
-    event_data = provider_svc.parse_webhook_payload(payload)
+    try:
+        event_data = provider_svc.parse_webhook_payload(payload)
+        logger.info(f"WEBHOOK PARSED EVENT DATA: {event_data}")
+    except Exception as e:
+        logger.error(f"WEBHOOK PARSE FAILED: {str(e)}")
+        return {"received": True, "error": "parse_failed"}
+        
     if event_data.get("success"):
-        fulfillment = FulfillmentService(db)
-        
-        # Look up pending payment by correlation_id (CheckoutRequestID)
-        correlation_id = event_data.get("correlation_id", "")
-        pending_payment = db.execute(
-            select(SubscriptionPayment).where(SubscriptionPayment.provider_reference == correlation_id)
-        ).scalars().first()
-        
-        metadata = {}
-        if pending_payment:
-            metadata = {
-                "user_id": str(pending_payment.user_id),
-                "plan_id": pending_payment.payment_metadata.get("plan_id") if pending_payment.payment_metadata else None
-            }
+        logger.info("WEBHOOK SUCCESS DETECTED. Starting fulfillment...")
+        try:
+            fulfillment = FulfillmentService(db)
             
-        fulfillment.process_success(
-            correlation_id=correlation_id,
-            provider_ref=event_data.get("provider_ref", ""),
-            amount=event_data.get("amount", 0.0),
-            metadata=metadata
-        )
+            # Look up pending payment by correlation_id (CheckoutRequestID)
+            correlation_id = event_data.get("correlation_id", "")
+            logger.info(f"WEBHOOK LOOKING UP CORRELATION ID: {correlation_id}")
+            
+            pending_payment = db.execute(
+                select(SubscriptionPayment).where(SubscriptionPayment.provider_reference == correlation_id)
+            ).scalars().first()
+            
+            metadata = {}
+            if pending_payment:
+                logger.info(f"WEBHOOK FOUND PENDING PAYMENT: {pending_payment.payment_id}")
+                metadata = {
+                    "user_id": str(pending_payment.user_id),
+                    "plan_id": pending_payment.payment_metadata.get("plan_id") if pending_payment.payment_metadata else None
+                }
+            else:
+                logger.error(f"WEBHOOK COULD NOT FIND PENDING PAYMENT FOR CORRELATION {correlation_id}")
+                
+            fulfillment_result = fulfillment.process_success(
+                correlation_id=correlation_id,
+                provider_ref=event_data.get("provider_ref", ""),
+                amount=event_data.get("amount", 0.0),
+                metadata=metadata
+            )
+            logger.info(f"WEBHOOK FULFILLMENT RESULT: {fulfillment_result}")
+        except Exception as e:
+            logger.error(f"WEBHOOK FULFILLMENT CRASHED: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"received": True, "error": "fulfillment_crashed"}
+    else:
+        logger.warning(f"WEBHOOK REPORTED FAILURE: {event_data.get('raw_status')}")
         
     return {"received": True}
