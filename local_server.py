@@ -521,7 +521,7 @@ app.include_router(admin_router)
 from services.feedback.router import router as feedback_router
 app.include_router(feedback_router)  # 16. User Feedback
 
-app.include_router(checkout_router, tags=["6. Finance & Subscriptions"], prefix="/finance", dependencies=[Depends(get_verified_user)])
+app.include_router(checkout_router, tags=["6. Finance & Subscriptions"], prefix="/finance")
 
 from services.workspace.router import router as workspace_router
 app.include_router(workspace_router, dependencies=[Depends(get_verified_user)])
