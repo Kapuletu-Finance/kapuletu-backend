@@ -15,7 +15,7 @@ class MpesaProvider(PaymentProvider):
         self.consumer_secret = os.environ.get('MPESA_CONSUMER_SECRET')
         self.shortcode = os.environ.get('MPESA_SHORTCODE')
         self.passkey = os.environ.get('MPESA_PASSKEY')
-        self.base_url = "https://api.safaricom.co.ke" # Switch to sandbox for testing if needed
+        self.base_url = os.environ.get('MPESA_BASE_URL', "https://sandbox.safaricom.co.ke")
         self.callback_url = os.environ.get('MPESA_CALLBACK_URL')
 
     def _get_access_token(self):
@@ -26,7 +26,7 @@ class MpesaProvider(PaymentProvider):
         headers = {"Authorization": f"Basic {encoded_auth}"}
         response = requests.get(f"{self.base_url}/oauth/v1/generate?grant_type=client_credentials", headers=headers)
         if response.status_code != 200:
-            raise ValueError(f"M-Pesa auth failed. Status: {response.status_code}")
+            raise ValueError(f"M-Pesa auth failed. Status: {response.status_code}. Response: {response.text}")
         
         try:
             return response.json().get('access_token')
