@@ -19,6 +19,8 @@ from services.auth.router import limiter
 from repositories import campaign_repo, group_repo
 from models.audit_log import AuditLog
 from models.transaction import Transaction
+from models.subscription import Subscription, Plan
+from models.group import Group
 from services.audit.service import AuditService
 
 router = APIRouter(prefix="", tags=["5. Campaigns Management"])
@@ -43,8 +45,22 @@ async def create_campaign(
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Creates a new campaign for a specific group."""
-    group = _verify_group_ownership(db, str(group_id), current_user.get('sub'))
+    user_uuid = parse_uuid(current_user.get('sub'))
+    group = _verify_group_ownership(db, str(group_id), str(user_uuid))
     
+    # Enforce Plan Limits
+    sub = db.execute(select(Subscription).where(Subscription.user_id == user_uuid)).scalars().first()
+    if sub:
+        plan = db.execute(select(Plan).where(Plan.plan_id == sub.plan_id)).scalars().first()
+        if plan:
+            # Get total campaigns across all groups owned by this user
+            campaigns_count = db.execute(select(Campaign).join(Group).where(Group.owner_id == user_uuid)).scalars().all()
+            if len(campaigns_count) >= plan.max_campaigns:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, 
+                    detail="Campaign limit reached for your current plan. Please upgrade."
+                )
+                
     new_campaign = campaign_repo.create_campaign(
         db=db,
         group_id=str(group.group_id),

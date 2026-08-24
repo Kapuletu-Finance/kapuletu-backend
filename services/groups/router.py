@@ -11,6 +11,9 @@ from services.groups.schemas import GroupCreate, GroupUpdate, GroupOut, Paginate
 from services.auth.router import limiter
 from repositories import group_repo
 from services.audit.service import AuditService
+from models.subscription import Subscription, Plan
+from sqlalchemy import select
+from models.group import Group
 
 router = APIRouter(prefix="/groups", tags=["4. Groups Management"])
 
@@ -23,10 +26,24 @@ async def create_group(
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     """Creates a new community organization or fund owned by the current treasurer."""
+    user_uuid = parse_uuid(current_user.get('sub'))
+    
+    # Enforce Plan Limits
+    sub = db.execute(select(Subscription).where(Subscription.user_id == user_uuid)).scalars().first()
+    if sub:
+        plan = db.execute(select(Plan).where(Plan.plan_id == sub.plan_id)).scalars().first()
+        if plan:
+            groups_count = db.execute(select(Group).where(Group.owner_id == user_uuid)).scalars().all()
+            if len(groups_count) >= plan.max_groups:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, 
+                    detail="Group limit reached for your current plan. Please upgrade."
+                )
+
     try:
         new_group = group_repo.create_group(
             db=db, 
-            owner_id=parse_uuid(current_user.get('sub')), 
+            owner_id=user_uuid, 
             name=payload.name, 
             description=payload.description,
             currency=payload.currency.value
