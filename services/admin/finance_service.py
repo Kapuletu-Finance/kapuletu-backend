@@ -17,7 +17,7 @@ class FinanceService:
         """
         Retrieves all available subscription plans.
         """
-        plans = self.db.query(Plan).all()
+        plans = self.db.query(Plan).order_by(Plan.price.asc()).all()
         return [{
             "plan_id": str(p.plan_id),
             "name": p.name,
@@ -148,20 +148,21 @@ class FinanceService:
         self.db.commit()
         return True
 
-    def manual_override_subscription(self, user_id: str, plan_id: str, duration_days: int = 30):
+    def manual_override_subscription(self, user_id: str, plan_id: str, duration_days: int = 30, is_trial: bool = False):
         """
         Manually grants or extends a subscription for a user (e.g. for VIPs or support resolution).
         """
-        # 1. Create a dummy payment record for the override
-        payment = SubscriptionPayment(
-            user_id=user_id,
-            subscription_id=uuid.uuid4(), # Placeholder
-            amount=0,
-            payment_method="admin_override",
-            status="success",
-            provider_reference=f"ADMIN_GRANT_{datetime.datetime.utcnow().strftime('%Y%m%d')}"
-        )
-        self.db.add(payment)
+        if not is_trial:
+            # 1. Create a dummy payment record for the override
+            payment = SubscriptionPayment(
+                user_id=user_id,
+                subscription_id=uuid.uuid4(), # Placeholder
+                amount=0,
+                payment_method="admin_override",
+                status="success",
+                provider_reference=f"ADMIN_GRANT_{datetime.datetime.utcnow().strftime('%Y%m%d')}"
+            )
+            self.db.add(payment)
         
         # 2. Upsert Subscription
         # 2. Upsert Subscription

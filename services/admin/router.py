@@ -162,7 +162,7 @@ async def upgrade_user_plan(
     if not plan_id:
         raise HTTPException(status_code=400, detail="Missing plan_id in payload")
         
-    success = service.manual_override_subscription(identifier, plan_id, payload.get("duration", 30))
+    success = service.manual_override_subscription(identifier, plan_id, payload.get("duration", 30), payload.get("is_trial", False))
     if not success:
         raise HTTPException(status_code=400, detail="Override failed")
     return {"message": "User plan upgraded successfully"}
@@ -381,7 +381,7 @@ async def override_subscription(
     if "user_id" not in payload or "plan_id" not in payload:
         raise HTTPException(status_code=400, detail="Missing user_id or plan_id")
     success = service.manual_override_subscription(
-        payload["user_id"], payload["plan_id"], payload.get("duration", 30)
+        payload["user_id"], payload["plan_id"], payload.get("duration", 30), payload.get("is_trial", False)
     )
     if not success:
         raise HTTPException(status_code=400, detail="Override failed")

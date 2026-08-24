@@ -28,20 +28,36 @@ class FinancialAnalyticsEngine:
         now = datetime.datetime.utcnow()
         if not end_date: end_date = now
         
-        # Base query for active subscriptions
-        active_subs_query = self.db.query(Subscription).filter(
-            Subscription.status == "active",
-            Subscription.end_date == None
-        )
+        # Base query for all active subscriptions
+        active_subs = self.db.query(Subscription).filter(
+            Subscription.status == "active"
+        ).all()
         
-        total_active_subscribers = active_subs_query.count()
+        # Subquery to check if user has paid
+        paid_user_ids = {
+            r[0] for r in self.db.query(SubscriptionPayment.user_id).filter(
+                SubscriptionPayment.status == "success",
+                SubscriptionPayment.amount > 0
+            ).all()
+        }
         
-        # Calculate MRR by summing the prices of active subscriptions
+        total_active_subscribers = 0
+        trial_subscribers = 0
+        
+        for sub in active_subs:
+            # An active sub with an end date and no payments > 0 is considered a trial
+            if sub.user_id in paid_user_ids:
+                total_active_subscribers += 1
+            else:
+                # If they have no payments and it's active, it's a trial
+                trial_subscribers += 1
+        
+        # Calculate MRR by summing the prices of PAID active subscriptions
         mrr = self.db.query(func.sum(Plan.price)).select_from(Subscription).join(
             Plan, Subscription.plan_id == Plan.plan_id
         ).filter(
             Subscription.status == "active",
-            Subscription.end_date == None
+            Subscription.user_id.in_(paid_user_ids) if paid_user_ids else False
         ).scalar() or 0
 
         # Calculate Churn Rate (simplified: expired subs in last 30 days / total subs)
@@ -53,12 +69,13 @@ class FinancialAnalyticsEngine:
             Subscription.end_date <= now
         ).count()
         
-        total_subs = total_active_subscribers + recently_expired
+        total_subs = total_active_subscribers + trial_subscribers + recently_expired
         churn_rate = (recently_expired / total_subs * 100) if total_subs > 0 else 0
 
         return {
             "mrr": mrr,
             "active_subscribers": total_active_subscribers,
+            "trial_subscribers": trial_subscribers,
             "churn_rate_percent": round(churn_rate, 2),
             "generated_at": now.isoformat()
         }

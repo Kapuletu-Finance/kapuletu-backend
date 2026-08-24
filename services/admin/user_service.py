@@ -20,10 +20,22 @@ class UserService:
         """
         Lists all treasurers with high-level metadata.
         """
-        query = self.db.query(User, Plan.name.label("plan_name")).outerjoin(
+        # Subquery to count successful payments per user
+        payment_counts = self.db.query(
+            SubscriptionPayment.user_id,
+            func.count(SubscriptionPayment.payment_id).label("payment_count")
+        ).filter(SubscriptionPayment.status == "success").group_by(SubscriptionPayment.user_id).subquery()
+
+        query = self.db.query(
+            User, 
+            Plan.name.label("plan_name"),
+            func.coalesce(payment_counts.c.payment_count, 0).label("payment_count")
+        ).outerjoin(
             Subscription, User.user_id == Subscription.user_id
         ).outerjoin(
             Plan, Subscription.plan_id == Plan.plan_id
+        ).outerjoin(
+            payment_counts, User.user_id == payment_counts.c.user_id
         ).filter(User.role == "treasurer")
         
         if status == "active":
@@ -70,9 +82,9 @@ class UserService:
                 "email": u.email,
                 "phone": u.phone_number,
                 "is_active": u.is_active,
-                "plan_name": plan_name or "Basic",
+                "plan_name": f"{plan_name} (Trial)" if (plan_name == "Professional" and payment_count == 0) else (plan_name or "Basic"),
                 "created_at": u.created_at.isoformat() if u.created_at else None
-            } for u, plan_name in users_with_plans]
+            } for u, plan_name, payment_count in users_with_plans]
         }
 
     def get_recent_activity(self):
@@ -128,6 +140,20 @@ class UserService:
             
         group_count = self.db.query(Group).filter(Group.owner_id == user.user_id).count()
         
+        # Determine plan name and trial status
+        sub = self.db.query(Subscription, Plan).outerjoin(Plan, Subscription.plan_id == Plan.plan_id).filter(Subscription.user_id == user.user_id).first()
+        payment_count = self.db.query(func.count(SubscriptionPayment.payment_id)).filter(
+            SubscriptionPayment.user_id == user.user_id,
+            SubscriptionPayment.status == "success"
+        ).scalar() or 0
+        
+        plan_name = "Basic"
+        if sub and sub.Plan:
+            if sub.Plan.name == "Professional" and payment_count == 0:
+                plan_name = "Professional (Trial)"
+            else:
+                plan_name = sub.Plan.name
+        
         return {
             "profile": {
                 "user_id": str(user.user_id),
@@ -138,6 +164,7 @@ class UserService:
                 "phone": user.phone_number,
                 "role": user.role,
                 "is_active": user.is_active,
+                "plan_name": plan_name,
                 "created_at": user.created_at.isoformat()
             },
             "stats": {
