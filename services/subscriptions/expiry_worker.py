@@ -65,7 +65,8 @@ def run_expiry_sweep():
             if days_left < 0:
                 logger.info(f"Downgrading User {user.email} to Free Tier. (Expired {abs(days_left)} days ago)")
                 sub.plan_id = free_plan.plan_id
-                sub.status = "expired"
+                sub.status = "active"
+                sub.end_date = None
                 mock_send_reminder(user, plan_name, 0)
                 
             # Reminders: T-1 (24 hours), T-3, T-7

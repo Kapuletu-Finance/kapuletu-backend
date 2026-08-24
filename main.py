@@ -98,6 +98,21 @@ def handler(event, context):
                     "body": json.dumps({"error": "seed_failed", "message": str(e), "traceback": traceback.format_exc()})
                 }
 
+        # 3. Intercept Trial Expiry Sweep Task
+        if isinstance(event, dict) and event.get("task") == "daily_expiry_sweep":
+            logger.info("Executing daily trial expiry sweep task...")
+            try:
+                from services.subscriptions.expiry_worker import run_expiry_sweep
+                run_expiry_sweep()
+                return {"statusCode": 200, "body": "Expiry sweep completed successfully."}
+            except Exception as e:
+                logger.error(f"Expiry sweep failed: {e}")
+                return {
+                    "statusCode": 500,
+                    "body": json.dumps({"error": "expiry_sweep_failed", "message": str(e), "traceback": traceback.format_exc()})
+                }
+
+
         # 4. API is a Gateway Routing (FastAPI - Deferred)
         from mangum import Mangum
         from local_server import app
