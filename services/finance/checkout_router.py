@@ -43,7 +43,10 @@ async def get_my_subscription(
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     user_id = parse_uuid(current_user.get("sub"))
-    sub = db.execute(select(Subscription).where(Subscription.user_id == parse_uuid(user_id))).scalars().first()
+    user = db.execute(select(User).where(User.user_id == user_id)).scalars().first()
+    has_used_trial = user.has_used_trial if user else False
+
+    sub = db.execute(select(Subscription).where(Subscription.user_id == user_id)).scalars().first()
     
     if not sub:
         # Should not happen if onboarding sets trial, but fallback to Free
@@ -51,6 +54,7 @@ async def get_my_subscription(
         return MySubscriptionOut(
             active_plan=free_plan.name if free_plan else "Free",
             is_on_trial=False,
+            has_used_trial=has_used_trial,
             days_remaining=0,
             expiry_date=None,
             usage={"groups": "0/1", "campaigns": "0/1"}
@@ -75,6 +79,7 @@ async def get_my_subscription(
     return MySubscriptionOut(
         active_plan=plan.name,
         is_on_trial=is_on_trial,
+        has_used_trial=has_used_trial,
         days_remaining=days_remaining,
         expiry_date=sub.end_date.isoformat() if sub.end_date else None,
         usage={

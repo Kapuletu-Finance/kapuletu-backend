@@ -15,6 +15,7 @@ class SubscriptionUsage(BaseModel):
 class MySubscriptionOut(BaseModel):
     active_plan: str
     is_on_trial: bool
+    has_used_trial: bool = False
     days_remaining: int
     expiry_date: Optional[str]
     usage: SubscriptionUsage
