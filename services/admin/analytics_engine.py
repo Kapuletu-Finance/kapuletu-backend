@@ -116,7 +116,8 @@ class FinancialAnalyticsEngine:
             SubscriptionPayment.payment_method,
             SubscriptionPayment.created_at,
             User.email,
-            User.full_name,
+            User.first_name,
+            User.last_name,
             Plan.name.label("plan_name")
         ).join(
             User, SubscriptionPayment.user_id == User.user_id
@@ -146,7 +147,7 @@ class FinancialAnalyticsEngine:
                     str(r.payment_id),
                     r.created_at.isoformat(),
                     r.email,
-                    r.full_name,
+                    f"{r.first_name} {r.last_name}",
                     r.plan_name,
                     r.amount,
                     r.currency,
@@ -170,7 +171,7 @@ class FinancialAnalyticsEngine:
                     str(r.payment_id),
                     r.created_at.strftime("%Y-%m-%d %H:%M"),
                     r.email,
-                    r.full_name,
+                    f"{r.first_name} {r.last_name}",
                     r.plan_name,
                     float(r.amount) if r.amount else 0.0,
                     r.currency,
@@ -195,11 +196,12 @@ class FinancialAnalyticsEngine:
             # Prepare data for table
             data = [headers]
             for r in records:
+                full_name = f"{r.first_name} {r.last_name}"
                 data.append([
                     str(r.payment_id)[:8] + "...", # truncate UUID for PDF space
                     r.created_at.strftime("%Y-%m-%d"),
                     r.email[:15] + "..." if len(r.email) > 15 else r.email,
-                    r.full_name[:15] + "..." if r.full_name else "",
+                    full_name[:15] + "..." if full_name else "",
                     r.plan_name,
                     str(r.amount),
                     r.currency,
