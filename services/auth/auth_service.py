@@ -249,7 +249,7 @@ class AuthService:
         from models.subscription import Plan, Subscription
         pro_plan = db.query(Plan).filter(Plan.name == "Professional").first()
         if not pro_plan:
-            pro_plan = db.query(Plan).filter(Plan.name == "Free").first()
+            pro_plan = db.query(Plan).filter(Plan.name == "Basic").first()
             
         if pro_plan:
             trial_sub = Subscription(

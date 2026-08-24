@@ -21,7 +21,7 @@ def mock_send_reminder(user: User, plan_name: str, days_left: int):
     In production, this would integrate with Resend (Email) or Meta (WhatsApp).
     """
     if days_left == 0:
-        logger.info(f"[NOTIFY] To: {user.email} - Your {plan_name} trial has expired. You have been downgraded to the Free tier.")
+        logger.info(f"[NOTIFY] To: {user.email} - Your {plan_name} trial has expired. You have been downgraded to the Basic tier.")
     elif days_left == 1:
         logger.info(f"[NOTIFY] To: {user.email} - URGENT: Your {plan_name} trial expires in 24 hours!")
     else:
@@ -37,10 +37,10 @@ def run_expiry_sweep():
     try:
         now = datetime.datetime.utcnow()
         
-        # Get Free Plan ID for downgrades
-        free_plan = db.execute(select(Plan).where(Plan.name == "Free")).scalars().first()
+        # Get Basic Plan ID for downgrades
+        free_plan = db.execute(select(Plan).where(Plan.name == "Basic")).scalars().first()
         if not free_plan:
-            logger.error("System Configuration Error: 'Free' plan not found in database.")
+            logger.error("System Configuration Error: 'Basic' plan not found in database.")
             return
 
         active_subs = db.execute(
@@ -63,7 +63,7 @@ def run_expiry_sweep():
             
             # Day 0: Expiration & Downgrade
             if days_left < 0:
-                logger.info(f"Downgrading User {user.email} to Free Tier. (Expired {abs(days_left)} days ago)")
+                logger.info(f"Downgrading User {user.email} to Basic Tier. (Expired {abs(days_left)} days ago)")
                 sub.plan_id = free_plan.plan_id
                 sub.status = "active"
                 sub.end_date = None

@@ -63,6 +63,20 @@ def seed_plans():
                 "ai_auto_approve": True,
                 "deep_ai_insights": True
             }
+        },
+        {
+            "name": "Professional",
+            "price": 2000,
+            "max_groups": 9999,
+            "max_campaigns": 9999,
+            "max_transactions_per_month": 10000,
+            "allowed_features": {
+                "whatsapp_parsing": True,
+                "excel_exports": True,
+                "pdf_exports": True,
+                "ai_auto_approve": True,
+                "deep_ai_insights": True
+            }
         }
     ]
     
