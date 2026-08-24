@@ -2,6 +2,7 @@ import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import cast, String
 from common.utils import parse_uuid
 
 from models.app_feedback import AppFeedback
@@ -110,7 +111,10 @@ class FeedbackService:
             uid = parse_uuid(identifier)
             row = query.filter(AppFeedback.feedback_id == uid).first()
         except ValueError:
-            row = query.filter(AppFeedback.reference_number == identifier).first()
+            row = query.filter(
+                (AppFeedback.reference_number == identifier) |
+                (cast(AppFeedback.feedback_id, String).ilike(f"{identifier}%"))
+            ).first()
             
         if not row:
             return None
@@ -147,7 +151,10 @@ class FeedbackService:
             uid = parse_uuid(identifier)
             record = query.filter(AppFeedback.feedback_id == uid).first()
         except ValueError:
-            record = query.filter(AppFeedback.reference_number == identifier).first()
+            record = query.filter(
+                (AppFeedback.reference_number == identifier) |
+                (cast(AppFeedback.feedback_id, String).ilike(f"{identifier}%"))
+            ).first()
             
         if not record:
             return False
