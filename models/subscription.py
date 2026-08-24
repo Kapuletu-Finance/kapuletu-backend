@@ -83,4 +83,6 @@ class SubscriptionPayment(Base):
     status = Column(String, default="success") # success, failed, pending
     payment_method = Column(String) # mpesa, card, override
     provider_reference = Column(String) # External ID from Safaricom/Payment Provider
+    from sqlalchemy import JSON
+    payment_metadata = Column(JSON, default=dict) # To store plan_id for webhooks
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

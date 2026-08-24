@@ -245,6 +245,24 @@ class AuthService:
         code = self._save_otp(db, new_user.user_id, new_user.phone_number, "registration")
         self._send_whatsapp_with_fallback(new_user.phone_number, code)
         
+        # Give the user a 21-day Trial Subscription
+        from models.subscription import Plan, Subscription
+        pro_plan = db.query(Plan).filter(Plan.name == "Professional").first()
+        if not pro_plan:
+            pro_plan = db.query(Plan).filter(Plan.name == "Free").first()
+            
+        if pro_plan:
+            trial_sub = Subscription(
+                user_id=new_user.user_id,
+                plan_id=pro_plan.plan_id,
+                status="active",
+                start_date=datetime.datetime.utcnow(),
+                end_date=datetime.datetime.utcnow() + datetime.timedelta(days=21),
+                is_auto_renew=False
+            )
+            db.add(trial_sub)
+            db.commit()
+        
         create_notification(
             db=db,
             user_id=str(new_user.user_id),

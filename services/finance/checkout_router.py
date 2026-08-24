@@ -110,8 +110,40 @@ async def initiate_checkout(
         
     result = provider.initiate_checkout(user_id, str(plan.plan_id), plan.price, metadata)
     
+    # Save the pending checkout attempt
+    if result.get("status") == "initiated":
+        # We need the user's current subscription to link the payment
+        sub = db.execute(select(Subscription).where(Subscription.user_id == parse_uuid(user_id))).scalars().first()
+        if not sub:
+            # Fallback for old users: create a Free plan subscription so they can upgrade
+            free_plan = db.execute(select(Plan).where(Plan.name == "Free")).scalars().first()
+            if free_plan:
+                sub = Subscription(
+                    user_id=parse_uuid(user_id),
+                    plan_id=free_plan.plan_id,
+                    status="active",
+                    is_auto_renew=False
+                )
+                db.add(sub)
+                db.commit()
+                db.refresh(sub)
+                
+        if sub:
+            pending_payment = SubscriptionPayment(
+                user_id=parse_uuid(user_id),
+                subscription_id=sub.subscription_id,
+                amount=plan.price,
+                currency="KES",
+                status="pending",
+                payment_method=payload.provider,
+                provider_reference=result.get("correlation_id"),
+                payment_metadata={"plan_id": str(plan.plan_id)}
+            )
+            db.add(pending_payment)
+            db.commit()
+    
     return CheckoutOut(
-        checkout_id=result.get("checkout_id", "unknown"),
+        checkout_id=result.get("correlation_id", "unknown"),
         status="initiated",
         provider_response=result
     )
@@ -204,12 +236,22 @@ async def webhook_callback(provider: str, request: Request, db: Session = Depend
     event_data = provider_svc.parse_webhook_payload(payload)
     if event_data.get("success"):
         fulfillment = FulfillmentService(db)
-        # Mocking metadata structure lookup using correlation_id
-        # The fulfillment service would ideally look up metadata via correlation_id
-        # We will adjust fulfillment service slightly to accept correlation_id properly
-        metadata = {"user_id": event_data.get("user_id"), "plan_id": event_data.get("plan_id")}
+        
+        # Look up pending payment by correlation_id (CheckoutRequestID)
+        correlation_id = event_data.get("correlation_id", "")
+        pending_payment = db.execute(
+            select(SubscriptionPayment).where(SubscriptionPayment.provider_reference == correlation_id)
+        ).scalars().first()
+        
+        metadata = {}
+        if pending_payment:
+            metadata = {
+                "user_id": str(pending_payment.user_id),
+                "plan_id": pending_payment.payment_metadata.get("plan_id") if pending_payment.payment_metadata else None
+            }
+            
         fulfillment.process_success(
-            correlation_id=event_data.get("correlation_id", ""),
+            correlation_id=correlation_id,
             provider_ref=event_data.get("provider_ref", ""),
             amount=event_data.get("amount", 0.0),
             metadata=metadata

@@ -20,14 +20,14 @@ class FulfillmentService:
         Finalizes the subscription after payment confirmation.
         """
         # 1. Idempotency Check
-        existing = self.db.query(SubscriptionPayment).filter(SubscriptionPayment.provider_reference == provider_ref).first()
-        if existing:
-            logger.warning(f"Idempotency Trigger: Payment {provider_ref} already processed.")
+        # Instead of just checking for provider_ref, we find the pending payment by correlation_id
+        pending_payment = self.db.query(SubscriptionPayment).filter(SubscriptionPayment.provider_reference == correlation_id).first()
+        
+        if pending_payment and pending_payment.status == "success":
+            logger.warning(f"Idempotency Trigger: Payment {correlation_id} already processed successfully.")
             return True
 
         # 2. Resolve Subscription Context
-        # Note: In production, we'd look up the user/plan via correlation_id from a 'PendingPayments' table
-        # For this implementation, we assume metadata or correlation_id lookup logic
         user_id = metadata.get("user_id") if metadata else None
         plan_id = metadata.get("plan_id") if metadata else None
         
@@ -37,7 +37,7 @@ class FulfillmentService:
 
         # 3. Update/Create Subscription
         plan = self.db.query(Plan).filter(Plan.plan_id == plan_id).first()
-        sub = self.db.query(Subscription).filter(Subscription.user_id ==parse_uuid(parse_uuid(user_id))).first()
+        sub = self.db.query(Subscription).filter(Subscription.user_id == parse_uuid(user_id)).first()
         
         if not sub:
             sub = Subscription(
@@ -52,19 +52,23 @@ class FulfillmentService:
             sub.plan_id = plan_id
             sub.status = "active"
             # Extend existing subscription
-            current_end = sub.end_date if sub.end_date > datetime.datetime.utcnow() else datetime.datetime.utcnow()
+            current_end = sub.end_date if sub.end_date and sub.end_date > datetime.datetime.utcnow() else datetime.datetime.utcnow()
             sub.end_date = current_end + datetime.timedelta(days=30)
 
         # 4. Record Payment
-        payment = SubscriptionPayment(
-            user_id=user_id,
-            subscription_id=sub.subscription_id,
-            amount=amount,
-            status="success",
-            payment_method="gateway",
-            provider_reference=provider_ref
-        )
-        self.db.add(payment)
+        if pending_payment:
+            pending_payment.status = "success"
+            pending_payment.provider_reference = provider_ref # Update to the receipt number if it changed
+        else:
+            payment = SubscriptionPayment(
+                user_id=user_id,
+                subscription_id=sub.subscription_id,
+                amount=amount,
+                status="success",
+                payment_method="gateway",
+                provider_reference=provider_ref
+            )
+            self.db.add(payment)
 
         # 5. Forensic Audit
         audit = AuditLog(

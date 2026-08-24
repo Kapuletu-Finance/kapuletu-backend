@@ -1,0 +1,66 @@
+# Subscription & Payments Integration Report
+
+The KapuLetu Subscription Engine and M-Pesa Integration have been fully implemented, resolving prior architectural flaws and establishing a reliable, automated end-to-end payment loop. 
+
+Here is the detailed flow of how the system now operates across the frontend, backend, and third-party gateway (Safaricom Daraja).
+
+---
+
+## End-to-End Payment Flow (M-Pesa STK Push)
+
+### 1. Intent & Checkout Initiation
+When a Treasurer logs into the platform and clicks **"Upgrade to Pro"** on the frontend, the following happens:
+- The frontend fires a request to `POST /finance/checkout`, sending the chosen `plan_id`, `provider` ("mpesa"), and the user's `phone_number`.
+- **Backend Resolution**: `checkout_router.py` validates the plan and ensures the user has a baseline `Subscription` record (if they don't, it creates a fallback "Free" tier automatically).
+- **M-Pesa Gateway**: The backend calls the Safaricom Daraja API (`/mpesa/stkpush/v1/processrequest`) with the `MPESA_CALLBACK_URL` and `MPESA_SHORTCODE`.
+- **State Persistence**: The backend successfully parses the response from Daraja, extracts the `CheckoutRequestID` (Correlation ID), and stores a new `SubscriptionPayment` record in the database with `status="pending"`. The `plan_id` intent is safely serialized inside the `payment_metadata` column.
+
+### 2. The Customer Confirmation
+- The Treasurer receives an STK Push prompt on their mobile device (e.g., "Do you want to pay Ksh 1500 to KapuLetu?").
+- They enter their M-Pesa PIN and authorize the transaction.
+- During this time, the KapuLetu frontend can poll `GET /status/{checkout_id}` which will return `"pending"` until the network confirms it.
+
+### 3. The Webhook Callback
+Safaricom's servers asynchronously call our backend webhook at `POST /webhooks/mpesa`.
+- **Parsing**: The backend unpacks the JSON payload and looks at the `ResultCode`. (0 = Success, others = Failed).
+- **Correlation**: We extract the `CheckoutRequestID` from the payload.
+- **Idempotency & Trust**: `checkout_router.py` queries the `SubscriptionPayment` table for the pending payment matching that specific correlation ID. This entirely eliminates the risk of "Mocked Metadata" failures we had previously. We instantly know exactly which user paid, and for which plan.
+
+### 4. Fulfillment & The Unlock
+- The `FulfillmentService` (`fulfillment.py`) is triggered.
+- It finds the user's active `Subscription` and updates the `plan_id` to the new tier.
+- It extends the `end_date` by +30 days (or +1 year depending on the cycle).
+- The `SubscriptionPayment` status is flipped from `"pending"` to `"success"`, and the M-Pesa Receipt Number is saved to `provider_reference`.
+- An `AuditLog` entry is generated to securely track the upgrade.
+
+---
+
+## 21-Day Trial Automation
+
+- **Onboarding Allocation**: The `auth_service.py` was updated. When a new user registers and verifies their account via OTP, they are instantly given a **21-day Free Trial** mapped to the "Professional" tier.
+- **Expiry Sweep**: The `expiry_worker.py` script runs periodically. It checks the `end_date` against the current time. 
+  - At **T-7 (7 days left)**, **T-3**, and **T-1**, it fires automated reminders to the user via WhatsApp/Email to upgrade.
+  - At **Day 0**, the worker downgrades the user to the "Free" tier if no payment has been made, automatically locking premium features.
+
+---
+
+## Admin Capabilities & Manual Overrides
+
+- **Dynamic Feature Enforcement**: The subscription guard logic now relies on the `Plan` limits from the database. Admins can update `max_groups` and `max_campaigns` dynamically without deploying new code.
+- **Manual Overrides**: We resolved a critical UUID parsing bug in `finance_service.py`. When an Admin uses the frontend `OverridePlanDialog.tsx` to manually upgrade or resolve a dispute for a user, the backend successfully creates a dummy `SubscriptionPayment` (tagged as `admin_override`) and forcibly extends the `Subscription` expiration date.
+
+## Database Migrations Applied
+
+> [!TIP]
+> **Alembic Migration Completed**
+> We ran an Alembic database migration to add the new `payment_metadata` (JSON) column to the `subscription_payments` table. This allows us to temporarily hold the user's intent (e.g. `plan_id` to upgrade to) while we wait for Safaricom to return the asynchronous webhook.
+
+---
+
+## Summary of Files Modified
+
+- **[MODIFIED]** [`services/auth/auth_service.py`](file:///C:/Users/josep/kapuletu-backend/services/auth/auth_service.py): Automated the 21-day trial allocation upon registration.
+- **[MODIFIED]** [`models/subscription.py`](file:///C:/Users/josep/kapuletu-backend/models/subscription.py): Added JSON metadata field to `SubscriptionPayment`.
+- **[MODIFIED]** [`services/finance/checkout_router.py`](file:///C:/Users/josep/kapuletu-backend/services/finance/checkout_router.py): Fixed webhook metadata lookup, enabled pending checkouts.
+- **[MODIFIED]** [`services/finance/fulfillment.py`](file:///C:/Users/josep/kapuletu-backend/services/finance/fulfillment.py): Corrected idempotency checks, UUID parsing, and update logic.
+- **[MODIFIED]** [`services/admin/finance_service.py`](file:///C:/Users/josep/kapuletu-backend/services/admin/finance_service.py): Fixed the UUID bug in the manual override function to ensure Admin dashboard updates work perfectly.

@@ -88,18 +88,19 @@ class FinanceService:
         self.db.add(payment)
         
         # 2. Upsert Subscription
-        sub = self.db.query(Subscription).filter(Subscription.user_id ==parse_uuid(parse_uuid(user_id))).first()
+        # 2. Upsert Subscription
+        sub = self.db.query(Subscription).filter(Subscription.user_id == parse_uuid(user_id)).first()
         if not sub:
             sub = Subscription(
-                user_id=user_id,
-                plan_id=plan_id,
+                user_id=parse_uuid(user_id),
+                plan_id=parse_uuid(plan_id),
                 status="active",
                 start_date=datetime.datetime.utcnow(),
                 end_date=datetime.datetime.utcnow() + datetime.timedelta(days=duration_days)
             )
             self.db.add(sub)
         else:
-            sub.plan_id = plan_id
+            sub.plan_id = parse_uuid(plan_id)
             sub.status = "active"
             sub.end_date = (sub.end_date or datetime.datetime.utcnow()) + datetime.timedelta(days=duration_days)
             
