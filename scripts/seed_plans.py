@@ -95,13 +95,7 @@ def seed_plans():
             db.add(new_plan)
             print(f"Created Plan: {plan_data['name']}")
         else:
-            # Update existing plan
-            existing.price = plan_data["price"]
-            existing.max_groups = plan_data["max_groups"]
-            existing.max_campaigns = plan_data["max_campaigns"]
-            existing.max_transactions_per_month = plan_data["max_transactions_per_month"]
-            existing.allowed_features = plan_data["allowed_features"]
-            print(f"Updated Plan: {plan_data['name']}")
+            print(f"Plan {plan_data['name']} already exists. Skipping update to preserve manual edits.")
             
     db.commit()
     db.close()
