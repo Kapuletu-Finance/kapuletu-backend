@@ -306,4 +306,4 @@ The pipeline will fail and block deployment if:
 - Ruff finds linting issues.
 - Any Pytest cases fail.
 - `serverless package` validation fails.
-- AWS deployment fails.
+- AWS deployment fail
