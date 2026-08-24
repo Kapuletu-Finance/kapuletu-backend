@@ -26,7 +26,20 @@ class MpesaProvider(PaymentProvider):
         encoded_auth = base64.b64encode(auth_string.encode()).decode()
         
         headers = {"Authorization": f"Basic {encoded_auth}"}
-        response = requests.get(f"{self.base_url}/oauth/v1/generate?grant_type=client_credentials", headers=headers)
+        url = f"{self.base_url}/oauth/v1/generate?grant_type=client_credentials"
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Initiating M-Pesa Auth to: {url}")
+        
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            logger.info(f"M-Pesa Auth Response Code: {response.status_code}")
+            logger.info(f"M-Pesa Auth Raw Response: {response.text}")
+        except Exception as e:
+            logger.error(f"M-Pesa Auth Connection Error: {str(e)}")
+            raise ValueError(f"M-Pesa connection failed: {str(e)}")
+            
         if response.status_code != 200:
             raise ValueError(f"M-Pesa auth failed. Status: {response.status_code}. Response: {response.text}")
         
