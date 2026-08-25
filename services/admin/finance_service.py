@@ -152,20 +152,7 @@ class FinanceService:
         """
         Manually grants or extends a subscription for a user (e.g. for VIPs or support resolution).
         """
-        if not is_trial:
-            # 1. Create a dummy payment record for the override
-            payment = SubscriptionPayment(
-                user_id=user_id,
-                subscription_id=uuid.uuid4(), # Placeholder
-                amount=0,
-                payment_method="admin_override",
-                status="success",
-                provider_reference=f"ADMIN_GRANT_{datetime.datetime.utcnow().strftime('%Y%m%d')}"
-            )
-            self.db.add(payment)
-        
-        # 2. Upsert Subscription
-        # 2. Upsert Subscription
+        # 1. Upsert Subscription
         sub = self.db.query(Subscription).filter(Subscription.user_id == parse_uuid(user_id)).first()
         if not sub:
             sub = Subscription(
@@ -180,6 +167,20 @@ class FinanceService:
             sub.plan_id = parse_uuid(plan_id)
             sub.status = "active"
             sub.end_date = (sub.end_date or datetime.datetime.utcnow()) + datetime.timedelta(days=duration_days)
+            
+        self.db.flush()
+        
+        if not is_trial:
+            # 2. Create a dummy payment record for the override
+            payment = SubscriptionPayment(
+                user_id=parse_uuid(user_id),
+                subscription_id=sub.subscription_id,
+                amount=0,
+                payment_method="admin_override",
+                status="success",
+                provider_reference=f"ADMIN_GRANT_{datetime.datetime.utcnow().strftime('%Y%m%d')}"
+            )
+            self.db.add(payment)
             
         self.db.commit()
         return True
