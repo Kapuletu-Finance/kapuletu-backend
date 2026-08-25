@@ -43,7 +43,7 @@ class FulfillmentService:
         
         if not sub:
             sub = Subscription(
-                user_id=user_id,
+                user_id=parse_uuid(user_id),
                 plan_id=plan_id,
                 status="active",
                 start_date=datetime.datetime.utcnow(),
@@ -66,9 +66,10 @@ class FulfillmentService:
             new_meta = dict(pending_payment.payment_metadata) if pending_payment.payment_metadata else {}
             new_meta["receipt_number"] = provider_ref
             pending_payment.payment_metadata = new_meta
+            self.db.add(pending_payment)
         else:
             payment = SubscriptionPayment(
-                user_id=user_id,
+                user_id=parse_uuid(user_id),
                 subscription_id=sub.subscription_id,
                 amount=amount,
                 status="success",
@@ -79,7 +80,7 @@ class FulfillmentService:
 
         # 5. Forensic Audit
         audit = AuditLog(
-            actor_id=user_id,
+            actor_id=parse_uuid(user_id),
             action="SUBSCRIPTION_UPGRADED",
             entity_type="PLAN",
             entity_id=str(plan_id),

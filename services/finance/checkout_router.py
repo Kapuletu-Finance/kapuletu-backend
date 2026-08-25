@@ -148,7 +148,7 @@ async def initiate_checkout(
                 status="pending",
                 payment_method=payload.provider,
                 provider_reference=result.get("correlation_id"),
-                payment_metadata={"plan_id": str(plan.plan_id)}
+                payment_metadata=metadata
             )
             db.add(pending_payment)
             db.commit()
@@ -193,6 +193,40 @@ async def get_payment_status(
     if not payment:
         return PaymentStatusOut(status="pending", confirmed_at=None, plan=None)
         
+    # Active Polling for M-Pesa
+    if payment.status in ["pending", "initiated"] and payment.payment_method == "mpesa":
+        try:
+            from services.finance.providers.mpesa import MpesaProvider
+            from services.finance.fulfillment import FulfillmentService
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            provider_svc = MpesaProvider()
+            query_res = provider_svc.stk_push_query(payment.provider_reference)
+            
+            if query_res.get("success"):
+                logger.info(f"Active Polling detected success for {checkout_id}. Fulfilling now.")
+                fulfillment = FulfillmentService(db)
+                meta_payload = payment.payment_metadata if payment.payment_metadata else {}
+                meta_payload["user_id"] = str(payment.user_id)
+                
+                fulfillment.process_success(
+                    correlation_id=payment.provider_reference,
+                    provider_ref=query_res.get("provider_ref", ""),
+                    amount=payment.amount,
+                    metadata=meta_payload
+                )
+                
+                # Refresh payment to reflect success status
+                db.refresh(payment)
+            elif query_res.get("status") == "failed":
+                payment.status = "failed"
+                db.commit()
+                db.refresh(payment)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Active STK polling failed: {e}")
+            
     # Get plan name
     sub = db.execute(select(Subscription).where(Subscription.subscription_id == payment.subscription_id)).scalars().first()
     plan_name = None
@@ -339,10 +373,8 @@ async def webhook_callback(provider: str, request: Request, db: Session = Depend
             metadata = {}
             if pending_payment:
                 logger.info(f"WEBHOOK FOUND PENDING PAYMENT: {pending_payment.payment_id}")
-                metadata = {
-                    "user_id": str(pending_payment.user_id),
-                    "plan_id": pending_payment.payment_metadata.get("plan_id") if pending_payment.payment_metadata else None
-                }
+                metadata = dict(pending_payment.payment_metadata) if pending_payment.payment_metadata else {}
+                metadata["user_id"] = str(pending_payment.user_id)
             else:
                 logger.error(f"WEBHOOK COULD NOT FIND PENDING PAYMENT FOR CORRELATION {correlation_id}")
                 
