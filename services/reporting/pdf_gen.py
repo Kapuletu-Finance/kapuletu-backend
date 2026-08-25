@@ -157,3 +157,51 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
     pdf_bytes = stream.getvalue()
     
     return base64.b64encode(pdf_bytes).decode('utf-8')
+
+def generate_receipt_pdf(payment_id: str, plan_name: str, amount: float, provider_ref: str, date_str: str, name: str) -> bytes:
+    stream = io.BytesIO()
+    doc = SimpleDocTemplate(stream, pagesize=letter)
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle(
+        'MainTitle',
+        parent=styles['Title'],
+        fontName='Helvetica-Bold',
+        fontSize=20,
+        textColor=colors.HexColor("#1A5D1A"),
+        spaceAfter=12
+    )
+    
+    elements.append(Paragraph("KapuLetu Systems", title_style))
+    elements.append(Paragraph("<b>Payment Receipt</b>", styles['Normal']))
+    elements.append(Spacer(1, 24))
+    
+    elements.append(Paragraph(f"<b>Billed To:</b> {name}", styles['Normal']))
+    elements.append(Paragraph(f"<b>Date:</b> {date_str}", styles['Normal']))
+    elements.append(Paragraph(f"<b>Receipt No:</b> {provider_ref}", styles['Normal']))
+    elements.append(Spacer(1, 24))
+    
+    table_data = [
+        ["Description", "Amount (KES)"],
+        [f"KapuLetu {plan_name} Subscription", f"{amount:,.2f}"]
+    ]
+    
+    t = Table(table_data, colWidths=[350, 150])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#F8F9FA")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#DDDDDD"))
+    ]))
+    
+    elements.append(t)
+    elements.append(Spacer(1, 40))
+    elements.append(Paragraph("<i>Thank you for your business!</i>", styles['Italic']))
+    
+    doc.build(elements)
+    stream.seek(0)
+    return stream.getvalue()

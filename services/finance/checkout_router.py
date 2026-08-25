@@ -250,6 +250,32 @@ async def get_payment_status(
         plan=plan_name
     )
 
+@router.get("/receipt/{payment_id}", summary="Download Receipt (PDF)")
+async def download_receipt(
+    payment_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    user_id = parse_uuid(current_user.get("sub"))
+    payment = db.execute(select(SubscriptionPayment).where(SubscriptionPayment.payment_id == parse_uuid(payment_id), SubscriptionPayment.user_id == user_id)).scalars().first()
+    
+    if not payment or payment.status != "success":
+        raise HTTPException(status_code=404, detail="Receipt not found")
+        
+    sub = db.execute(select(Subscription).where(Subscription.subscription_id == payment.subscription_id)).scalars().first()
+    plan = db.execute(select(Plan).where(Plan.plan_id == sub.plan_id)).scalars().first()
+    user = db.execute(select(User).where(User.user_id == user_id)).scalars().first()
+    
+    name = f"{user.first_name} {user.last_name}" if user else "KapuLetu User"
+    
+    from services.reporting.pdf_gen import generate_receipt_pdf
+    date_str = payment.created_at.strftime('%B %d, %Y') if payment.created_at else ""
+    
+    pdf_bytes = generate_receipt_pdf(str(payment.payment_id), plan.name, payment.amount, payment.provider_reference or "-", date_str, name)
+    
+    from fastapi.responses import Response
+    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=receipt_{payment.provider_reference}.pdf"})
+
 @router.get("/billing-history", response_model=List[BillingHistoryOut], summary="View Billing History")
 async def get_billing_history(
     db: Session = Depends(get_db),

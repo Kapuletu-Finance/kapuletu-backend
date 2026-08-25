@@ -98,16 +98,47 @@ class FulfillmentService:
             try:
                 resend = ResendClient()
                 subject = f"Your KapuLetu {plan.name} Receipt"
+                billing_cycle = metadata.get("billing_cycle", "monthly").title()
                 html_body = f'''
-                <div style="font-family: sans-serif; max-width: 600px; margin: auto;">
-                    <h2>Payment Successful!</h2>
-                    <p>Hi {name},</p>
-                    <p>Thank you for subscribing to KapuLetu <strong>{plan.name}</strong>.</p>
-                    <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-                        <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Amount Paid:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">Ksh {amount:,.2f}</td></tr>
-                        <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>M-Pesa Receipt:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{provider_ref}</td></tr>
-                    </table>
-                    <p style="margin-top: 20px;">Your workspace has been successfully upgraded. Welcome aboard!</p>
+                <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
+                    <div style="text-align: center; margin-bottom: 30px;">
+                        <h1 style="color: #1f2937; margin: 0; font-size: 24px;">KapuLetu</h1>
+                        <p style="color: #6b7280; font-size: 14px; margin-top: 5px;">Payment Receipt</p>
+                    </div>
+                    
+                    <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                        <h2 style="color: #10b981; margin-top: 0; text-align: center;">Payment Successful!</h2>
+                        <p style="color: #374151; font-size: 16px;">Hi {name},</p>
+                        <p style="color: #374151; font-size: 16px;">Thank you for subscribing to the <strong>KapuLetu {plan.name}</strong> plan.</p>
+                        
+                        <div style="margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 20px;">
+                            <h3 style="color: #111827; font-size: 16px; margin-bottom: 15px;">Transaction Details</h3>
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr>
+                                    <td style="padding: 10px 0; color: #6b7280; font-size: 15px; border-bottom: 1px solid #f3f4f6;">Plan</td>
+                                    <td style="padding: 10px 0; color: #111827; font-size: 15px; font-weight: 600; text-align: right; border-bottom: 1px solid #f3f4f6;">{plan.name} ({billing_cycle})</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px 0; color: #6b7280; font-size: 15px; border-bottom: 1px solid #f3f4f6;">Amount Paid</td>
+                                    <td style="padding: 10px 0; color: #111827; font-size: 15px; font-weight: 600; text-align: right; border-bottom: 1px solid #f3f4f6;">Ksh {amount:,.2f}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px 0; color: #6b7280; font-size: 15px; border-bottom: 1px solid #f3f4f6;">Receipt No.</td>
+                                    <td style="padding: 10px 0; color: #111827; font-size: 15px; font-weight: 600; text-align: right; border-bottom: 1px solid #f3f4f6;">{provider_ref}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px 0; color: #6b7280; font-size: 15px; border-bottom: 1px solid #f3f4f6;">Date</td>
+                                    <td style="padding: 10px 0; color: #111827; font-size: 15px; font-weight: 600; text-align: right; border-bottom: 1px solid #f3f4f6;">{datetime.datetime.utcnow().strftime('%B %d, %Y')}</td>
+                                </tr>
+                            </table>
+                        </div>
+                        
+                        <p style="color: #374151; font-size: 15px; margin-top: 30px; line-height: 1.5;">Your workspace has been successfully upgraded and your new limits are now active. Welcome aboard!</p>
+                    </div>
+                    
+                    <div style="text-align: center; margin-top: 20px; color: #9ca3af; font-size: 12px;">
+                        <p>© {datetime.datetime.utcnow().year} KapuLetu Systems. All rights reserved.</p>
+                    </div>
                 </div>
                 '''
                 resend.send_email(email, subject, html_body)
