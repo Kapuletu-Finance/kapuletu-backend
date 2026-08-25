@@ -171,9 +171,42 @@ async def verify_admin_pin(
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     pin = payload.get("pin")
-    if not pin or pin != "123456": # Placeholder validation logic
+    if not pin:
+        raise HTTPException(status_code=401, detail="PIN is required")
+        
+    from models.system_config import SystemConfig
+    config = db.query(SystemConfig).filter(SystemConfig.config_key == "admin_pin").first()
+    expected_pin = config.config_value.get("pin") if config else "123456"
+    
+    if pin != expected_pin:
         raise HTTPException(status_code=401, detail="Invalid PIN")
+        
     return {"message": "PIN verified", "token": "temp_secure_token_123"}
+
+@router.post("/auth/set-pin", summary="Set Admin PIN for Secure Wrapper")
+async def set_admin_pin(
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    if current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Only super admins can set the PIN")
+        
+    new_pin = payload.get("pin")
+    if not new_pin or len(new_pin) < 4:
+        raise HTTPException(status_code=400, detail="PIN must be at least 4 characters")
+        
+    from models.system_config import SystemConfig
+    config = db.query(SystemConfig).filter(SystemConfig.config_key == "admin_pin").first()
+    
+    if config:
+        config.config_value = {"pin": new_pin}
+    else:
+        config = SystemConfig(config_key="admin_pin", config_value={"pin": new_pin})
+        db.add(config)
+        
+    db.commit()
+    return {"message": "Admin PIN updated successfully"}
 
 @router.post("/users/treasurers/{identifier}/plan", summary="Upgrade User Plan")
 async def upgrade_user_plan(
