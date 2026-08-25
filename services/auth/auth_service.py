@@ -230,11 +230,19 @@ class AuthService:
             
         hashed_pw = get_password_hash(password)
         
+        from common.utils import generate_slug
+        import random
+        base_slug = generate_slug(f"{first_name} {last_name}") if first_name else "user"
+        slug = base_slug
+        while db.query(User).filter(User.slug == slug).first():
+            slug = f"{base_slug}-{random.randint(1000, 9999)}"
+
         new_user = User(
             email=email,
             phone_number=phone_number,
             first_name=first_name,
             last_name=last_name,
+            slug=slug,
             hashed_password=hashed_pw
         )
         db.add(new_user)

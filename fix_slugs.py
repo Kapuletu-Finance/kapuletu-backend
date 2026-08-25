@@ -9,6 +9,7 @@ load_dotenv()
 from common.database import SessionLocal
 from models.campaign import Campaign
 from models.group import Group
+from models.users import User
 from common.utils import generate_slug
 import random
 
@@ -43,10 +44,27 @@ def fix_missing_slugs():
                 slug = f"{base_slug}-{random.randint(1000, 9999)}"
                 
             group.slug = slug
+            group.slug = slug
             group_count += 1
             
+        # Fix Users
+        users = db.query(User).filter((User.slug == None) | (User.slug == "")).all()
+        user_count = 0
+        for user in users:
+            base_slug = generate_slug(f"{user.first_name} {user.last_name}") if user.first_name else ""
+            if not base_slug:
+                base_slug = f"user-{random.randint(1000, 9999)}"
+            
+            slug = base_slug
+            while db.query(User).filter(User.slug == slug).first():
+                slug = f"{base_slug}-{random.randint(1000, 9999)}"
+                
+            user.slug = slug
+            user_count += 1
+            db.flush()
+
         db.commit()
-        print(f"Successfully updated {camp_count} campaigns and {group_count} groups with missing slugs.")
+        print(f"Successfully updated {camp_count} campaigns, {group_count} groups, and {user_count} users with missing slugs.")
     except Exception as e:
         print(f"Error: {e}")
         db.rollback()
