@@ -16,9 +16,9 @@ class UserService:
     def __init__(self, db: Session):
         self.db = db
 
-    def list_treasurers(self, page=1, limit=50, status=None, q=None):
+    def list_users(self, viewer_role: str, page=1, limit=50, status=None, q=None, role=None):
         """
-        Lists all treasurers with high-level metadata.
+        Lists users with high-level metadata, respecting visibility rules.
         """
         # Subquery to count successful payments per user
         payment_counts = self.db.query(
@@ -36,8 +36,15 @@ class UserService:
             Plan, Subscription.plan_id == Plan.plan_id
         ).outerjoin(
             payment_counts, User.user_id == payment_counts.c.user_id
-        ).filter(User.role == "treasurer")
+        )
         
+        # Role visibility enforcement
+        if viewer_role == "admin":
+            query = query.filter(User.role.in_(["treasurer", "admin"]))
+            
+        if role and role != "all":
+            query = query.filter(User.role == role)
+            
         if status == "active":
             query = query.filter(User.is_active == True)
         elif status == "suspended":
@@ -60,19 +67,23 @@ class UserService:
         now = datetime.datetime.utcnow()
         start_of_month = datetime.datetime(now.year, now.month, 1)
         
-        total_treasurers = self.db.query(func.count(User.user_id)).filter(User.role == "treasurer").scalar() or 0
-        active_treasurers = self.db.query(func.count(User.user_id)).filter(User.role == "treasurer", User.is_active == True).scalar() or 0
-        suspended_treasurers = total_treasurers - active_treasurers
-        new_this_month = self.db.query(func.count(User.user_id)).filter(User.role == "treasurer", User.created_at >= start_of_month).scalar() or 0
+        base_kpi_query = self.db.query(func.count(User.user_id))
+        if viewer_role == "admin":
+            base_kpi_query = base_kpi_query.filter(User.role.in_(["treasurer", "admin"]))
+            
+        total_users = base_kpi_query.scalar() or 0
+        active_users = base_kpi_query.filter(User.is_active == True).scalar() or 0
+        suspended_users = total_users - active_users
+        new_this_month = base_kpi_query.filter(User.created_at >= start_of_month).scalar() or 0
         
         return {
             "total": total,
             "page": page,
             "limit": limit,
             "kpis": {
-                "total": total_treasurers,
-                "active": active_treasurers,
-                "suspended": suspended_treasurers,
+                "total": total_users,
+                "active": active_users,
+                "suspended": suspended_users,
                 "new_this_month": new_this_month
             },
             "users": [{
@@ -81,6 +92,7 @@ class UserService:
                 "full_name": f"{u.first_name} {u.last_name}",
                 "email": u.email,
                 "phone": u.phone_number,
+                "role": u.role,
                 "is_active": u.is_active,
                 "plan_name": f"{plan_name} (Trial)" if (plan_name == "Professional" and payment_count == 0) else (plan_name or "Basic"),
                 "created_at": u.created_at.isoformat() if u.created_at else None
@@ -229,7 +241,7 @@ class UserService:
             "timestamp": l.created_at.isoformat()
         } for l in logs]
 
-    def update_user_status(self, identifier: str, is_active: bool, reason: str = None):
+    def update_user_status(self, identifier: str, is_active: bool, actor_id: str, reason: str = None):
         """
         Suspends or reactivates a user account.
         """
@@ -243,14 +255,20 @@ class UserService:
             return False
             
         user.is_active = is_active
+        
+        action_name = "User Reactivated" if is_active else "User Suspended"
+        log = AuditLog(
+            actor_id=actor_id,
+            action=action_name,
+            entity_type="user",
+            entity_id=user.user_id,
+            details=reason or "No reason provided."
+        )
+        self.db.add(log)
         self.db.commit()
-        
-        # Note: In production, we would also trigger a Cognito AdminUpdateUser call
-        # to globally disable the user's ability to get new tokens.
-        
         return True
 
-    def escalated_update(self, identifier: str, updates: dict):
+    def escalated_update(self, identifier: str, updates: dict, actor_id: str):
         """
         Allows an admin to manually correct user profile data.
         """
@@ -263,15 +281,32 @@ class UserService:
         if not user:
             return False
             
-        if "first_name" in updates: user.first_name = updates["first_name"]
-        if "last_name" in updates: user.last_name = updates["last_name"]
-        if "email" in updates: user.email = updates["email"]
-        if "phone_number" in updates: user.phone_number = updates["phone_number"]
-        
+        changed = []
+        if "first_name" in updates and updates["first_name"] != user.first_name:
+            user.first_name = updates["first_name"]
+            changed.append("first_name")
+        if "last_name" in updates and updates["last_name"] != user.last_name:
+            user.last_name = updates["last_name"]
+            changed.append("last_name")
+        if "email" in updates and updates["email"] != user.email:
+            user.email = updates["email"]
+            changed.append("email")
+        if "phone_number" in updates and updates["phone_number"] != user.phone_number:
+            user.phone_number = updates["phone_number"]
+            changed.append("phone_number")
+            
+        log = AuditLog(
+            actor_id=actor_id,
+            action="Profile Escalated Update",
+            entity_type="user",
+            entity_id=user.user_id,
+            details=f"Updated fields: {', '.join(changed)}"
+        )
+        self.db.add(log)
         self.db.commit()
         return True
 
-    def upgrade_user_role(self, identifier: str, new_role: str):
+    def upgrade_user_role(self, identifier: str, new_role: str, actor_id: str):
         """
         Upgrades or changes the user's role (e.g. treasurer to admin).
         """
@@ -289,6 +324,43 @@ class UserService:
         if not user:
             return False
             
+        old_role = user.role
         user.role = new_role
+        
+        log = AuditLog(
+            actor_id=actor_id,
+            action="Role Changed",
+            entity_type="user",
+            entity_id=user.user_id,
+            details=f"Role changed from {old_role} to {new_role}"
+        )
+        self.db.add(log)
+        self.db.commit()
+        return True
+
+    def trigger_password_reset(self, identifier: str, actor_id: str):
+        """
+        Triggers a password reset using the custom auth flow.
+        """
+        try:
+            uid = parse_uuid(identifier)
+            user = self.db.query(User).filter(User.user_id == uid).first()
+        except ValueError:
+            user = self.db.query(User).filter(User.slug == identifier).first()
+            
+        if not user:
+            return False
+            
+        # Implementation of custom auth token generation and email dispatch
+        # For now, simulate by logging the event.
+        
+        log = AuditLog(
+            actor_id=actor_id,
+            action="Password Reset Initiated",
+            entity_type="user",
+            entity_id=user.user_id,
+            details="Admin initiated a manual password reset."
+        )
+        self.db.add(log)
         self.db.commit()
         return True

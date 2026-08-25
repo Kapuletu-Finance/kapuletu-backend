@@ -69,9 +69,10 @@ async def get_user_activity(
     service = UserService(db)
     return service.get_recent_activity()
 
-@router.get("/users/treasurers", summary="List Treasurers")
-async def list_treasurers(
+@router.get("/users/treasurers", summary="List Users")
+async def list_users(
     status: Optional[str] = Query(None),
+    role: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
@@ -79,7 +80,8 @@ async def list_treasurers(
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     service = UserService(db)
-    return service.list_treasurers(page=page, limit=limit, status=status, q=q)
+    viewer_role = current_user.get("role", "admin")
+    return service.list_users(viewer_role=viewer_role, page=page, limit=limit, status=status, q=q, role=role)
 
 @router.get("/users/treasurers/{identifier}", summary="Get Treasurer Details")
 async def get_treasurer_details(
@@ -112,7 +114,7 @@ async def update_user_status(
     service = UserService(db)
     new_status = payload.get("status") == "active"
     reason = payload.get("reason")
-    success = service.update_user_status(identifier, new_status, reason)
+    success = service.update_user_status(identifier, new_status, current_user.get("sub"), reason)
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Status updated"}
@@ -125,7 +127,7 @@ async def escalated_update(
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
     service = UserService(db)
-    success = service.escalated_update(identifier, payload)
+    success = service.escalated_update(identifier, payload, current_user.get("sub"))
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Profile updated"}
@@ -143,12 +145,35 @@ async def upgrade_user_role(
         raise HTTPException(status_code=400, detail="Missing role in payload")
         
     try:
-        success = service.upgrade_user_role(identifier, new_role)
+        success = service.upgrade_user_role(identifier, new_role, current_user.get("sub"))
         if not success:
             raise HTTPException(status_code=404, detail="User not found")
         return {"message": f"User upgraded to {new_role}"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/users/treasurers/{identifier}/reset-password", summary="Trigger Password Reset")
+async def trigger_password_reset(
+    identifier: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = UserService(db)
+    success = service.trigger_password_reset(identifier, current_user.get("sub"))
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "Password reset initiated"}
+
+@router.post("/auth/verify-pin", summary="Verify Admin PIN for Secure Wrapper")
+async def verify_admin_pin(
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    pin = payload.get("pin")
+    if not pin or pin != "123456": # Placeholder validation logic
+        raise HTTPException(status_code=401, detail="Invalid PIN")
+    return {"message": "PIN verified", "token": "temp_secure_token_123"}
 
 @router.post("/users/treasurers/{identifier}/plan", summary="Upgrade User Plan")
 async def upgrade_user_plan(
