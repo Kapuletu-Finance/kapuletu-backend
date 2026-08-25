@@ -26,6 +26,8 @@ class CheckoutIn(BaseModel):
     phone_number: Optional[str]
     email: Optional[str]
     name: Optional[str]
+    billing_cycle: str = Field("monthly", description="monthly or annual")
+    has_addons: bool = Field(False, description="Whether the user selected addons")
 
 class CheckoutOut(BaseModel):
     checkout_id: str

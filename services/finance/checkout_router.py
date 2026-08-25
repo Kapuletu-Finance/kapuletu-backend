@@ -104,8 +104,15 @@ async def initiate_checkout(
         "plan_id": str(plan.plan_id),
         "phone_number": payload.phone_number,
         "email": payload.email,
-        "name": payload.name
+        "name": payload.name,
+        "billing_cycle": payload.billing_cycle
     }
+    
+    amount = float(plan.price)
+    if payload.billing_cycle == "annual":
+        amount = amount * 11
+    if payload.has_addons:
+        amount += 200.0
     
     if payload.provider == "mpesa":
         provider = MpesaProvider()
@@ -115,7 +122,7 @@ async def initiate_checkout(
         raise HTTPException(status_code=400, detail="Unsupported provider")
         
     try:
-        result = provider.initiate_checkout(user_id, str(plan.plan_id), plan.price, metadata)
+        result = provider.initiate_checkout(user_id, str(plan.plan_id), amount, metadata)
     except ValueError as e:
         import logging
         logging.error(f"Checkout Provider Error: {str(e)}")
@@ -143,7 +150,7 @@ async def initiate_checkout(
             pending_payment = SubscriptionPayment(
                 user_id=parse_uuid(user_id),
                 subscription_id=sub.subscription_id,
-                amount=plan.price,
+                amount=amount,
                 currency="KES",
                 status="pending",
                 payment_method=payload.provider,
@@ -220,9 +227,12 @@ async def get_payment_status(
                 # Refresh payment to reflect success status
                 db.refresh(payment)
             elif query_res.get("status") == "failed":
-                payment.status = "failed"
-                db.commit()
-                db.refresh(payment)
+                # Only fail if explicitly cancelled or confirmed failed, to avoid premature failure on pending/timeouts
+                raw_status = query_res.get("raw_status", "")
+                if "cancel" in raw_status.lower() or "failed" in raw_status.lower():
+                    payment.status = "failed"
+                    db.commit()
+                    db.refresh(payment)
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Active STK polling failed: {e}")

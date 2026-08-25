@@ -47,7 +47,7 @@ class FulfillmentService:
                 plan_id=plan_id,
                 status="active",
                 start_date=datetime.datetime.utcnow(),
-                end_date=datetime.datetime.utcnow() + datetime.timedelta(days=30)
+                end_date=datetime.datetime.utcnow() + datetime.timedelta(days=365 if metadata.get("billing_cycle") == "annual" else 30)
             )
             self.db.add(sub)
         else:
@@ -55,7 +55,8 @@ class FulfillmentService:
             sub.status = "active"
             # Extend existing subscription
             current_end = sub.end_date if sub.end_date and sub.end_date > datetime.datetime.utcnow() else datetime.datetime.utcnow()
-            sub.end_date = current_end + datetime.timedelta(days=30)
+            days_to_add = 365 if metadata.get("billing_cycle") == "annual" else 30
+            sub.end_date = current_end + datetime.timedelta(days=days_to_add)
 
         # 4. Record Payment
         if pending_payment:

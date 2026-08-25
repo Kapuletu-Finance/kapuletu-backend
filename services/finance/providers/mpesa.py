@@ -159,7 +159,7 @@ class MpesaProvider(PaymentProvider):
                 if res_data.get("errorCode") == "500.001.1001":
                     # Transaction is still processing
                     return {"success": False, "status": "pending", "raw_status": res_data.get("errorMessage")}
-                return {"success": False, "status": "failed", "raw_status": res_data.get("errorMessage", "Query Failed")}
+                return {"success": False, "status": "pending", "raw_status": res_data.get("errorMessage", "Query Failed")}
             
             # Success response format
             result_code = res_data.get("ResultCode")
