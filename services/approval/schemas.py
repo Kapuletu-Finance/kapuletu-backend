@@ -66,6 +66,7 @@ class PendingTransactionOut(BaseModel):
     
     created_at: datetime
     processed_at: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
     
     class Config:
         from_attributes = True
