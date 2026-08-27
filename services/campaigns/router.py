@@ -349,7 +349,8 @@ async def get_campaign_transactions(
     campaign_id: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    search: str = Query(None),
+    search: Optional[str] = Query(None),
+    filter: Optional[str] = Query(None),
     sort_by: Optional[str] = Query("date"),
     sort_order: Optional[str] = Query("desc"),
     db: Session = Depends(get_db),
@@ -363,6 +364,9 @@ async def get_campaign_transactions(
     query = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(campaign.campaign_id), Transaction.status == "approved")
     if search:
         query = query.filter(Transaction.sender_name.ilike(f"%{search}%"))
+    
+    if filter and filter.lower() != "all":
+        query = query.filter(Transaction.payment_method.ilike(f"%{filter}%"))
         
     total_items = query.count()
     

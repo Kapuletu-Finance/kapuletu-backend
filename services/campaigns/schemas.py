@@ -88,6 +88,8 @@ class TransactionOut(BaseModel):
     amount: float
     name: Optional[str] = Field(None, alias="sender_name", serialization_alias="name")
     payment_method: str
+    is_split: bool = False
+    notes: Optional[str] = None
     
     @field_validator('date', mode='before')
     def format_date(cls, v):

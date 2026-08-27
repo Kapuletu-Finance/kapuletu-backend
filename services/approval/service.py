@@ -29,7 +29,7 @@ class ApprovalService:
         """Initializes service with SQL session."""
         self.db = db
 
-    def approve_transaction(self, pending_txn_id, treasurer_id, group_id, campaign_id=None):
+    def approve_transaction(self, pending_txn_id, treasurer_id, group_id, campaign_id=None, notes=None):
         """
         Finalizes a pending transaction.
         
@@ -78,6 +78,7 @@ class ApprovalService:
             sender_name=pending.sender_name,
             payment_method=pending.payment_method,
             source_evidence=pending.source_evidence,
+            notes=notes,
             status="approved"
         )
         try:
@@ -217,7 +218,7 @@ class ApprovalService:
 
         return new_txn
 
-    def split_transaction(self, pending_txn_id, treasurer_id, group_id, allocations, campaign_id=None):
+    def split_transaction(self, pending_txn_id, treasurer_id, group_id, allocations, campaign_id=None, notes=None):
         """
         Splits a single pending transaction into multiple member allocations.
         Creates individual Transaction records per contributor to ensure they are tracked 
@@ -258,6 +259,8 @@ class ApprovalService:
                 sender_name=alloc["name"],
                 payment_method=pending.payment_method,
                 source_evidence=pending.source_evidence,
+                notes=notes,
+                is_split=True,
                 status="approved"
             )
             self.db.add(new_txn)

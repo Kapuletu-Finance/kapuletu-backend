@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import UUID, Column, DateTime, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import UUID, Column, DateTime, ForeignKey, Numeric, String, UniqueConstraint, Boolean
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -50,6 +50,10 @@ class Transaction(Base):
     payment_method = Column(String, default="Cash")
     # source_evidence: The raw SMS string or the manual entry note. Internal use only.
     source_evidence = Column(String, nullable=True)
+    # is_split: Flag to indicate if this transaction was created from a split
+    is_split = Column(Boolean, default=False)
+    # notes: Optional notes added by the treasurer during allocation
+    notes = Column(String, nullable=True)
 
     # Relationships
     # A single transaction can be split into multiple allocations (e.g. 50% Dues, 50% Social).

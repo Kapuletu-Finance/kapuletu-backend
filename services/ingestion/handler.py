@@ -560,16 +560,40 @@ def process_ingestion(body_str: str, config):
         elif result["status"] == "error":
             handle_unauthorized_access(sender_phone, config, db)
         elif result["status"] == "invalid":
-            reply_text = "I'm sorry, I didn't understand that request. Please forward a valid M-Pesa transaction receipt, or select an option from the menu below to get started."
+            if result.get("message") == "REPORT_OR_SUMMARY":
+                reply_text = "It looks like you forwarded a report or summary. To log contributions, please forward the original individual transaction receipts."
+            elif result.get("message") == "CHATTER":
+                reply_text = "I couldn't detect a valid transaction in that message. Please ensure you are forwarding a complete M-Pesa or bank receipt."
+            else:
+                reply_text = "I'm sorry, I didn't understand that request. Please forward a valid M-Pesa transaction receipt, or select an option from the menu below to get started."
             send_whatsapp_main_menu(sender_phone, config, reply_text)
         else:
-            parsed = result.get("parsed_data", {})
-            amt = f"KES {parsed.get('amount', 0.0):,.2f}" if parsed.get('amount') else "the transaction"
-            name = parsed.get("sender_name") or parsed.get("provider") or "the sender"
-            pending_id = result.get("pending_id")
+            results_list = result.get("results", [])
             
-            # Check if interactive approvals are enabled
-            interactive_sent = False
+            # Formulate the response text
+            if len(results_list) > 1:
+                reply_lines = [f"Successfully parsed {len(results_list)} transactions:"]
+                for idx, r in enumerate(results_list, 1):
+                    parsed = r.get("parsed_data", {})
+                    amt = f"KES {parsed.get('amount', 0.0):,.2f}" if parsed.get('amount') else "a transaction"
+                    name = parsed.get("sender_name") or parsed.get("provider") or "a sender"
+                    reply_lines.append(f"{idx}. {amt} from {name}")
+                reply_lines.append("\nThey are now awaiting your approval in the KapuLetu portal.")
+                reply_text = "\n".join(reply_lines)
+                send_meta_reply(sender_phone, reply_text, config)
+                
+                # We skip interactive approval for batches to avoid spamming 5 menus
+                interactive_sent = True
+            else:
+                # Singular case
+                single_res = results_list[0] if results_list else {}
+                parsed = single_res.get("parsed_data", {})
+                amt = f"KES {parsed.get('amount', 0.0):,.2f}" if parsed.get('amount') else "the transaction"
+                name = parsed.get("sender_name") or parsed.get("provider") or "the sender"
+                pending_id = single_res.get("pending_id")
+                
+                # Check if interactive approvals are enabled
+                interactive_sent = False
             if pending_id:
                 from repositories.transaction_repo import TransactionRepository
                 repo = TransactionRepository(db)

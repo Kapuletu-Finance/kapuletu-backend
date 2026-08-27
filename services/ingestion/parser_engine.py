@@ -46,18 +46,14 @@ class ModelBasedParser:
     def parse(self, message_text: str) -> Dict[str, Any]:
         """
         Executes the full parsing pipeline on a single message string.
-        
-        Logic Flow:
-        1. Contextual Extraction: SpaCy identifies entities like SENDER, AMOUNT, PURPOSE.
-        2. Safeguard Check: If critical data (amount/name) is missing, regex logic is triggered.
-        3. Confidence Scoring: Assigns a score based on whether the custom model was used.
-        
-        Args:
-            message_text (str): The raw text of the received message.
-            
-        Returns:
-            dict: Structured data containing amount, transaction_code, sender_name, purpose.
         """
+        # Intelligent Guardrails
+        if len(message_text) > 500 or re.search(r"(Contributions Received:|Goal Achieved|Amount Received)", message_text, re.IGNORECASE):
+            return {"status": "REPORT_OR_SUMMARY", "confidence_score": 0.0}
+            
+        if not re.search(r"\d", message_text):
+            return {"status": "CHATTER", "confidence_score": 0.0}
+
         # Run the NLP pipeline with error handling
         try:
             doc = self.nlp(message_text)
@@ -69,6 +65,7 @@ class ModelBasedParser:
         
         # Initialize the data schema
         data = {
+            "status": "VALID",
             "sender_name": None,
             "amount": 0.0,
             "transaction_code": None,
@@ -182,3 +179,14 @@ def parse_message(message_text: str) -> Dict[str, Any]:
     if _parser_instance is None:
         _parser_instance = ModelBasedParser()
     return _parser_instance.parse(message_text)
+
+def split_batch_messages(text: str) -> list[str]:
+    """Splits a concatenated batch of WhatsApp forwarded messages into individual receipts."""
+    # Pattern to match WhatsApp forwarding timestamps e.g. [12:28 pm, 25/08/2026] Name: 
+    pattern = r"\[\d{1,2}:\d{2}\s*(?:am|pm)?(?:,)?\s*\d{1,2}/\d{1,2}/\d{2,4}\][^:]+:\s*"
+    
+    if re.search(pattern, text, re.IGNORECASE):
+        parts = re.split(pattern, text, flags=re.IGNORECASE)
+        return [p.strip() for p in parts if p.strip()]
+        
+    return [text]

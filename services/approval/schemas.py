@@ -15,6 +15,7 @@ class TransactionSplit(BaseModel):
     allocations: List[SplitAllocation]
     campaign_id: Optional[str] = None
     group_id: Optional[str] = None
+    internal_note: Optional[str] = Field(None, json_schema_extra={"example": "Split between two families"})
 
 
 
@@ -30,8 +31,8 @@ class ManualEntryIn(BaseModel):
 
 class TransactionActionIn(BaseModel):
     internal_note: Optional[str] = Field(None, json_schema_extra={"example": "Matched with paper receipt #123"})
-    group_id: UUID = Field(...)
-    campaign_id: UUID = Field(...)
+    group_id: Optional[UUID] = Field(None)
+    campaign_id: Optional[UUID] = Field(None)
 
 class TransactionEditIn(BaseModel):
     extracted_amount: Optional[float] = Field(None, json_schema_extra={"example": 1500.0})

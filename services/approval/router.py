@@ -147,7 +147,8 @@ async def approve(
     group_id = payload.group_id if payload else None
     campaign_id = payload.campaign_id if payload else None
     try:
-        txn = service.approve_transaction(pending_id, current_user.get("sub"), group_id, campaign_id)
+        notes = payload.internal_note if payload else None
+        txn = service.approve_transaction(pending_id, current_user.get("sub"), group_id, campaign_id, notes=notes)
         return {
             "transaction_id": txn.transaction_id,
             "transaction_code": txn.transaction_code,
@@ -195,7 +196,8 @@ async def split_tx(
     service = ApprovalService(db)
     try:
         allocs = [{"name": a.name, "amount": a.amount} for a in payload.allocations]
-        txn = service.split_transaction(pending_id, current_user.get("sub"), payload.group_id, allocs, payload.campaign_id)
+        notes = payload.internal_note if hasattr(payload, 'internal_note') else None
+        txn = service.split_transaction(pending_id, current_user.get("sub"), payload.group_id, allocs, payload.campaign_id, notes=notes)
         return {
             "transaction_id": txn.transaction_id,
             "transaction_code": txn.transaction_code,
