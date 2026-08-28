@@ -343,6 +343,35 @@ class AuthService:
             "ExpiresIn": session_timeout * 60
         }
 
+    def resend_2fa(self, db: Session, two_fa_token: str) -> Dict[str, Any]:
+        payload = decode_token(two_fa_token)
+        if payload.get("purpose") != "2fa":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token purpose")
+            
+        user_id = payload.get("sub")
+        user = db.query(User).filter(User.user_id == parse_uuid(user_id)).first()
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+            
+        channel = getattr(user, 'two_factor_channel', 'whatsapp')
+        identifier = user.email if channel == 'email' else user.phone_number
+        
+        # Delete existing OTP if any
+        db.query(OTP).filter(
+            OTP.user_id == parse_uuid(user.user_id), 
+            OTP.purpose == "2fa_login"
+        ).delete()
+        db.commit()
+
+        code = self._save_otp(db, user.user_id, identifier, "2fa_login")
+        
+        if channel == 'email':
+            self._send_resend_email(user.email, "Your 2FA Verification Code", code, "verify your login", user.first_name)
+        else:
+            self._send_whatsapp_with_fallback(user.phone_number, code)
+            
+        return {"Destination": identifier, "DeliveryMedium": channel}
+
     def verify_2fa(self, db: Session, two_fa_token: str, code: str) -> Dict[str, Any]:
         payload = decode_token(two_fa_token)
         if payload.get("purpose") != "2fa":

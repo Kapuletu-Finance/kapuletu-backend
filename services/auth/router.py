@@ -11,7 +11,7 @@ limiter = Limiter(key_func=get_remote_address)
 from common.database import get_db
 from common.utils import parse_uuid
 from services.auth.schemas import (
-    RegisterIn, RegisterOut, LoginIn, VerifyIn, VerifyEmailIn, ResendCodeIn, RefreshIn,
+    RegisterIn, RegisterOut, LoginIn, VerifyIn, VerifyEmailIn, ResendCodeIn, Resend2FAIn, RefreshIn,
     ForgotPasswordIn, ResetPasswordIn, ChangePasswordIn, UpdateProfileIn,
     TokenOut, UserOut, MessageOut, SettingsIn, SettingsOut, format_phone
 )
@@ -156,6 +156,15 @@ async def verify_2fa(request: Request, payload: Verify2FAIn, response: Response,
         expires_in=auth_result.get('ExpiresIn', 3600),
         requires_2fa=False
     )
+
+@router.post("/resend-2fa", response_model=MessageOut, summary="Resend 2FA Code")
+@limiter.limit("3/minute")
+async def resend_2fa(request: Request, payload: Resend2FAIn, db: Session = Depends(get_db)):
+    """Resends the 2FA code."""
+    details = auth_service.resend_2fa(db=db, two_fa_token=payload.two_fa_token)
+    medium = details.get('DeliveryMedium', 'your contact method')
+    destination = details.get('Destination', '')
+    return MessageOut(message=f"2FA code resent successfully via {medium}.")
 
 @router.post("/refresh", response_model=TokenOut, summary="Refresh Token")
 async def refresh(request: Request, response: Response, payload: RefreshIn = None, db: Session = Depends(get_db)):

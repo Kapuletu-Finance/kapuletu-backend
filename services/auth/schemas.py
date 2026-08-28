@@ -59,6 +59,9 @@ class VerifyEmailIn(BaseModel):
 class ResendCodeIn(IdentifierBase):
     pass
 
+class Resend2FAIn(BaseModel):
+    two_fa_token: str = Field(..., json_schema_extra={"example": "eyJhb..."})
+
 class RefreshIn(BaseModel):
     refresh_token: str = Field(..., json_schema_extra={"example": "eyJhbG..."})
 
