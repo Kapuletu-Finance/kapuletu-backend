@@ -25,3 +25,4 @@ from .notification import Notification
 from .whatsapp_blocklist import WhatsAppBlocklist
 from .app_feedback import AppFeedback
 from .support_session_rating import SupportSessionRating
+from .broadcast import BroadcastCampaign

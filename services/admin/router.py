@@ -455,8 +455,36 @@ async def send_broadcast(
     service = CRMService(db)
     if "message" not in payload:
         raise HTTPException(status_code=400, detail="Missing message")
-    result = service.send_broadcast(payload["message"], payload.get("channels", ["sms"]))
+    if "title" not in payload:
+        raise HTTPException(status_code=400, detail="Missing title")
+        
+    result = service.send_broadcast(
+        title=payload["title"],
+        message=payload["message"],
+        target_audience=payload.get("target_type", "all_members"),
+        channels=payload.get("channels", ["in_app"])
+    )
     return result
+
+@router.get("/crm/broadcasts", summary="List Broadcast Campaigns")
+async def list_broadcasts(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    from models.broadcast import BroadcastCampaign
+    campaigns = db.query(BroadcastCampaign).order_by(BroadcastCampaign.created_at.desc()).all()
+    
+    return [
+        {
+            "id": str(c.campaign_id),
+            "title": c.title,
+            "target_audience": c.target_audience,
+            "channels": c.channels,
+            "status": c.status,
+            "recipients_count": c.recipients_count,
+            "created_at": c.created_at.isoformat()
+        } for c in campaigns
+    ]
 
 # --- Module F: System & Audit Logs ---
 @router.get("/audit/logs", summary="List System & Audit Logs")

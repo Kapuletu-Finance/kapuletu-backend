@@ -16,21 +16,49 @@ class CRMService:
         self.sqs = boto3.client('sqs', region_name=os.environ.get('AWS_REGION', 'eu-west-1'))
         self.broadcast_queue_url = os.environ.get('BROADCAST_QUEUE_URL')
 
-    def send_broadcast(self, message: str, channels: list = ["sms"], target_role: str = "treasurer"):
+    def send_broadcast(self, title: str, message: str, target_audience: str, channels: list):
         """
-        Queues a platform-wide message to all users of a specific role.
+        Queues a platform-wide message to users based on audience segment, and saves to DB.
         """
-        # 1. Fetch target users
-        users = self.db.query(User).filter(User.role == target_role, User.is_active == True).all()
+        from models.broadcast import BroadcastCampaign
+        from models.subscription import Subscription
         
-        # 2. Push to SQS for background processing (Worker will handle Twilio/SES calls)
-        # We send one message per user to the queue for individual delivery tracking
+        # 1. Save campaign to database
+        campaign = BroadcastCampaign(
+            title=title,
+            message_body=message,
+            target_audience=target_audience,
+            channels=channels,
+            status="queued"
+        )
+        self.db.add(campaign)
+        self.db.flush() # flush to get campaign_id
+        
+        # 2. Fetch target users
+        if target_audience == "all_members":
+            users = self.db.query(User).filter(User.is_active == True).all()
+        elif target_audience == "active_subscribers":
+            users = self.db.query(User).join(Subscription, User.user_id == Subscription.user_id).filter(
+                Subscription.status == "active", User.is_active == True
+            ).all()
+        else:
+            # fallback to treasurer for legacy compatibility if segment not found
+            users = self.db.query(User).filter(User.role == "treasurer", User.is_active == True).all()
+            
+        campaign.recipients_count = len(users)
+        
+        # 3. Push to SQS for background processing
         for user in users:
+            # Simple variable replacement (can be expanded later)
+            personalized_message = message.replace("{{first_name}}", user.first_name if user.first_name else "")
+            
             payload = {
+                "campaign_id": str(campaign.campaign_id),
                 "user_id": str(user.user_id),
                 "phone": user.phone_number,
                 "email": user.email,
-                "message": message,
+                "title": title,
+                "message": personalized_message,
                 "channels": channels
             }
             
@@ -39,8 +67,11 @@ class CRMService:
                     QueueUrl=self.broadcast_queue_url,
                     MessageBody=json.dumps(payload)
                 )
+                
+        campaign.status = "sent"
+        self.db.commit()
         
-        return {"status": "broadcast_queued", "recipients": len(users)}
+        return {"status": "broadcast_queued", "campaign_id": str(campaign.campaign_id), "recipients": len(users)}
 
     def list_tickets(self, status: str = "open"):
         """
