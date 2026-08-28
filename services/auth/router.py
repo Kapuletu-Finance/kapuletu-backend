@@ -274,7 +274,8 @@ async def update_settings(payload: SettingsIn, current_user: Dict[str, Any] = De
     from models.users import User
     user = db.query(User).filter(User.user_id == parse_uuid(current_user.get('sub'))).first()
     if user:
-        user.allow_ai_training = payload.allow_ai_training
+        if payload.allow_ai_training is not None:
+            user.allow_ai_training = payload.allow_ai_training
         if payload.two_factor_enabled is not None:
             user.two_factor_enabled = payload.two_factor_enabled
         if payload.two_factor_channel is not None:

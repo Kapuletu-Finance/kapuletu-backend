@@ -84,7 +84,7 @@ class UpdateProfileIn(BaseModel):
         return format_phone(v)
 
 class SettingsIn(BaseModel):
-    allow_ai_training: bool = Field(..., json_schema_extra={"example": True})
+    allow_ai_training: Optional[bool] = Field(None, json_schema_extra={"example": True})
     two_factor_enabled: Optional[bool] = Field(None, json_schema_extra={"example": False})
     two_factor_channel: Optional[str] = Field(None, json_schema_extra={"example": "whatsapp"})
 
