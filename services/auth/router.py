@@ -28,6 +28,16 @@ router = APIRouter(prefix="/auth", tags=["1. Authentication"])
 @router.post("/register", response_model=RegisterOut, summary="Register Treasurer")
 @limiter.limit("5/minute")
 async def register(request: Request, payload: RegisterIn, db: Session = Depends(get_db)):
+    from common.system_config_service import get_system_config
+    
+    open_signups = get_system_config(db, "open_signups", default=True)
+    # Check if open_signups is explicitly false, or if it's the string "false"
+    if open_signups is False or open_signups == "false":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Public registrations are currently closed."
+        )
+
     user_id = auth_service.register(
         db=db,
         email=payload.email,

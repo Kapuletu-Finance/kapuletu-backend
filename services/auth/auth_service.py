@@ -293,7 +293,18 @@ class AuthService:
         if not user.hashed_password or not verify_password(password, user.hashed_password):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password.")
             
-        if getattr(user, 'two_factor_enabled', False):
+        from common.system_config_service import get_system_config
+        force_2fa = get_system_config(db, "force_2fa", default="none")
+        session_timeout = int(get_system_config(db, "session_timeout_minutes", default=60))
+        
+        # Determine if 2FA is required based on global settings or user preference
+        requires_2fa = getattr(user, 'two_factor_enabled', False)
+        if force_2fa == "all":
+            requires_2fa = True
+        elif force_2fa == "admins" and getattr(user, "role", "") == "admin":
+            requires_2fa = True
+
+        if requires_2fa:
             # Generate 2FA token
             two_fa_token = create_access_token({"sub": str(user.user_id), "purpose": "2fa"}, expires_delta=datetime.timedelta(minutes=10))
             
@@ -309,10 +320,11 @@ class AuthService:
                 
             return {
                 "Requires2FA": True,
-                "2FAToken": two_fa_token
+                "2FAToken": two_fa_token,
+                "SessionTimeoutMinutes": session_timeout # pass down to caller if needed
             }
             
-        access_token = create_access_token({"sub": str(user.user_id), "role": user.role})
+        access_token = create_access_token({"sub": str(user.user_id), "role": user.role}, expires_delta=datetime.timedelta(minutes=session_timeout))
         refresh_token = create_refresh_token({"sub": str(user.user_id), "role": user.role})
         
         AuditService(db).log_action(
@@ -328,7 +340,7 @@ class AuthService:
             "AccessToken": access_token,
             "RefreshToken": refresh_token,
             "IdToken": access_token, # Simplified, using access token as id token
-            "ExpiresIn": 3600
+            "ExpiresIn": session_timeout * 60
         }
 
     def verify_2fa(self, db: Session, two_fa_token: str, code: str) -> Dict[str, Any]:
@@ -356,7 +368,10 @@ class AuthService:
         db.delete(otp)
         db.commit()
         
-        access_token = create_access_token({"sub": str(user.user_id), "role": user.role})
+        from common.system_config_service import get_system_config
+        session_timeout = int(get_system_config(db, "session_timeout_minutes", default=60))
+        
+        access_token = create_access_token({"sub": str(user.user_id), "role": user.role}, expires_delta=datetime.timedelta(minutes=session_timeout))
         refresh_token = create_refresh_token({"sub": str(user.user_id), "role": user.role})
         
         AuditService(db).log_action(
@@ -372,7 +387,7 @@ class AuthService:
             "AccessToken": access_token,
             "RefreshToken": refresh_token,
             "IdToken": access_token,
-            "ExpiresIn": 3600
+            "ExpiresIn": session_timeout * 60
         }
 
     def verify_account(self, db: Session, username: str, code: str):
