@@ -99,12 +99,14 @@ async def initiate_checkout(
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
         
+    user = db.execute(select(User).where(User.user_id == parse_uuid(user_id))).scalars().first()
+        
     metadata = {
         "user_id": user_id,
         "plan_id": str(plan.plan_id),
-        "phone_number": payload.phone_number,
-        "email": payload.email,
-        "name": payload.name,
+        "phone_number": payload.phone_number if payload.phone_number else (user.phone_number if user else ""),
+        "email": payload.email if payload.email else (user.email if user else ""),
+        "name": payload.name if payload.name else (user.first_name if user else ""),
         "billing_cycle": payload.billing_cycle
     }
     
