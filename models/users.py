@@ -38,11 +38,15 @@ class User(Base):
     email_verified = Column(Boolean, default=False)
     phone_number_verified = Column(Boolean, default=False)
     
+    # Two-Factor Authentication
+    two_factor_enabled = Column(Boolean, default=False)
+    two_factor_channel = Column(String, nullable=True) # 'email' or 'whatsapp'
+    
     # Permissions Role: Controls access to specific dashboard features
     # - treasurer: Manages specific groups
     # - admin: Platform-level management
     # - super_admin: Infrastructure control
-    role = Column(String, default=UserRole.TREASURER.value) 
+    role = Column(String, default=UserRole.TREASURER.value)
     
     # Account Status
     is_active = Column(Boolean, default=True)

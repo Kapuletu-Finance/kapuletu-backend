@@ -293,6 +293,25 @@ class AuthService:
         if not user.hashed_password or not verify_password(password, user.hashed_password):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password.")
             
+        if getattr(user, 'two_factor_enabled', False):
+            # Generate 2FA token
+            two_fa_token = create_access_token({"sub": str(user.user_id), "purpose": "2fa"}, expires_delta=datetime.timedelta(minutes=10))
+            
+            # Send OTP based on preferred channel
+            channel = getattr(user, 'two_factor_channel', 'whatsapp')
+            identifier = user.email if channel == 'email' else user.phone_number
+            code = self._save_otp(db, user.user_id, identifier, "2fa_login")
+            
+            if channel == 'email':
+                self._send_resend_email(user.email, "Your 2FA Verification Code", code, "verify your login", user.first_name)
+            else:
+                self._send_whatsapp_with_fallback(user.phone_number, code)
+                
+            return {
+                "Requires2FA": True,
+                "2FAToken": two_fa_token
+            }
+            
         access_token = create_access_token({"sub": str(user.user_id), "role": user.role})
         refresh_token = create_refresh_token({"sub": str(user.user_id), "role": user.role})
         
@@ -305,9 +324,54 @@ class AuthService:
         )
         
         return {
+            "Requires2FA": False,
             "AccessToken": access_token,
             "RefreshToken": refresh_token,
             "IdToken": access_token, # Simplified, using access token as id token
+            "ExpiresIn": 3600
+        }
+
+    def verify_2fa(self, db: Session, two_fa_token: str, code: str) -> Dict[str, Any]:
+        payload = decode_token(two_fa_token)
+        if payload.get("purpose") != "2fa":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token purpose")
+            
+        user_id = payload.get("sub")
+        user = db.query(User).filter(User.user_id == parse_uuid(user_id)).first()
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+            
+        otp = db.query(OTP).filter(
+            OTP.user_id == parse_uuid(user.user_id), 
+            OTP.purpose == "2fa_login",
+            OTP.code == code
+        ).first()
+        
+        if not otp:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code.")
+            
+        if otp.expires_at < datetime.datetime.utcnow():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification code has expired.")
+            
+        db.delete(otp)
+        db.commit()
+        
+        access_token = create_access_token({"sub": str(user.user_id), "role": user.role})
+        refresh_token = create_refresh_token({"sub": str(user.user_id), "role": user.role})
+        
+        AuditService(db).log_action(
+            actor_id=str(user.user_id),
+            action="USER_LOGIN",
+            entity_type="USER",
+            entity_id=str(user.user_id),
+            details={"message": "You successfully logged in with 2FA."}
+        )
+        
+        return {
+            "Requires2FA": False,
+            "AccessToken": access_token,
+            "RefreshToken": refresh_token,
+            "IdToken": access_token,
             "ExpiresIn": 3600
         }
 

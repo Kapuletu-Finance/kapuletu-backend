@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import Dict, Any
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -60,6 +61,15 @@ async def login(request: Request, payload: LoginIn, response: Response, db: Sess
     
     auth_result = auth_service.login(db=db, username=payload.identifier, password=payload.password)
     
+    if auth_result.get('Requires2FA'):
+        return TokenOut(
+            requires_2fa=True, 
+            two_fa_token=auth_result.get('2FAToken'),
+            access_token=None,
+            refresh_token=None,
+            id_token=None
+        )
+    
     # Set HTTP-Only Cookies
     response.set_cookie(
         key="kapuletu_access_token", 
@@ -82,7 +92,8 @@ async def login(request: Request, payload: LoginIn, response: Response, db: Sess
         access_token=auth_result.get('AccessToken'),
         refresh_token=auth_result.get('RefreshToken'),
         id_token=auth_result.get('IdToken'),
-        expires_in=auth_result.get('ExpiresIn', 3600)
+        expires_in=auth_result.get('ExpiresIn', 3600),
+        requires_2fa=False
     )
 
 @router.post("/token", response_model=TokenOut, include_in_schema=False)
@@ -95,6 +106,45 @@ async def login_for_swagger(form_data: OAuth2PasswordRequestForm = Depends(), db
         refresh_token=auth_result.get('RefreshToken'),
         id_token=auth_result.get('IdToken'),
         expires_in=auth_result.get('ExpiresIn', 3600)
+    )
+
+class Verify2FAIn(BaseModel):
+    two_fa_token: str = Field(..., json_schema_extra={"example": "eyJhb..."})
+    code: str = Field(..., min_length=6, max_length=6, json_schema_extra={"example": "123456"})
+
+@router.post("/verify-2fa", response_model=TokenOut, summary="Verify 2FA Code")
+@limiter.limit("10/minute")
+async def verify_2fa(request: Request, payload: Verify2FAIn, response: Response, db: Session = Depends(get_db)):
+    """Verifies the 2FA code and issues the final JWT tokens."""
+    from common.config import get_config
+    is_secure = not get_config().IS_LOCAL
+    
+    auth_result = auth_service.verify_2fa(db=db, two_fa_token=payload.two_fa_token, code=payload.code)
+    
+    # Set HTTP-Only Cookies
+    response.set_cookie(
+        key="kapuletu_access_token", 
+        value=auth_result.get('AccessToken'), 
+        httponly=True, 
+        secure=is_secure, 
+        samesite='lax', 
+        max_age=15 * 60 # 15 minutes
+    )
+    response.set_cookie(
+        key="kapuletu_refresh_token", 
+        value=auth_result.get('RefreshToken'), 
+        httponly=True, 
+        secure=is_secure, 
+        samesite='lax', 
+        max_age=1 * 24 * 60 * 60 # 1 day
+    )
+    
+    return TokenOut(
+        access_token=auth_result.get('AccessToken'),
+        refresh_token=auth_result.get('RefreshToken'),
+        id_token=auth_result.get('IdToken'),
+        expires_in=auth_result.get('ExpiresIn', 3600),
+        requires_2fa=False
     )
 
 @router.post("/refresh", response_model=TokenOut, summary="Refresh Token")
@@ -163,8 +213,11 @@ async def change_password(payload: ChangePasswordIn, current_user: Dict[str, Any
     return MessageOut(message="Password changed successfully.")
 
 @router.get("/me", response_model=UserOut, summary="Get Current User Profile")
-async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_me(current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
     """Returns the profile of the currently authenticated user."""
+    from models.users import User
+    user = db.query(User).filter(User.user_id == parse_uuid(current_user.get('sub'))).first()
+    
     return UserOut(
         user_id=current_user.get('sub', ''),
         email=current_user.get('email', ''),
@@ -173,7 +226,9 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
         phone_number=current_user.get('phone_number', ''),
         email_verified=current_user.get('email_verified') == 'true',
         phone_number_verified=current_user.get('phone_number_verified') == 'true',
-        role=current_user.get('role', UserRole.TREASURER.value)
+        role=current_user.get('role', UserRole.TREASURER.value),
+        two_factor_enabled=user.two_factor_enabled if user else False,
+        two_factor_channel=user.two_factor_channel if user else None
     )
 
 @router.patch("/me", response_model=MessageOut, summary="Update Profile")
@@ -208,7 +263,11 @@ async def confirm_email_verification(payload: VerifyEmailIn, current_user: Dict[
 async def get_settings(current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
     from models.users import User
     user = db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(current_user.get('sub')))).first()
-    return SettingsOut(allow_ai_training=user.allow_ai_training if user else True)
+    return SettingsOut(
+        allow_ai_training=user.allow_ai_training if user else True,
+        two_factor_enabled=user.two_factor_enabled if user else False,
+        two_factor_channel=user.two_factor_channel if user else None
+    )
 
 @router.post("/settings", response_model=MessageOut, summary="Update User Settings")
 async def update_settings(payload: SettingsIn, current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -216,5 +275,9 @@ async def update_settings(payload: SettingsIn, current_user: Dict[str, Any] = De
     user = db.query(User).filter(User.user_id == parse_uuid(current_user.get('sub'))).first()
     if user:
         user.allow_ai_training = payload.allow_ai_training
+        if payload.two_factor_enabled is not None:
+            user.two_factor_enabled = payload.two_factor_enabled
+        if payload.two_factor_channel is not None:
+            user.two_factor_channel = payload.two_factor_channel
         db.commit()
     return MessageOut(message="Settings updated successfully.")

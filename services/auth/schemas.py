@@ -85,6 +85,8 @@ class UpdateProfileIn(BaseModel):
 
 class SettingsIn(BaseModel):
     allow_ai_training: bool = Field(..., json_schema_extra={"example": True})
+    two_factor_enabled: Optional[bool] = Field(None, json_schema_extra={"example": False})
+    two_factor_channel: Optional[str] = Field(None, json_schema_extra={"example": "whatsapp"})
 
 # --- OUTPUT SCHEMAS ---
 
@@ -92,11 +94,13 @@ class MessageOut(BaseModel):
     message: str = Field(..., json_schema_extra={"example": "Operation successful."})
 
 class TokenOut(BaseModel):
-    access_token: str = Field(..., json_schema_extra={"example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."})
+    access_token: Optional[str] = Field(None, json_schema_extra={"example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."})
     refresh_token: Optional[str] = Field(None, json_schema_extra={"example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."})
     id_token: Optional[str] = Field(None, json_schema_extra={"example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."})
     token_type: str = Field("bearer", json_schema_extra={"example": "bearer"})
     expires_in: int = Field(3600, json_schema_extra={"example": 3600})
+    requires_2fa: Optional[bool] = Field(None, json_schema_extra={"example": True})
+    two_fa_token: Optional[str] = Field(None, json_schema_extra={"example": "eyJhb..."})
 
 class RegisterOut(BaseModel):
     message: str = Field(..., json_schema_extra={"example": "User registered. Please verify email/phone."})
@@ -111,6 +115,10 @@ class UserOut(BaseModel):
     email_verified: bool = Field(..., json_schema_extra={"example": True})
     phone_number_verified: bool = Field(..., json_schema_extra={"example": False})
     role: UserRole = Field(..., json_schema_extra={"example": UserRole.TREASURER})
+    two_factor_enabled: bool = Field(False, json_schema_extra={"example": False})
+    two_factor_channel: Optional[str] = Field(None, json_schema_extra={"example": "whatsapp"})
 
 class SettingsOut(BaseModel):
     allow_ai_training: bool = Field(..., json_schema_extra={"example": True})
+    two_factor_enabled: bool = Field(..., json_schema_extra={"example": False})
+    two_factor_channel: Optional[str] = Field(None, json_schema_extra={"example": "whatsapp"})
