@@ -57,6 +57,9 @@ class User(Base):
     last_active_at = Column(DateTime, nullable=True)
     
     preferences = Column(JSON, default=dict)
+    
+    # Marketing & Promos
+    marketing_consent = Column(Boolean, default=False)
 
     # Relationships
     # A user can have multiple active feature subscriptions
