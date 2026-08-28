@@ -41,6 +41,8 @@ class CRMService:
             users = self.db.query(User).join(Subscription, User.user_id == Subscription.user_id).filter(
                 Subscription.status == "active", User.is_active == True
             ).all()
+        elif target_audience == "marketing_opt_in":
+            users = self.db.query(User).filter(User.marketing_consent == True, User.is_active == True).all()
         else:
             # fallback to treasurer for legacy compatibility if segment not found
             users = self.db.query(User).filter(User.role == "treasurer", User.is_active == True).all()

@@ -44,7 +44,8 @@ async def register(request: Request, payload: RegisterIn, db: Session = Depends(
         password=payload.password,
         first_name=payload.first_name,
         last_name=payload.last_name,
-        phone_number=payload.phone_number
+        phone_number=payload.phone_number,
+        marketing_consent=payload.marketing_consent
     )
     return RegisterOut(message="User registered. Please check email/WhatsApp for verification code.", user_id=user_id)
 

@@ -220,7 +220,7 @@ class AuthService:
     # AUTH ENDPOINTS
     # ------------------
 
-    def register(self, db: Session, email: str, password: str, first_name: str, last_name: str, phone_number: str) -> str:
+    def register(self, db: Session, email: str, password: str, first_name: str, last_name: str, phone_number: str, marketing_consent: bool = False) -> str:
         # Check existing
         if db.query(User).filter(User.phone_number == phone_number).first():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This phone number is already registered.")
@@ -243,7 +243,8 @@ class AuthService:
             first_name=first_name,
             last_name=last_name,
             slug=slug,
-            hashed_password=hashed_pw
+            hashed_password=hashed_pw,
+            marketing_consent=marketing_consent
         )
         db.add(new_user)
         db.commit()
