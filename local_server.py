@@ -22,6 +22,8 @@ from services.approval.handler import handler as approval_handler
 from services.approval.schemas import ManualEntryIn
 from services.auth.router import router as auth
 
+from services.admin.router import router as admin_router
+from services.admin.config_router import router as admin_config_router
 from services.groups.router import router as groups
 from services.finance.ledger_router import router as ledger
 from services.finance.checkout_router import router as checkout_router
@@ -517,6 +519,7 @@ app.include_router(support_router)
 app.include_router(health)
 from services.admin.router import router as admin_router
 app.include_router(admin_router)
+app.include_router(admin_config_router)
 
 from services.feedback.router import router as feedback_router
 app.include_router(feedback_router)  # 16. User Feedback
