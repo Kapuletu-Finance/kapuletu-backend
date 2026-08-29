@@ -23,6 +23,7 @@ from common.config import get_config
 from common.utils import parse_uuid
 from services.audit.service import AuditService
 from services.notifications.service import create_notification
+from services.notifications.providers.resend_client import ResendClient
 
 logger = logging.getLogger(__name__)
 config = get_config()
@@ -670,6 +671,30 @@ class AuthService:
             entity_type="USER",
             entity_id=user_id
         )
+
+        create_notification(
+            db=db,
+            user_id=str(user.user_id),
+            title="Security Alert: Password Changed",
+            message="Your password was recently changed successfully. If you did not make this change, please contact support immediately.",
+            type="security_alert"
+        )
+        
+        if user.email:
+            try:
+                resend_client = ResendClient()
+                resend_client.send_email(
+                    to_email=user.email,
+                    subject="Kapuletu Security: Password Changed",
+                    html_body=(
+                        "<h3>Security Alert</h3>"
+                        "<p>Your Kapuletu account password was recently changed.</p>"
+                        "<p>If you made this change, no further action is required.</p>"
+                        "<p><strong>If you did not make this change, please contact support immediately.</strong></p>"
+                    )
+                )
+            except Exception as e:
+                logger.error(f"Failed to send password change email to {user.email}: {e}")
 
     def update_profile(self, db: Session, user_id: str, updates: dict):
         user = db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(user_id))).first()
