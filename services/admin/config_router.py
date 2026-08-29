@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from common.database import get_db
-from common.auth_dependencies import get_verified_user
+from common.auth_dependencies import get_verified_user, get_admin_user
 from models.system_config import SystemConfig
 
 router = APIRouter(prefix="/admin", tags=["14. Admin Governance Suite"])
@@ -16,16 +16,11 @@ class ConfigUpdate(BaseModel):
 class ConfigUpdateRequest(BaseModel):
     configs: List[ConfigUpdate]
 
-def verify_admin(current_user: Dict[str, Any] = Depends(get_verified_user)):
-    role = current_user.get("role")
-    if role != "admin":
-        raise HTTPException(status_code=403, detail="Admin privileges required")
-    return current_user
 
 @router.get("/config", response_model=Dict[str, Any], summary="Get Platform Configurations")
 async def get_system_config(
     db: Session = Depends(get_db),
-    _: Dict[str, Any] = Depends(verify_admin)
+    _: Dict[str, Any] = Depends(get_admin_user)
 ):
     configs = db.query(SystemConfig).all()
     result = {}
@@ -37,7 +32,7 @@ async def get_system_config(
 async def update_system_config(
     payload: ConfigUpdateRequest,
     db: Session = Depends(get_db),
-    _: Dict[str, Any] = Depends(verify_admin)
+    _: Dict[str, Any] = Depends(get_admin_user)
 ):
     for item in payload.configs:
         config = db.query(SystemConfig).filter(SystemConfig.config_key == item.key).first()

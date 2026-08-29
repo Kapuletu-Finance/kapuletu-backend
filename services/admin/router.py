@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from common.database import get_db
-from common.auth_dependencies import get_verified_user
+from common.auth_dependencies import get_verified_user, get_admin_user
 from services.admin.analytics_service import AnalyticsService
 from services.admin.user_service import UserService
 from services.admin.ai_governance_service import AIGovernanceService
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/admin", tags=["11. Admin & Governance"])
 @router.get("/overview", summary="Global Platform Intelligence")
 async def get_overview(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user) # In reality, restrict to admin role
+    current_user: Dict[str, Any] = Depends(get_admin_user) # In reality, restrict to admin role
 ):
     service = AnalyticsService(db)
     return service.get_platform_overview()
@@ -31,7 +31,7 @@ async def get_overview(
 @router.get("/performance/health", summary="Get System Health KPIs")
 async def get_system_health(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = PerformanceService(db)
     return service.get_system_health()
@@ -39,7 +39,7 @@ async def get_system_health(
 @router.get("/performance/activity-trend", summary="Get Activity Trend")
 async def get_activity_trend(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = PerformanceService(db)
     return service.get_activity_trend()
@@ -47,7 +47,7 @@ async def get_activity_trend(
 @router.get("/performance/active-users", summary="Get Detailed Active Users")
 async def get_extended_active_users(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = PerformanceService(db)
     return service.get_extended_active_users()
@@ -55,7 +55,7 @@ async def get_extended_active_users(
 @router.get("/performance/events", summary="Get System Events Log")
 async def get_system_events(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = PerformanceService(db)
     return service.get_system_events()
@@ -64,7 +64,7 @@ async def get_system_events(
 @router.get("/users/activity", summary="Recent and Active Users")
 async def get_user_activity(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = UserService(db)
     return service.get_recent_activity()
@@ -77,7 +77,7 @@ async def list_users(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = UserService(db)
     viewer_role = current_user.get("role", "admin")
@@ -87,7 +87,7 @@ async def list_users(
 async def get_treasurer_details(
     identifier: str,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = UserService(db)
     data = service.get_treasurer_details(identifier)
@@ -99,7 +99,7 @@ async def get_treasurer_details(
 async def get_user_groups(
     identifier: str,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = UserService(db)
     return service.get_user_groups(identifier)
@@ -109,7 +109,7 @@ async def update_user_status(
     identifier: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = UserService(db)
     new_status = payload.get("status") == "active"
@@ -124,7 +124,7 @@ async def escalated_update(
     identifier: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = UserService(db)
     success = service.escalated_update(identifier, payload, current_user.get("sub"))
@@ -137,7 +137,7 @@ async def upgrade_user_role(
     identifier: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = UserService(db)
     new_role = payload.get("role")
@@ -156,7 +156,7 @@ async def upgrade_user_role(
 async def trigger_password_reset(
     identifier: str,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = UserService(db)
     success = service.trigger_password_reset(identifier, current_user.get("sub"))
@@ -168,7 +168,7 @@ async def trigger_password_reset(
 async def verify_admin_pin(
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     pin = payload.get("pin")
     if not pin:
@@ -187,7 +187,7 @@ async def verify_admin_pin(
 async def set_admin_pin(
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     if current_user.get("role") != "super_admin":
         raise HTTPException(status_code=403, detail="Only super admins can set the PIN")
@@ -213,7 +213,7 @@ async def upgrade_user_plan(
     identifier: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = FinanceService(db)
     plan_id = payload.get("plan_id")
@@ -229,7 +229,7 @@ async def upgrade_user_plan(
 async def get_user_activity(
     identifier: str,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = UserService(db)
     return service.get_user_recent_activity(identifier)
@@ -238,7 +238,7 @@ async def get_user_activity(
 @router.get("/ai/parser/feedback-queue", summary="Get AI Feedback Queue")
 async def get_feedback_queue(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = AIGovernanceService(db)
     return service.get_feedback_queue()
@@ -248,7 +248,7 @@ async def approve_feedback(
     feedback_id: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = AIGovernanceService(db)
     approved = payload.get("approve", True)
@@ -260,7 +260,7 @@ async def approve_feedback(
 @router.get("/ai/parser/training-data", summary="Get AI Training Pool")
 async def get_training_pool(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = AIGovernanceService(db)
     return service.get_training_pool()
@@ -269,7 +269,7 @@ async def get_training_pool(
 async def add_training_sample(
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = AIGovernanceService(db)
     if "text" not in payload or "ground_truth" not in payload:
@@ -281,7 +281,7 @@ async def add_training_sample(
 async def trigger_training(
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = AIGovernanceService(db)
     epochs = payload.get("epochs", 10)
@@ -290,7 +290,7 @@ async def trigger_training(
 @router.get("/ai/parser/config", summary="Get AI Config")
 async def get_config(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = AIGovernanceService(db)
     return service.get_config()
@@ -299,7 +299,7 @@ async def get_config(
 async def update_config(
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = AIGovernanceService(db)
     service.update_config(payload)
@@ -309,7 +309,7 @@ async def update_config(
 @router.get("/finance/analytics/health-metrics", summary="Get Financial Health Metrics")
 async def get_health_metrics(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     engine = FinancialAnalyticsEngine(db)
     return engine.get_health_metrics()
@@ -318,7 +318,7 @@ async def get_health_metrics(
 async def get_revenue_flow(
     interval: str = Query("month", description="week or month"),
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     engine = FinancialAnalyticsEngine(db)
     return engine.get_revenue_flow(interval=interval)
@@ -326,7 +326,7 @@ async def get_revenue_flow(
 @router.get("/finance/analytics/cohorts", summary="Get Cohort Retention")
 async def get_cohort_retention(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     engine = FinancialAnalyticsEngine(db)
     return engine.get_cohort_retention()
@@ -337,7 +337,7 @@ async def export_financial_data(
     start_date: str = Query(None, description="Start date in ISO format"),
     end_date: str = Query(None, description="End date in ISO format"),
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     engine = FinancialAnalyticsEngine(db)
     
@@ -366,7 +366,7 @@ async def export_financial_data(
 @router.get("/finance/plans", summary="List Subscription Plans")
 async def list_plans(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = FinanceService(db)
     return service.list_plans()
@@ -375,7 +375,7 @@ async def list_plans(
 async def get_plan(
     plan_id: str,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = FinanceService(db)
     plan = service.get_plan(plan_id)
@@ -388,7 +388,7 @@ async def update_plan(
     plan_id: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = FinanceService(db)
     success = service.update_plan(plan_id, payload)
@@ -400,7 +400,7 @@ async def update_plan(
 async def create_plan(
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = FinanceService(db)
     plan_id = service.create_plan(payload)
@@ -411,7 +411,7 @@ async def process_refund(
     payment_id: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = FinanceService(db)
     reason = payload.get("reason", "")
@@ -424,7 +424,7 @@ async def process_refund(
 async def list_payments(
     page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = FinanceService(db)
     return service.list_all_payments(page=page)
@@ -433,7 +433,7 @@ async def list_payments(
 async def override_subscription(
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = FinanceService(db)
     if "user_id" not in payload or "plan_id" not in payload:
@@ -450,7 +450,7 @@ async def override_subscription(
 async def send_broadcast(
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = CRMService(db)
     if "message" not in payload:
@@ -469,7 +469,7 @@ async def send_broadcast(
 @router.get("/crm/broadcasts", summary="List Broadcast Campaigns")
 async def list_broadcasts(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     from models.broadcast import BroadcastCampaign
     campaigns = db.query(BroadcastCampaign).order_by(BroadcastCampaign.created_at.desc()).all()
@@ -496,7 +496,7 @@ async def list_audit_logs(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = AdminAuditService(db)
     filters = {
@@ -514,7 +514,7 @@ async def list_audit_logs(
 async def list_tickets(
     status: str = Query("open"),
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = CRMService(db)
     return service.list_tickets(status=status)
@@ -523,7 +523,7 @@ async def list_tickets(
 async def get_ticket_details(
     ticket_id: str,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = CRMService(db)
     details = service.get_ticket_details(ticket_id)
@@ -536,7 +536,7 @@ async def update_ticket(
     ticket_id: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = CRMService(db)
     success = service.update_ticket(ticket_id, current_user.get("sub"), payload)
@@ -549,7 +549,7 @@ async def reply_ticket(
     ticket_id: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user)
+    current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = CRMService(db)
     if "message" not in payload:
