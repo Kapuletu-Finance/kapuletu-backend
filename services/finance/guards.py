@@ -59,8 +59,8 @@ class RequireFeature:
         features = plan.allowed_features or {}
         if not features.get(self.feature_name, False):
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Upgrade required. Your current plan ({plan.name}) does not support {self.feature_name}."
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={"code": "UPGRADE_REQUIRED", "detail": f"Upgrade required. Your current plan ({plan.name}) does not support {self.feature_name}."}
             )
         return True
 
@@ -110,6 +110,6 @@ class CheckLimit:
         if current_count >= limit_value:
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail=f"Resource limit reached. Your {plan.name} plan only allows {limit_value} {self.metric_name.replace('max_', '')}."
+                detail={"code": "UPGRADE_REQUIRED", "detail": f"Resource limit reached. Your {plan.name} plan only allows {limit_value} {self.metric_name.replace('max_', '')}."}
             )
         return True

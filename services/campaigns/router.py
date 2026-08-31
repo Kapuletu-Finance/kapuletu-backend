@@ -35,7 +35,9 @@ def _verify_group_ownership(db: Session, group_id: str, owner_id: str):
     return group
 
 
-@router.post("/groups/{group_id}/campaigns", response_model=CampaignOut, status_code=status.HTTP_201_CREATED, summary="Create Campaign")
+from services.finance.guards import RequireFeature, CheckLimit
+
+@router.post("/groups/{group_id}/campaigns", response_model=CampaignOut, status_code=status.HTTP_201_CREATED, summary="Create Campaign", dependencies=[Depends(CheckLimit("max_campaigns"))])
 @limiter.limit("50/minute")
 async def create_campaign(
     request: Request,
@@ -48,19 +50,6 @@ async def create_campaign(
     user_uuid = parse_uuid(current_user.get('sub'))
     group = _verify_group_ownership(db, str(group_id), str(user_uuid))
     
-    # Enforce Plan Limits
-    sub = db.execute(select(Subscription).where(Subscription.user_id == user_uuid)).scalars().first()
-    if sub:
-        plan = db.execute(select(Plan).where(Plan.plan_id == sub.plan_id)).scalars().first()
-        if plan:
-            # Get total campaigns across all groups owned by this user
-            campaigns_count = db.execute(select(Campaign).join(Group).where(Group.owner_id == user_uuid)).scalars().all()
-            if len(campaigns_count) >= plan.max_campaigns:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, 
-                    detail="Campaign limit reached for your current plan. Please upgrade."
-                )
-                
     new_campaign = campaign_repo.create_campaign(
         db=db,
         group_id=str(group.group_id),
@@ -80,6 +69,7 @@ async def create_campaign(
     )
     
     return new_campaign
+
 
 @router.get("/groups/{group_id}/campaigns", response_model=PaginatedCampaignResponse, summary="List Campaigns")
 @limiter.limit("50/minute")
@@ -592,7 +582,7 @@ async def get_campaign_report_preview(
         "public_url": public_url
     }
 
-@router.get("/campaigns/{campaign_id}/export/excel", responses={200: {"content": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}}}}, summary="Export Transactions to Excel")
+@router.get("/campaigns/{campaign_id}/export/excel", responses={200: {"content": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}}}}, summary="Export Transactions to Excel", dependencies=[Depends(RequireFeature("excel_exports"))])
 async def export_campaign_excel(
     campaign_id: str,
     tz: str = None,

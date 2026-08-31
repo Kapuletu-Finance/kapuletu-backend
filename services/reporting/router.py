@@ -216,7 +216,9 @@ async def update_settings(
 
 
 
-@router.get("/export/excel/{campaign_id}", status_code=status.HTTP_202_ACCEPTED, summary="Export Ledger (Excel)")
+from services.finance.guards import RequireFeature
+
+@router.get("/export/excel/{campaign_id}", status_code=status.HTTP_202_ACCEPTED, summary="Export Ledger (Excel)", dependencies=[Depends(RequireFeature("excel_exports"))])
 async def export_excel(
     campaign_id: str,
     background_tasks: BackgroundTasks,

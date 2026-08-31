@@ -17,7 +17,9 @@ from models.group import Group
 
 router = APIRouter(prefix="/groups", tags=["4. Groups Management"])
 
-@router.post("", response_model=GroupOut, status_code=status.HTTP_201_CREATED, summary="Create Group")
+from services.finance.guards import CheckLimit
+
+@router.post("", response_model=GroupOut, status_code=status.HTTP_201_CREATED, summary="Create Group", dependencies=[Depends(CheckLimit("max_groups"))])
 @limiter.limit("50/minute")
 async def create_group(
     request: Request,
@@ -28,18 +30,6 @@ async def create_group(
     """Creates a new community organization or fund owned by the current treasurer."""
     user_uuid = parse_uuid(current_user.get('sub'))
     
-    # Enforce Plan Limits
-    sub = db.execute(select(Subscription).where(Subscription.user_id == user_uuid)).scalars().first()
-    if sub:
-        plan = db.execute(select(Plan).where(Plan.plan_id == sub.plan_id)).scalars().first()
-        if plan:
-            groups_count = db.execute(select(Group).where(Group.owner_id == user_uuid)).scalars().all()
-            if len(groups_count) >= plan.max_groups:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, 
-                    detail="Group limit reached for your current plan. Please upgrade."
-                )
-
     try:
         new_group = group_repo.create_group(
             db=db, 
