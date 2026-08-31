@@ -19,6 +19,7 @@ class MySubscriptionOut(BaseModel):
     days_remaining: int
     expiry_date: Optional[str]
     usage: SubscriptionUsage
+    allowed_features: Dict[str, bool] = Field(default_factory=dict)
 
 class CheckoutIn(BaseModel):
     plan_id: str

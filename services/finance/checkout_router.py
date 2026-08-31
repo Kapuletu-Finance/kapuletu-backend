@@ -57,7 +57,8 @@ async def get_my_subscription(
             has_used_trial=has_used_trial,
             days_remaining=0,
             expiry_date=None,
-            usage={"groups": "0/1", "campaigns": "0/1"}
+            usage={"groups": "0/1", "campaigns": "0/1"},
+            allowed_features=free_plan.allowed_features if free_plan else {}
         )
         
     plan = db.execute(select(Plan).where(Plan.plan_id == sub.plan_id)).scalars().first()
@@ -85,7 +86,8 @@ async def get_my_subscription(
         usage={
             "groups": f"{groups_count}/{plan.max_groups}",
             "campaigns": f"{campaigns_count}/{plan.max_campaigns}"
-        }
+        },
+        allowed_features=plan.allowed_features or {}
     )
 
 @router.post("/checkout", response_model=CheckoutOut, summary="Initiate Subscription Payment")
