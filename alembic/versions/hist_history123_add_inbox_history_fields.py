@@ -19,9 +19,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('pending_transactions', sa.Column('processed_at', sa.DateTime(), nullable=True))
-    op.add_column('pending_transactions', sa.Column('processed_by', sa.UUID(as_uuid=True), nullable=True))
-    op.add_column('pending_transactions', sa.Column('rejection_reason', sa.String(), nullable=True))
+    bind = op.get_bind()
+    from sqlalchemy import inspect
+    inspector = inspect(bind)
+    columns = [col['name'] for col in inspector.get_columns('pending_transactions')]
+    
+    if 'processed_at' not in columns:
+        op.add_column('pending_transactions', sa.Column('processed_at', sa.DateTime(), nullable=True))
+    if 'processed_by' not in columns:
+        op.add_column('pending_transactions', sa.Column('processed_by', sa.UUID(as_uuid=True), nullable=True))
+    if 'rejection_reason' not in columns:
+        op.add_column('pending_transactions', sa.Column('rejection_reason', sa.String(), nullable=True))
 
 
 def downgrade() -> None:

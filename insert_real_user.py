@@ -23,6 +23,7 @@ if not user:
         is_active=True,
         email_verified=True,
         phone_number_verified=True,
+        two_factor_enabled=False,
         allow_ai_training=True,
         created_at=datetime.datetime.now(datetime.UTC)
     )

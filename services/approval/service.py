@@ -82,14 +82,14 @@ class ApprovalService:
             status="approved"
         )
         try:
-            self.db.add(new_txn)
-            self.db.flush() # Flushes to DB to generate the transaction_id for the ledger record
+            with self.db.begin_nested():
+                self.db.add(new_txn)
+                self.db.flush() # Flushes to DB to generate the transaction_id for the ledger record
         except Exception as e:
             # If UNIQUE constraint fails, the transaction was already approved previously
             # (e.g. UUID bug caused is_processed to not be set). Just find the existing one and continue.
             from sqlalchemy.exc import IntegrityError
             if isinstance(e, IntegrityError) and "UNIQUE constraint failed" in str(e):
-                self.db.rollback()
                 new_txn = self.db.query(Transaction).filter(
                     Transaction.transaction_code == pending.transaction_code,
                     Transaction.owner_id == parse_uuid(treasurer_id)
@@ -98,7 +98,6 @@ class ApprovalService:
                     raise Exception("Transaction already exists but could not be located.")
                 logger.warning(f"Approval: Transaction {pending.transaction_code} already existed, marking pending as processed.")
             else:
-                self.db.rollback()
                 raise
 
         # 2.5 Active Learning Hook
@@ -254,6 +253,7 @@ class ApprovalService:
                 group_id=parse_uuid(group_id),
                 campaign_id=parse_uuid(campaign_id) if campaign_id else None,
                 transaction_code=suffixed_code,
+                original_transaction_code=pending.transaction_code,
                 amount=alloc["amount"],
                 sender_phone=pending.sender_phone,
                 sender_name=alloc["name"],

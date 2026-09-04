@@ -48,8 +48,13 @@ async def create_group(
         )
         
         return new_group
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
+        if "uq_group_owner_slug" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A group with this name already exists."
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
             detail="Could not create group. Please ensure your user profile is fully synchronized."

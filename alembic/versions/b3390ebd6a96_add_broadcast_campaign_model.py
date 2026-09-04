@@ -26,7 +26,7 @@ def upgrade() -> None:
     sa.Column('title', sa.String(length=255), nullable=False),
     sa.Column('message_body', sa.String(), nullable=False),
     sa.Column('target_audience', sa.String(length=50), nullable=False),
-    sa.Column('channels', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+    sa.Column('channels', sa.JSON(), nullable=False),
     sa.Column('status', sa.String(length=50), nullable=True),
     sa.Column('recipients_count', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=True),

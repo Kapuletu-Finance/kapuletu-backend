@@ -44,3 +44,7 @@ class WorkspaceOverviewOut(BaseModel):
     active_groups: List[GroupOverview]
     recent_campaigns: List[CampaignOverview]
     recent_activities: List[WorkspaceActivity]
+
+class GlobalSearchOut(BaseModel):
+    groups: List[GroupOverview]
+    campaigns: List[CampaignOverview]

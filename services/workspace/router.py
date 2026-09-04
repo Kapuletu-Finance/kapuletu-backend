@@ -13,7 +13,7 @@ from models.transaction import Transaction
 from models.pending_transaction import PendingTransaction
 from models.subscription import Subscription, Plan
 from models.audit_log import AuditLog
-from services.workspace.schemas import WorkspaceOverviewOut, GroupOverview, SubscriptionOverview, WorkspaceActivity, CampaignOverview
+from services.workspace.schemas import WorkspaceOverviewOut, GroupOverview, SubscriptionOverview, WorkspaceActivity, CampaignOverview, GlobalSearchOut
 
 router = APIRouter(prefix="/workspace", tags=["2. Workspace Overview"])
 
@@ -22,23 +22,21 @@ async def get_workspace_overview(
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    import uuid
-    owner_id_str = current_user.get("sub")
-    owner_id = uuid.UUID(owner_id_str) if owner_id_str else None
+    owner_uuid = parse_uuid(current_user.get("sub"))
     
     # 1. Total Groups and Active Groups preview
-    groups = db.execute(select(Group).where(Group.owner_id ==parse_uuid(parse_uuid(owner_id)), Group.is_active == True)).scalars().all()
+    groups = db.execute(select(Group).where(Group.owner_id ==owner_uuid, Group.is_active == True)).scalars().all()
     total_groups = len(groups)
     
     # 2. Total Campaigns
-    campaigns = db.execute(select(Campaign).join(Group).where(Group.owner_id ==parse_uuid(parse_uuid(owner_id)))).scalars().all()
+    campaigns = db.execute(select(Campaign).join(Group).where(Group.owner_id ==owner_uuid)).scalars().all()
     total_campaigns = len(campaigns)
     
     # Count campaigns per group with GROUP BY (Fix N+1 issue)
     campaign_counts = dict(
         db.query(Campaign.group_id, func.count(Campaign.campaign_id))
         .join(Group)
-        .where(Group.owner_id ==parse_uuid(parse_uuid(owner_id)))
+        .where(Group.owner_id ==owner_uuid)
         .group_by(Campaign.group_id)
         .all()
     )
@@ -54,7 +52,7 @@ async def get_workspace_overview(
     recent_campaigns_query = (
         db.query(Campaign, Group.group_name, Group.currency, Group.slug.label("group_slug"))
         .join(Group)
-        .filter(Group.owner_id == parse_uuid(parse_uuid(owner_id)))
+        .filter(Group.owner_id == owner_uuid)
         .order_by(func.coalesce(latest_txn_sq, Campaign.created_at).desc())
         .limit(10)
         .all()
@@ -94,11 +92,11 @@ async def get_workspace_overview(
         ))
 
     # 3. Total Members (Distinct sender_phone in finalized transactions for this owner)
-    total_members = db.query(Transaction.sender_phone).filter(Transaction.owner_id ==parse_uuid(parse_uuid(owner_id))).distinct().count()
+    total_members = db.query(Transaction.sender_phone).filter(Transaction.owner_id ==owner_uuid).distinct().count()
     
     # 4. Total Collected (Currency Collision Fixed - Assuming KES Global Currency)
     total_collected = db.query(func.sum(Transaction.amount)).join(Group).filter(
-        Transaction.owner_id ==parse_uuid(parse_uuid(owner_id)), 
+        Transaction.owner_id ==owner_uuid, 
         Transaction.status == "approved",
         Group.currency == "KES"
     ).scalar() or 0.0
@@ -106,14 +104,14 @@ async def get_workspace_overview(
     # 5. Pending Approvals
     # From transaction_repo, fetch_pending_transactions_by_owner uses is_processed == False.
     pending_approvals = db.query(PendingTransaction).filter(
-        PendingTransaction.owner_id ==parse_uuid(parse_uuid(owner_id)),
+        PendingTransaction.owner_id ==owner_uuid,
         PendingTransaction.is_processed == False
     ).count()
 
     # 6. Subscription Info
     sub = db.execute(
         select(Subscription).where(
-            Subscription.user_id ==parse_uuid(parse_uuid(owner_id)),
+            Subscription.user_id ==owner_uuid,
             Subscription.status == "active"
         )
     ).scalars().first()
@@ -133,7 +131,7 @@ async def get_workspace_overview(
     
     # 7. Recent Activities
     logs = db.execute(
-        select(AuditLog).where(AuditLog.actor_id ==parse_uuid(parse_uuid(owner_id)))
+        select(AuditLog).where(AuditLog.actor_id ==owner_uuid)
         .order_by(AuditLog.created_at.desc()).limit(10)
     ).scalars().all()
     
@@ -157,4 +155,78 @@ async def get_workspace_overview(
         active_groups=active_groups,
         recent_campaigns=recent_campaigns_list,
         recent_activities=recent_activities
+    )
+
+@router.get("/search", response_model=GlobalSearchOut, summary="Global Workspace Search")
+async def global_search(
+    q: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    owner_uuid = parse_uuid(current_user.get("sub"))
+    
+    if not q or len(q) < 2:
+        return GlobalSearchOut(groups=[], campaigns=[])
+
+    search_term = f"%{q}%"
+
+    # Search Groups
+    groups = db.execute(
+        select(Group).where(
+            Group.owner_id == owner_uuid,
+            Group.group_name.ilike(search_term)
+        )
+    ).scalars().all()
+
+    # Get campaign counts for these groups
+    group_ids = [g.group_id for g in groups]
+    campaign_counts = {}
+    if group_ids:
+        counts = db.query(Campaign.group_id, func.count(Campaign.campaign_id)) \
+                   .where(Campaign.group_id.in_(group_ids)) \
+                   .group_by(Campaign.group_id).all()
+        campaign_counts = dict(counts)
+        
+    group_results = [
+        GroupOverview(
+            group_id=str(g.group_id),
+            slug=g.slug,
+            name=g.group_name,
+            currency=g.currency or "KES",
+            total_campaigns=campaign_counts.get(g.group_id, 0)
+        ) for g in groups
+    ]
+
+    # Search Campaigns
+    campaigns_query = db.query(Campaign, Group.group_name, Group.currency, Group.slug.label("group_slug")) \
+                        .join(Group) \
+                        .filter(
+                            Group.owner_id == owner_uuid,
+                            Campaign.title.ilike(search_term)
+                        ).all()
+                        
+    campaign_results = []
+    for camp, group_name, currency, group_slug in campaigns_query:
+        amount_raised = db.query(func.sum(Transaction.amount)).filter(
+            Transaction.campaign_id == camp.campaign_id,
+            Transaction.status == "approved"
+        ).scalar() or 0.0
+        
+        campaign_results.append(CampaignOverview(
+            campaign_id=str(camp.campaign_id),
+            campaign_slug=camp.slug,
+            title=camp.title,
+            group_id=str(camp.group_id),
+            group_slug=group_slug,
+            group_name=group_name,
+            target_amount=float(camp.target_amount or 0.0),
+            amount_raised=float(amount_raised),
+            currency=currency or "KES",
+            status=camp.status,
+            updated_at=camp.created_at
+        ))
+
+    return GlobalSearchOut(
+        groups=group_results,
+        campaigns=campaign_results
     )

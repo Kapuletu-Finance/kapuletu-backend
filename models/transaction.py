@@ -32,6 +32,8 @@ class Transaction(Base):
     # Financial Details
     # transaction_code: The unique identifier from the payment provider (e.g. M-Pesa ID).
     transaction_code = Column(String, nullable=False)
+    # original_transaction_code: The raw unmodified receipt number, preserved during splits.
+    original_transaction_code = Column(String, nullable=True)
     # amount: The finalized, validated currency amount.
     amount = Column(Numeric(12, 2), nullable=False)
     # sender_phone: The phone number of the member who made the contribution.

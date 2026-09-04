@@ -154,5 +154,5 @@ def create_notification(db: Session, user_id: str, title: str, message: str, typ
         db.commit()
     except Exception as e:
         db.rollback()
-        import logging
-        logging.getLogger(__name__).error(f"Failed to create notification: {e}")
+        from common.logger import get_logger
+        get_logger(__name__).error(f"Failed to create notification: {e}", exc_info=True)

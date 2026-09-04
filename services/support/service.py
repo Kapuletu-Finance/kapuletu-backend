@@ -1,5 +1,6 @@
 import datetime
 from sqlalchemy.orm import Session
+from common.utils import parse_uuid
 from models.support_ticket import SupportTicket
 from models.support_ticket_message import SupportTicketMessage
 from models.subscription import Subscription, Plan
@@ -16,7 +17,7 @@ class SupportService:
         - Professional: 8h
         - Enterprise: 2h
         """
-        sub = self.db.query(Subscription).filter_by(user_id=user_id, status="active").first()
+        sub = self.db.query(Subscription).filter_by(user_id=parse_uuid(user_id), status="active").first()
         sla_hours = 24
         
         if sub:
@@ -40,7 +41,7 @@ class SupportService:
         sla_deadline = self.calculate_sla_deadline(user_id, priority)
         
         ticket = SupportTicket(
-            user_id=user_id,
+            user_id=parse_uuid(user_id),
             subject=subject,
             description=message, # initial message reference
             category=category,
@@ -55,14 +56,14 @@ class SupportService:
         # Add thread message
         msg = SupportTicketMessage(
             ticket_id=ticket.ticket_id,
-            sender_id=user_id,
+            sender_id=parse_uuid(user_id),
             message=message
         )
         self.db.add(msg)
         self.db.commit()
 
         try:
-            creator = self.db.query(User).filter_by(user_id=user_id).first()
+            creator = self.db.query(User).filter_by(user_id=parse_uuid(user_id)).first()
             if creator:
                 creator_name = f"{creator.first_name} {creator.last_name}"
                 resend = ResendClient()
@@ -78,14 +79,15 @@ class SupportService:
                 for adm in admins:
                     if adm.email:
                         resend.send_email(adm.email, f"New Ticket: {subject}", admin_html)
-        except Exception:
-            pass # Fail gracefully
+        except Exception as e:
+            from common.logger import get_logger
+            get_logger(__name__).error(f"Failed to send support email: {e}", exc_info=True)
             
         return ticket
 
     def list_user_tickets(self, user_id):
         from models.support_session_rating import SupportSessionRating
-        tickets = self.db.query(SupportTicket).filter_by(user_id=user_id).order_by(SupportTicket.updated_at.desc()).all()
+        tickets = self.db.query(SupportTicket).filter_by(user_id=parse_uuid(user_id)).order_by(SupportTicket.updated_at.desc()).all()
         for t in tickets:
             rating = self.db.query(SupportSessionRating).filter_by(ticket_id=t.ticket_id).first()
             t.has_rating = rating is not None
@@ -93,10 +95,10 @@ class SupportService:
 
     def get_ticket_details(self, user_id, ticket_id):
         from models.users import User
-        ticket = self.db.query(SupportTicket).filter_by(user_id=user_id, ticket_id=ticket_id).first()
+        ticket = self.db.query(SupportTicket).filter_by(user_id=parse_uuid(user_id), ticket_id=parse_uuid(ticket_id)).first()
         if not ticket:
             return None, []
-        messages = self.db.query(SupportTicketMessage).filter_by(ticket_id=ticket_id, is_internal=False).order_by(SupportTicketMessage.created_at.asc()).all()
+        messages = self.db.query(SupportTicketMessage).filter_by(ticket_id=parse_uuid(ticket_id), is_internal=False).order_by(SupportTicketMessage.created_at.asc()).all()
         
         from models.support_session_rating import SupportSessionRating
         for m in messages:
@@ -106,7 +108,7 @@ class SupportService:
             else:
                 m.sender_name = "Unknown"
         
-        rating = self.db.query(SupportSessionRating).filter_by(ticket_id=ticket_id).first()
+        rating = self.db.query(SupportSessionRating).filter_by(ticket_id=parse_uuid(ticket_id)).first()
         ticket.has_rating = rating is not None
         
         return ticket, messages
@@ -116,13 +118,13 @@ class SupportService:
         from services.notifications.providers.resend_client import ResendClient
         from services.notifications.email_templates import get_ticket_reply_template
         
-        ticket = self.db.query(SupportTicket).filter_by(user_id=user_id, ticket_id=ticket_id).first()
+        ticket = self.db.query(SupportTicket).filter_by(user_id=parse_uuid(user_id), ticket_id=parse_uuid(ticket_id)).first()
         if not ticket:
             raise ValueError("Ticket not found")
             
         msg = SupportTicketMessage(
             ticket_id=ticket.ticket_id,
-            sender_id=user_id,
+            sender_id=parse_uuid(user_id),
             message=message
         )
         ticket.updated_at = datetime.datetime.utcnow()
@@ -133,7 +135,7 @@ class SupportService:
         self.db.commit()
         
         try:
-            creator = self.db.query(User).filter_by(user_id=user_id).first()
+            creator = self.db.query(User).filter_by(user_id=parse_uuid(user_id)).first()
             if creator:
                 creator_name = f"{creator.first_name} {creator.last_name}"
                 admin_ids = [ticket.assigned_admin_id] if ticket.assigned_admin_id else []
@@ -148,8 +150,9 @@ class SupportService:
                     adm = self.db.query(User).filter_by(user_id=aid).first()
                     if adm and adm.email:
                         resend.send_email(adm.email, f"New Reply: {ticket.subject}", reply_html)
-        except Exception:
-            pass # Fail gracefully
+        except Exception as e:
+            from common.logger import get_logger
+            get_logger(__name__).error(f"Failed to send support reply email: {e}", exc_info=True)
             
         return msg
 
@@ -164,7 +167,7 @@ class SupportService:
         """
         from models.support_session_rating import SupportSessionRating
         import uuid as _uuid
-        ticket = self.db.query(SupportTicket).filter_by(ticket_id=ticket_id).first()
+        ticket = self.db.query(SupportTicket).filter_by(ticket_id=parse_uuid(ticket_id)).first()
         if not ticket:
             return None, "not_found"
         if str(ticket.user_id) != str(user_id):

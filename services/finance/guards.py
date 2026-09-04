@@ -27,22 +27,34 @@ def get_active_plan(
         # Fallback to Free plan if no active subscription exists
         free_plan = db.execute(select(Plan).where(Plan.name == "Free")).scalars().first()
         if not free_plan:
-            return Plan(name="Free", allowed_features={
-                "automation_enabled": True, 
-                "allow_whatsapp_approvals": True,
-                "allow_whatsapp_creation": True,
-                "ai_auto_approve": True
-            })
+            return Plan(
+                name="Free", 
+                max_groups=1,
+                max_campaigns=3,
+                max_transactions_per_month=50,
+                allowed_features={
+                    "automation_enabled": True, 
+                    "allow_whatsapp_approvals": True,
+                    "allow_whatsapp_creation": True,
+                    "ai_auto_approve": True
+                }
+            )
         return free_plan
         
     plan = db.execute(select(Plan).where(Plan.plan_id == sub.plan_id)).scalars().first()
     if not plan:
-        return Plan(name="Free", allowed_features={
-            "automation_enabled": True, 
-            "allow_whatsapp_approvals": True,
-            "allow_whatsapp_creation": True,
-            "ai_auto_approve": True
-        })
+        return Plan(
+            name="Free", 
+            max_groups=1,
+            max_campaigns=3,
+            max_transactions_per_month=50,
+            allowed_features={
+                "automation_enabled": True, 
+                "allow_whatsapp_approvals": True,
+                "allow_whatsapp_creation": True,
+                "ai_auto_approve": True
+            }
+        )
     return plan
 
 
