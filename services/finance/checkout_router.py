@@ -44,7 +44,7 @@ async def get_my_subscription(
 ):
     user_id = parse_uuid(current_user.get("sub"))
     user = db.execute(select(User).where(User.user_id == user_id)).scalars().first()
-    has_used_trial = user.has_used_trial if user else False
+    has_used_trial = bool(user.has_used_trial) if user and user.has_used_trial is not None else False
 
     sub = db.execute(select(Subscription).where(Subscription.user_id == user_id)).scalars().first()
     
