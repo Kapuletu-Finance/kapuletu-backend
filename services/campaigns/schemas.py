@@ -84,13 +84,17 @@ from datetime import timezone
 
 class TransactionOut(BaseModel):
     transaction_id: UUID
+    transaction_code: str
     date: str = Field(alias="created_at", serialization_alias="date")
     amount: float
     name: Optional[str] = Field(None, alias="sender_name", serialization_alias="name")
+    sender_phone: Optional[str] = None
     payment_method: str
+    status: str = "approved"
     is_split: Optional[bool] = False
     notes: Optional[str] = None
     source_evidence: Optional[str] = None
+    campaign_id: Optional[UUID] = None
     
     @field_validator('date', mode='before')
     def format_date(cls, v):
