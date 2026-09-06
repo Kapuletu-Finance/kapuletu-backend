@@ -90,6 +90,7 @@ class TransactionOut(BaseModel):
     payment_method: str
     is_split: Optional[bool] = False
     notes: Optional[str] = None
+    source_evidence: Optional[str] = None
     
     @field_validator('date', mode='before')
     def format_date(cls, v):
