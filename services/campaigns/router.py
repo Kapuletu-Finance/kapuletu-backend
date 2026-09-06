@@ -342,7 +342,7 @@ async def get_campaign_transactions(
     search: Optional[str] = Query(None),
     filter: Optional[str] = Query(None),
     sort_by: Optional[str] = Query("date"),
-    sort_order: Optional[str] = Query("desc"),
+    sort_order: Optional[str] = Query("asc"),
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
@@ -456,7 +456,7 @@ async def get_campaign_report_preview(
     def fmt_ksh(val: float) -> str:
         return f"{val:,.0f}" if float(val).is_integer() else f"{val:,.2f}"
     
-    transactions = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").order_by(Transaction.created_at.desc()).all()
+    transactions = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").order_by(Transaction.created_at.asc()).all()
     
     raised = sum(t.amount for t in transactions)
     pm_map = {"mpesa": 0.0, "cash": 0.0, "bank": 0.0, "pledge": 0.0}
@@ -603,7 +603,7 @@ async def export_campaign_excel(
     if txn_query.count() > 20000:
         raise HTTPException(status_code=400, detail="This campaign exceeds the 20,000 transaction limit for synchronous Excel export. Please contact support for a bulk export.")
         
-    transactions = txn_query.order_by(Transaction.created_at.desc()).all()
+    transactions = txn_query.order_by(Transaction.created_at.asc()).all()
     raised = txn_query.with_entities(func.sum(Transaction.amount)).scalar() or 0.0
     
     b64_excel = generate_excel_report(
@@ -645,7 +645,7 @@ async def export_campaign_pdf(
     if txn_query.count() > 5000:
         raise HTTPException(status_code=400, detail="This campaign exceeds the 5,000 transaction limit for synchronous PDF export. Please contact support for a bulk export.")
         
-    transactions = txn_query.order_by(Transaction.created_at.desc()).all()
+    transactions = txn_query.order_by(Transaction.created_at.asc()).all()
     raised = txn_query.with_entities(func.sum(Transaction.amount)).scalar() or 0.0
     
     b64_pdf = generate_pdf_report(
@@ -712,7 +712,7 @@ async def public_verify_campaign(
         elif "pledge" in pm_lower:
             pm_map["pledge"] += float(amount)
             
-    transactions_query = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").order_by(Transaction.created_at.desc())
+    transactions_query = db.query(Transaction).filter(Transaction.campaign_id == parse_uuid(str(campaign.campaign_id)), Transaction.status == "approved").order_by(Transaction.created_at.asc())
     total_contributors = transactions_query.count()
     
     page = req.page
