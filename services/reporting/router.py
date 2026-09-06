@@ -179,9 +179,15 @@ async def get_whatsapp_report(
     """
     Returns the highly formatted, culturally aware WhatsApp text block.
     """
-    engine = TemplateEngine(db)
-    text = engine.generate_whatsapp_report(campaign_id)
-    return {"whatsapp_format": text}
+    from models.campaign import Campaign
+    from common.utils import parse_uuid
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    from services.reporting.shared import build_campaign_report_data
+    report_data = build_campaign_report_data(db, campaign, is_preview=False)
+    return {"whatsapp_format": report_data["preview_text"]}
 
 @router.post("/settings/{campaign_id}", response_model=ReportSettingsOut, summary="Update Report Settings")
 async def update_settings(

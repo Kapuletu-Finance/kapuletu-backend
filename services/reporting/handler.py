@@ -26,14 +26,20 @@ def handler(event, context):
         try:
             if campaign_id:
                 # Generate the 'Official Group List' for WhatsApp
-                instructions = query_params.get('instructions', "Pay via M-Pesa to our Treasury number.")
-                report_text = generate_campaign_whatsapp_report(db, campaign_id, instructions)
+                from models.campaign import Campaign
+                from common.utils import parse_uuid
+                campaign = db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
+                if not campaign:
+                    return {"statusCode": 404, "body": "Campaign not found"}
+                
+                from services.reporting.shared import build_campaign_report_data
+                report_data = build_campaign_report_data(db, campaign, is_preview=False)
                 
                 return {
                     "statusCode": 200,
                     "body": json.dumps({
                         "campaign_id": campaign_id,
-                        "whatsapp_format": report_text
+                        "whatsapp_format": report_data["preview_text"]
                     })
                 }
             

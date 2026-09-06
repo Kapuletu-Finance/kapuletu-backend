@@ -218,8 +218,13 @@ def process_ingestion(body_str: str, config):
         if interactive_id and interactive_id.startswith("REPORT_CAMPAIGN_"):
             campaign_id = interactive_id.replace("REPORT_CAMPAIGN_", "")
             try:
-                report_text = generate_campaign_whatsapp_report(db, campaign_id)
-                dispatch_whatsapp_report(db, sender_phone, campaign_id, report_text, config)
+                campaign = db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
+                if not campaign:
+                    raise Exception("Campaign not found")
+                    
+                from services.reporting.shared import build_campaign_report_data
+                report_data = build_campaign_report_data(db, campaign, is_preview=False)
+                dispatch_whatsapp_report(db, sender_phone, campaign_id, report_data["preview_text"], config)
                 
                 from repositories.transaction_repo import TransactionRepository
                 repo = TransactionRepository(db)
@@ -375,8 +380,9 @@ def process_ingestion(body_str: str, config):
                     send_meta_reply(sender_phone, "Notice: You do not have any active campaigns.", config)
                 elif len(active_campaigns) == 1:
                     # Only one campaign, send it directly
-                    report_text = generate_campaign_whatsapp_report(db, str(active_campaigns[0].campaign_id))
-                    dispatch_whatsapp_report(db, sender_phone, str(active_campaigns[0].campaign_id), report_text, config)
+                    from services.reporting.shared import build_campaign_report_data
+                    report_data = build_campaign_report_data(db, active_campaigns[0], is_preview=False)
+                    dispatch_whatsapp_report(db, sender_phone, str(active_campaigns[0].campaign_id), report_data["preview_text"], config)
                     
                     from services.audit.service import AuditService
                     AuditService(db).log_action(
