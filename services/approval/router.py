@@ -230,6 +230,26 @@ async def edit_tx(
     db.refresh(pending)
     return pending
 
+from services.approval.schemas import TransactionEditPayload
+@router.patch("/{transaction_id}/edit-approved", response_model=TransactionOut, summary="Edit Approved Transaction")
+async def edit_approved_tx(
+    transaction_id: str,
+    payload: TransactionEditPayload,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    service = ApprovalService(db)
+    try:
+        new_txn = service.edit_approved_transaction(transaction_id, current_user.get("sub"), payload.model_dump(exclude_unset=True))
+        return {
+            "transaction_id": new_txn.transaction_id,
+            "transaction_code": new_txn.transaction_code,
+            "status": "success",
+            "message": "Transaction edited and superseded successfully."
+        }
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
 @router.post("/{pending_id}/note", summary="Add Note")
 async def add_note(
     pending_id: str, 

@@ -314,6 +314,106 @@ class ApprovalService:
 
         return created_txns[0] if created_txns else None
 
+    def edit_approved_transaction(self, transaction_id: str, treasurer_id: str, payload: dict):
+        """
+        Supersedes an approved transaction and creates a new one with edited details.
+        """
+        import uuid
+        from datetime import datetime, timezone
+
+        try:
+            old_txn = self.db.query(Transaction).filter(
+                Transaction.transaction_id == parse_uuid(transaction_id),
+                Transaction.status == "approved"
+            ).with_for_update(nowait=True).first()
+        except Exception:
+            raise Exception("Transaction is currently locked by another process.")
+
+        if not old_txn:
+            raise Exception("Approved transaction not found or already superseded.")
+
+        # Security: Verify group ownership (IDOR prevention)
+        from models.group import Group
+        
+        new_group_id_str = payload.get("group_id")
+        new_group_id = parse_uuid(new_group_id_str) if new_group_id_str else old_txn.group_id
+
+        # Verify ownership of both the old group and the new group
+        group = self.db.query(Group).filter(
+            Group.group_id == old_txn.group_id, 
+            Group.owner_id == parse_uuid(treasurer_id)
+        ).first()
+        if not group:
+            raise Exception("Forbidden: You do not have permission to edit transactions for this group.")
+            
+        if new_group_id != old_txn.group_id:
+            new_group = self.db.query(Group).filter(
+                Group.group_id == new_group_id, 
+                Group.owner_id == parse_uuid(treasurer_id)
+            ).first()
+            if not new_group:
+                raise Exception("Forbidden: You do not have permission to move transactions to that group.")
+
+        # Clone values
+        new_amount = payload.get("amount") if payload.get("amount") is not None else float(old_txn.amount)
+        new_sender_name = payload.get("sender_name") if payload.get("sender_name") is not None else old_txn.sender_name
+        new_campaign_id = parse_uuid(payload.get("campaign_id")) if payload.get("campaign_id") else old_txn.campaign_id
+
+        # Format audit details
+        audit_details = {
+            "message": "Manual edit applied to transaction",
+            "old_amount": float(old_txn.amount),
+            "new_amount": new_amount,
+            "old_sender_name": old_txn.sender_name,
+            "new_sender_name": new_sender_name,
+            "old_group_id": str(old_txn.group_id),
+            "new_group_id": str(new_group_id),
+            "old_campaign_id": str(old_txn.campaign_id) if old_txn.campaign_id else None,
+            "new_campaign_id": str(new_campaign_id) if new_campaign_id else None,
+            "notes": payload.get("notes")
+        }
+
+        # 1. Supersede old transaction
+        rev_id = str(uuid.uuid4())[:8]
+        old_txn.transaction_code = f"{old_txn.transaction_code}-REV-{rev_id}"
+        old_txn.status = "superseded"
+        
+        # 2. Create new transaction
+        new_txn = Transaction(
+            owner_id=old_txn.owner_id,
+            group_id=new_group_id,
+            campaign_id=new_campaign_id,
+            transaction_code=old_txn.transaction_code.split('-REV-')[0], # Restore original code
+            original_transaction_code=old_txn.original_transaction_code,
+            amount=new_amount,
+            sender_phone=old_txn.sender_phone,
+            sender_name=new_sender_name,
+            payment_method=old_txn.payment_method,
+            source_evidence=old_txn.source_evidence,
+            notes=payload.get("notes") or old_txn.notes,
+            is_split=old_txn.is_split,
+            status="approved",
+            created_at=old_txn.created_at # Maintain original timestamp
+        )
+        
+        self.db.add(new_txn)
+        self.db.flush()
+        
+        # Recalculate integrity seal
+        self._write_to_ledger(new_txn)
+        
+        self.db.commit()
+
+        # Write Audit Log
+        AuditService(self.db).log_action(
+            actor_id=treasurer_id,
+            action="TXN_EDITED",
+            entity_type="TRANSACTION",
+            entity_id=str(new_txn.transaction_id),
+            details=audit_details
+        )
+        
+        return new_txn
 
 
     def reject_transaction(self, pending_txn_id, treasurer_id, reason=None):

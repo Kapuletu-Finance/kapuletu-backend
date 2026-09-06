@@ -40,6 +40,13 @@ class TransactionEditIn(BaseModel):
     extracted_code: Optional[str] = Field(None, json_schema_extra={"example": "ABC123XYZ"})
     extracted_date: Optional[str] = Field(None, json_schema_extra={"example": "2026-05-08"})
 
+class TransactionEditPayload(BaseModel):
+    amount: Optional[float] = Field(None, json_schema_extra={"example": 1500.0})
+    sender_name: Optional[str] = Field(None, json_schema_extra={"example": "Joseph Amuyunzu"})
+    group_id: Optional[UUID] = Field(None)
+    campaign_id: Optional[UUID] = Field(None)
+    notes: Optional[str] = Field(None, json_schema_extra={"example": "Corrected name and campaign"})
+
 class BulkActionIn(BaseModel):
     pending_ids: List[str] = Field(..., json_schema_extra={"example": ["uuid-1", "uuid-2"]})
     internal_note: Optional[str] = Field(None, json_schema_extra={"example": "Bulk approval for Sunday collection"})
