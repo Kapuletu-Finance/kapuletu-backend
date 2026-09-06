@@ -342,7 +342,7 @@ async def get_campaign_transactions(
     search: Optional[str] = Query(None),
     filter: Optional[str] = Query(None),
     sort_by: Optional[str] = Query("date"),
-    sort_order: Optional[str] = Query("asc"),
+    sort_order: Optional[str] = Query("desc"),
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
