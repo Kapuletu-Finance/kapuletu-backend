@@ -86,6 +86,7 @@ jobs:
             --function-name kapuletu-${{ env.STAGE }}-backend \
             --payload '{"task": "migrate_database"}' \
             --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 300 \
             migration_response.json
             
           echo "Migration Response:"
@@ -107,6 +108,7 @@ jobs:
             --function-name kapuletu-${{ env.STAGE }}-backend \
             --payload '{"task": "seed_plans"}' \
             --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 300 \
             seed_response.json
             
           echo "Seed Response:"

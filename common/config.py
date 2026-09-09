@@ -14,6 +14,9 @@ class Config:
     # PostgreSQL connection string (e.g. postgresql://user:pass@host:port/db)
     DATABASE_URL: str = os.getenv("DATABASE_URL")
     
+    # Require SSL for database connections (set to false in local docker or VPS without SSL)
+    DB_SSL_REQUIRED: bool = os.getenv("DB_SSL_REQUIRED", "true").lower() == "true"
+    
     # Amazon QLDB Ledger name for immutable records
     QLDB_LEDGER_NAME: str = os.getenv("QLDB_LEDGER_NAME", "kapuletu-ledger")
     

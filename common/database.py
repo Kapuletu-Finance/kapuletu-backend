@@ -19,7 +19,7 @@ if is_sqlite:
 else:
     engine_kwargs["pool_size"] = 5
     engine_kwargs["max_overflow"] = 10
-    if all(h not in config.DATABASE_URL for h in ["localhost", "127.0.0.1"]):
+    if config.DB_SSL_REQUIRED:
         engine_kwargs["connect_args"] = {"sslmode": "require"}
 
 engine = create_engine(
