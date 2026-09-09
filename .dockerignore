@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.serverless/
+node_modules/
+dist/
+build/
+*.log
+.DS_Store
+
+# Local SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+/venv
