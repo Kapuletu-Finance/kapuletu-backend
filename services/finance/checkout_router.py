@@ -390,7 +390,11 @@ async def activate_trial(
             db.add(log)
             db.commit()
             
-            send_email_task.delay(str(log.log_id), user.email, subject, html_body)
+            import threading
+            threading.Thread(
+                target=send_email_task, 
+                args=(str(log.log_id), user.email, subject, html_body)
+            ).start()
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Failed to queue trial activation email: {e}")

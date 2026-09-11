@@ -54,7 +54,11 @@ class InvitesService:
             self.db.add(log)
             self.db.commit()
 
-            send_email_task.delay(str(log.log_id), email, subject, html_body)
+            import threading
+            threading.Thread(
+                target=send_email_task,
+                args=(str(log.log_id), email, subject, html_body)
+            ).start()
             
         return token
     

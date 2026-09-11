@@ -123,7 +123,11 @@ class FulfillmentService:
                 self.db.add(log)
                 self.db.commit()
 
-                send_email_task.delay(str(log.log_id), email, subject, html_body)
+                import threading
+                threading.Thread(
+                    target=send_email_task, 
+                    args=(str(log.log_id), email, subject, html_body)
+                ).start()
             except Exception as e:
                 logger.error(f"Failed to queue email receipt: {e}")
                 

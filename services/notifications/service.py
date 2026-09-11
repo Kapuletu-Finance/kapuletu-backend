@@ -138,9 +138,15 @@ def broadcast_notification(db: Session, payload: BroadcastIn) -> dict:
                     status="QUEUED"
                 )
                 db.add(log)
+                log.status = "QUEUED"
                 db.commit()
-                # Queue celery task
-                send_whatsapp_task.delay(str(log.log_id), user.phone_number, f"*{payload.title}*\n\n{payload.message}")
+
+                import threading
+                threading.Thread(
+                    target=send_whatsapp_task,
+                    args=(str(log.log_id), user.phone_number, f"*{payload.title}*\n\n{payload.message}")
+                ).start()
+                
                 whatsapp_count += 1
 
     return {
