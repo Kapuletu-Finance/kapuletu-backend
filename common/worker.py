@@ -19,4 +19,5 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="Africa/Nairobi",
     enable_utc=True,
+    task_ignore_result=True,  # Disable result backend to prevent Redis connection errors
 )
