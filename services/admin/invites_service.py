@@ -9,7 +9,7 @@ class InvitesService:
     def __init__(self, db: Session):
         self.db = db
 
-    def generate_and_send_invite(self, email: str = None, phone_number: str = None, sender_id: str = None) -> str:
+    def generate_and_send_invite(self, email: str = None, phone_number: str = None, sender_id: str = None, message: str = None) -> str:
         """Generates an invite token and sends an invitation."""
         token = secrets.token_urlsafe(16)
         
@@ -39,13 +39,23 @@ class InvitesService:
                 template_name="invite",
                 context={
                     "invite_link": invite_link,
-                    "expires_in_days": 7
+                    "expires_in_days": 7,
+                    "custom_message": message
                 },
                 subject="You've been invited to KapuLetu!"
             )
             
         return token
     
+    def bulk_invite(self, emails: list, message: str, sender_id: str = None) -> int:
+        count = 0
+        for email in emails:
+            email = email.strip()
+            if email:
+                self.generate_and_send_invite(email=email, sender_id=sender_id, message=message)
+                count += 1
+        return count
+
     def list_invites(self):
         invites = self.db.query(Invite).order_by(Invite.created_at.desc()).all()
         return [
