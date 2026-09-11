@@ -15,38 +15,53 @@ from models.users import User
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from services.notifications.providers.resend_client import ResendClient
+from services.notifications.templates.render import render_email_template
+from services.notifications.tasks import send_email_task
+from models.communication_logs import CommunicationLog
 
 def send_real_reminder(user: User, plan_name: str, days_left: int):
     """
-    Sends actual email reminders via Resend API.
+    Queues a reminder email via Celery Tasks and logs it to CommunicationLog.
     """
-    resend = ResendClient()
-    name = user.first_name if user.first_name else "User"
-    
-    if days_left == 0:
-        subject = f"Your KapuLetu {plan_name} plan has expired"
-        body = f"Hello {name},<br><br>Your {plan_name} subscription has expired. Your account has been safely downgraded to the Basic tier. To regain access to your premium features, please upgrade your subscription from your dashboard."
-    elif days_left == 1:
-        subject = f"Urgent: Your KapuLetu {plan_name} plan expires in 24 hours"
-        body = f"Hello {name},<br><br>This is an urgent reminder that your {plan_name} subscription will expire in exactly 24 hours. Please renew your subscription to avoid any interruption to your premium features."
-    else:
-        subject = f"Reminder: Your KapuLetu {plan_name} plan expires in {days_left} days"
-        body = f"Hello {name},<br><br>This is a friendly reminder that your {plan_name} subscription is set to expire in {days_left} days. You can renew early from your dashboard."
-
-    html_body = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;">
-        <h2 style="color: #2c3e50;">KapuLetu Subscriptions</h2>
-        <p>{body}</p>
-        <p>Thank you for using KapuLetu!</p>
-    </div>
-    """
-    
+    db = SessionLocal()
     try:
-        resend.send_email(user.email, subject, html_body)
-        logger.info(f"Successfully sent {days_left}-day reminder email to {user.email}")
+        name = user.first_name if user.first_name else "User"
+        
+        if days_left == 0:
+            subject = f"Your KapuLetu {plan_name} plan has expired"
+        elif days_left == 1:
+            subject = f"Urgent: Your KapuLetu {plan_name} plan expires in 24 hours"
+        else:
+            subject = f"Reminder: Your KapuLetu {plan_name} plan expires in {days_left} days"
+
+        from common.config import get_config
+        dashboard_url = get_config().FRONTEND_URL.rstrip('/') + "/dashboard"
+
+        html_body = render_email_template(
+            "subscription_reminder.html",
+            name=name,
+            plan_name=plan_name,
+            days_left=days_left,
+            dashboard_url=dashboard_url
+        )
+        
+        log = CommunicationLog(
+            user_id=user.user_id,
+            channel="EMAIL",
+            destination=user.email,
+            subject=subject,
+            status="QUEUED"
+        )
+        db.add(log)
+        db.commit()
+
+        send_email_task.delay(str(log.log_id), user.email, subject, html_body)
+        logger.info(f"Successfully queued {days_left}-day reminder email to {user.email}")
     except Exception as e:
-        logger.error(f"Failed to send reminder email to {user.email}: {e}")
+        db.rollback()
+        logger.error(f"Failed to queue reminder email to {user.email}: {e}")
+    finally:
+        db.close()
 
 def run_expiry_sweep():
     """
