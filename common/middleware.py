@@ -13,8 +13,15 @@ class MaintenanceModeMiddleware(BaseHTTPMiddleware):
         # We only want to block non-admin APIs
         path = request.url.path
         
-        # Always allow docs, openapi, and auth routes to function
-        if path.startswith("/docs") or path.startswith("/openapi.json") or path.startswith("/auth/login") or path.startswith("/auth/refresh"):
+        # Always allow docs, openapi, auth routes, health checks, and webhooks to function
+        if (
+            path.startswith("/docs") or 
+            path.startswith("/openapi.json") or 
+            path.startswith("/auth") or 
+            path.startswith("/ingestion/webhook") or
+            path.startswith("/health") or
+            path.startswith("/metrics")
+        ):
             return await call_next(request)
             
         # Admin routes should always bypass maintenance mode so admins can turn it off
