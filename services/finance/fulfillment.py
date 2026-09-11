@@ -95,6 +95,7 @@ class FulfillmentService:
         email = metadata.get("email") if metadata else None
         name = metadata.get("name", "KapuLetu User") if metadata else "KapuLetu User"
         if email:
+            try:
                 from services.notifications.templates.render import render_email_template
                 from services.notifications.tasks import send_email_task
                 from models.communication_logs import CommunicationLog
