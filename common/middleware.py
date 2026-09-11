@@ -25,6 +25,7 @@ class MaintenanceModeMiddleware(BaseHTTPMiddleware):
         db = SessionLocal()
         try:
             maintenance_mode = get_system_config(db, "maintenance_mode", default=False)
+            maintenance_message = get_system_config(db, "maintenance_message", default="Kapuletu platform is currently undergoing scheduled maintenance. Please try again later.")
         finally:
             db.close()
 
@@ -34,7 +35,7 @@ class MaintenanceModeMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 content={
-                    "detail": "Kapuletu platform is currently undergoing scheduled maintenance. Please try again later.",
+                    "detail": maintenance_message,
                     "error_code": "MAINTENANCE_MODE_ACTIVE"
                 }
             )

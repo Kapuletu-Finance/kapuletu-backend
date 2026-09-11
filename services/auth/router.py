@@ -35,9 +35,10 @@ async def register(request: Request, payload: RegisterIn, db: Session = Depends(
     # Check if open_signups is explicitly false, or if it's the string "false"
     if open_signups is False or open_signups == "false":
         if not payload.invite_token:
+            restriction_msg = get_system_config(db, "signup_restricted_message", default="Public registrations are currently closed. An invite token is required.")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, 
-                detail="Public registrations are currently closed. An invite token is required."
+                detail=restriction_msg
             )
         
         from models.invite import Invite
