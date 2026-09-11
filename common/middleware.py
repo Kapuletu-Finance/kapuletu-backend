@@ -32,19 +32,21 @@ class MaintenanceModeMiddleware(BaseHTTPMiddleware):
         db = SessionLocal()
         try:
             maintenance_mode = get_system_config(db, "maintenance_mode", default=False)
+            maintenance_modules = get_system_config(db, "maintenance_modules", default={"web_app": True, "whatsapp_bot": False, "public_api": True})
             maintenance_message = get_system_config(db, "maintenance_message", default="Kapuletu platform is currently undergoing scheduled maintenance. Please try again later.")
         finally:
             db.close()
 
         if maintenance_mode:
             # If we're here, it's a non-admin attempting to access a route during maintenance.
-            # We return 503 Service Unavailable with JSON
-            return JSONResponse(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={
-                    "detail": maintenance_message,
-                    "error_code": "MAINTENANCE_MODE_ACTIVE"
-                }
-            )
+            # If web_app is blocked, we block the standard API routes.
+            if maintenance_modules.get("web_app", True):
+                return JSONResponse(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    content={
+                        "detail": maintenance_message,
+                        "error_code": "MAINTENANCE_MODE_ACTIVE"
+                    }
+                )
 
         return await call_next(request)
