@@ -560,10 +560,12 @@ async def reply_ticket(
     return {"message": "Reply sent successfully"}
 
 
-# --- Module G: Invites ---
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
+
 @router.post("/invites", summary="Send Invite(s)")
 async def send_invite(
     payload: Dict[str, Any],
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
@@ -577,14 +579,14 @@ async def send_invite(
     
     # Handle bulk
     if emails and isinstance(emails, list):
-        count = service.bulk_invite(emails, message=message, sender_id=current_user.get("sub"))
+        count = service.bulk_invite(emails, background_tasks, message=message, sender_id=current_user.get("sub"))
         return {"message": f"{count} invites generated and sent successfully"}
     
     # Handle single
     if not email and not phone:
         raise HTTPException(status_code=400, detail="Provide emails array or a single email/phone number")
     
-    token = service.generate_and_send_invite(email=email, phone_number=phone, sender_id=current_user.get("sub"), message=message)
+    token = service.generate_and_send_invite(email=email, phone_number=phone, sender_id=current_user.get("sub"), message=message, background_tasks=background_tasks)
     return {"message": "Invite generated and sent successfully", "token": token}
 
 @router.get("/invites", summary="List Invites")

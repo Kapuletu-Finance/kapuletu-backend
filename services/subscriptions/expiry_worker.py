@@ -55,12 +55,8 @@ def send_real_reminder(user: User, plan_name: str, days_left: int):
         db.add(log)
         db.commit()
 
-        import threading
-        threading.Thread(
-            target=send_email_task, 
-            args=(str(log.log_id), user.email, subject, html_body)
-        ).start()
-        logger.info(f"Successfully queued {days_left}-day reminder email to {user.email}")
+        send_email_task(str(log.log_id), user.email, subject, html_body)
+        logger.info(f"Successfully sent {days_left}-day reminder email to {user.email}")
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to queue reminder email to {user.email}: {e}")

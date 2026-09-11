@@ -17,7 +17,7 @@ class FulfillmentService:
     def __init__(self, db: Session):
         self.db = db
 
-    def process_success(self, correlation_id: str, provider_ref: str, amount: float, metadata: dict = None):
+    def process_success(self, correlation_id: str, provider_ref: str, amount: float, metadata: dict = None, background_tasks=None):
         """
         Finalizes the subscription after payment confirmation.
         """
@@ -123,11 +123,10 @@ class FulfillmentService:
                 self.db.add(log)
                 self.db.commit()
 
-                import threading
-                threading.Thread(
-                    target=send_email_task, 
-                    args=(str(log.log_id), email, subject, html_body)
-                ).start()
+                if background_tasks:
+                    background_tasks.add_task(send_email_task, str(log.log_id), email, subject, html_body)
+                else:
+                    send_email_task(str(log.log_id), email, subject, html_body)
             except Exception as e:
                 logger.error(f"Failed to queue email receipt: {e}")
                 
