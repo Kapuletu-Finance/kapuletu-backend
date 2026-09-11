@@ -3,7 +3,6 @@ import datetime
 import secrets
 from sqlalchemy.orm import Session
 from models.invite import Invite
-from services.notifications.tasks import send_communication_async
 
 class InvitesService:
     def __init__(self, db: Session):
@@ -33,17 +32,29 @@ class InvitesService:
         
         # Send via email if provided
         if email:
-            send_communication_async.delay(
-                medium="email",
-                destination=email,
-                template_name="invite",
-                context={
-                    "invite_link": invite_link,
-                    "expires_in_days": 7,
-                    "custom_message": message
-                },
-                subject="You've been invited to KapuLetu!"
+            from services.notifications.templates.render import render_email_template
+            from services.notifications.tasks import send_email_task
+            from models.communication_logs import CommunicationLog
+
+            subject = "You've been invited to KapuLetu!"
+            html_body = render_email_template(
+                "invite.html",
+                invite_link=invite_link,
+                expires_in_days=7,
+                custom_message=message
             )
+
+            log = CommunicationLog(
+                user_id=None,
+                channel="EMAIL",
+                destination=email,
+                subject=subject,
+                status="QUEUED"
+            )
+            self.db.add(log)
+            self.db.commit()
+
+            send_email_task.delay(str(log.log_id), email, subject, html_body)
             
         return token
     
