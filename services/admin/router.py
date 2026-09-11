@@ -560,3 +560,31 @@ async def reply_ticket(
     return {"message": "Reply sent successfully"}
 
 
+# --- Module G: Invites ---
+@router.post("/invites", summary="Send Invite")
+async def send_invite(
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from services.admin.invites_service import InvitesService
+    service = InvitesService(db)
+    email = payload.get("email")
+    phone = payload.get("phone_number")
+    if not email and not phone:
+        raise HTTPException(status_code=400, detail="Provide at least an email or phone number")
+    
+    token = service.generate_and_send_invite(email=email, phone_number=phone, sender_id=current_user.get("sub"))
+    return {"message": "Invite generated and sent successfully", "token": token}
+
+@router.get("/invites", summary="List Invites")
+async def list_invites(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from services.admin.invites_service import InvitesService
+    service = InvitesService(db)
+    return service.list_invites()
+
+
+

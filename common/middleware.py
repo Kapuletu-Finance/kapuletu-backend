@@ -33,7 +33,10 @@ class MaintenanceModeMiddleware(BaseHTTPMiddleware):
             # We return 503 Service Unavailable with JSON
             return JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={"detail": "Kapuletu platform is currently undergoing scheduled maintenance. Please try again later."}
+                content={
+                    "detail": "Kapuletu platform is currently undergoing scheduled maintenance. Please try again later.",
+                    "error_code": "MAINTENANCE_MODE_ACTIVE"
+                }
             )
 
         return await call_next(request)

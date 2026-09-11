@@ -26,3 +26,5 @@ from .whatsapp_blocklist import WhatsAppBlocklist
 from .app_feedback import AppFeedback
 from .support_session_rating import SupportSessionRating
 from .broadcast import BroadcastCampaign
+from .communication_logs import CommunicationLog
+from .invite import Invite

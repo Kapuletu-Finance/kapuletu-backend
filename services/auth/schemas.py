@@ -41,6 +41,7 @@ class RegisterIn(BaseModel):
     last_name: str = Field(..., min_length=1, json_schema_extra={"example": "Amuyunzu"})
     phone_number: str = Field(..., json_schema_extra={"example": "+254700123456"})
     marketing_consent: bool = Field(False, json_schema_extra={"example": False})
+    invite_token: Optional[str] = Field(None, json_schema_extra={"example": "abc123xyz"})
 
     @field_validator('phone_number', mode='before')
     @classmethod

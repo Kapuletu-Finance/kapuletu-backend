@@ -85,3 +85,6 @@ wrapt==2.1.2
 fpdf2==2.8.2
 slowapi
 orjson
+celery
+redis
+jinja2

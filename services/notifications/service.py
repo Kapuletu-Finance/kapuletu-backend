@@ -107,28 +107,41 @@ def broadcast_notification(db: Session, payload: BroadcastIn) -> dict:
 
     # 2. Handle Email Delivery
     if BroadcastChannel.email in payload.channels:
-        resend_client = ResendClient()
+        from services.notifications.tasks import send_email_task
+        from models.communication_logs import CommunicationLog
         for user in target_users:
             if user.email:
-                success = resend_client.send_email(
-                    to_email=user.email,
+                log = CommunicationLog(
+                    user_id=user.user_id,
+                    channel="EMAIL",
+                    destination=user.email,
                     subject=payload.title,
-                    html_body=f"<p>{payload.message}</p>"
+                    status="QUEUED"
                 )
-                if success:
-                    email_count += 1
+                db.add(log)
+                db.commit()
+                # Queue celery task
+                send_email_task.delay(str(log.log_id), user.email, payload.title, f"<p>{payload.message}</p>")
+                email_count += 1
         
     # 3. Handle WhatsApp Delivery
     if BroadcastChannel.whatsapp in payload.channels:
-        whatsapp_client = WhatsAppClient()
+        from services.notifications.tasks import send_whatsapp_task
+        from models.communication_logs import CommunicationLog
         for user in target_users:
             if user.phone_number:
-                success = whatsapp_client.send_text_message(
-                    to_phone=user.phone_number,
-                    message=f"*{payload.title}*\n\n{payload.message}"
+                log = CommunicationLog(
+                    user_id=user.user_id,
+                    channel="WHATSAPP",
+                    destination=user.phone_number,
+                    subject=payload.title,
+                    status="QUEUED"
                 )
-                if success:
-                    whatsapp_count += 1
+                db.add(log)
+                db.commit()
+                # Queue celery task
+                send_whatsapp_task.delay(str(log.log_id), user.phone_number, f"*{payload.title}*\n\n{payload.message}")
+                whatsapp_count += 1
 
     return {
         "status": "success",

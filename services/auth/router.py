@@ -31,12 +31,28 @@ async def register(request: Request, payload: RegisterIn, db: Session = Depends(
     from common.system_config_service import get_system_config
     
     open_signups = get_system_config(db, "open_signups", default=True)
+    
     # Check if open_signups is explicitly false, or if it's the string "false"
     if open_signups is False or open_signups == "false":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="Public registrations are currently closed."
-        )
+        if not payload.invite_token:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="Public registrations are currently closed. An invite token is required."
+            )
+        
+        from models.invite import Invite
+        import datetime
+        invite = db.query(Invite).filter(Invite.token == payload.invite_token, Invite.status == "PENDING").first()
+        if not invite or invite.expires_at < datetime.datetime.utcnow():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid or expired invite token."
+            )
+        
+        # Mark invite as accepted
+        invite.status = "ACCEPTED"
+        invite.accepted_at = datetime.datetime.utcnow()
+        db.commit()
 
     user_id = auth_service.register(
         db=db,

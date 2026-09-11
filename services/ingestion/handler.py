@@ -159,6 +159,16 @@ def process_ingestion(body_str: str, config):
     db = SessionLocal()
     
     try:
+        from common.system_config_service import get_system_config
+        maintenance_mode = get_system_config(db, "maintenance_mode", default=False)
+        if maintenance_mode:
+            send_meta_reply(
+                sender_phone, 
+                "Kapuletu is currently undergoing scheduled maintenance to bring you new features. We will be back shortly! 🛠️", 
+                config
+            )
+            return {"statusCode": 200, "body": "OK"}
+            
         from models.whatsapp_blocklist import WhatsAppBlocklist
         import datetime
         
