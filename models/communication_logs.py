@@ -15,5 +15,6 @@ class CommunicationLog(Base):
     status = Column(String(50), default="QUEUED") # 'QUEUED', 'SENT', 'FAILED', 'DELIVERED'
     provider_message_id = Column(String(255), nullable=True)
     error_message = Column(Text, nullable=True)
+    campaign_id = Column(UUID(as_uuid=True), nullable=True) # Links to BroadcastCampaign
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)

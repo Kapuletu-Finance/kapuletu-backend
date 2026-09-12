@@ -76,7 +76,7 @@ class CRMService:
                 if user.email:
                     log = CommunicationLog(
                         user_id=user.user_id, channel="EMAIL", destination=user.email,
-                        subject=title, status="QUEUED"
+                        subject=title, status="QUEUED", campaign_id=campaign.campaign_id
                     )
                     self.db.add(log)
                     self.db.commit()
@@ -93,7 +93,7 @@ class CRMService:
                 if user.phone_number:
                     log = CommunicationLog(
                         user_id=user.user_id, channel="WHATSAPP", destination=user.phone_number,
-                        subject=title, status="QUEUED"
+                        subject=title, status="QUEUED", campaign_id=campaign.campaign_id
                     )
                     self.db.add(log)
                     self.db.commit()

@@ -487,6 +487,32 @@ async def list_broadcasts(
         } for c in campaigns
     ]
 
+@router.get("/crm/broadcasts/{campaign_id}/recipients", summary="List Recipients for a Broadcast")
+async def get_broadcast_recipients(
+    campaign_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from models.communication_logs import CommunicationLog
+    from models.users import User
+    
+    logs = db.query(CommunicationLog, User).outerjoin(
+        User, CommunicationLog.user_id == User.user_id
+    ).filter(
+        CommunicationLog.campaign_id == campaign_id
+    ).order_by(CommunicationLog.created_at.desc()).all()
+    
+    return [
+        {
+            "log_id": str(log.CommunicationLog.log_id),
+            "user_name": f"{log.User.first_name} {log.User.last_name}" if log.User else "Unknown",
+            "channel": log.CommunicationLog.channel,
+            "destination": log.CommunicationLog.destination,
+            "status": log.CommunicationLog.status,
+            "created_at": log.CommunicationLog.created_at.isoformat()
+        } for log in logs
+    ]
+
 # --- Module F: System & Audit Logs ---
 @router.get("/audit/logs", summary="List System & Audit Logs")
 async def list_audit_logs(
