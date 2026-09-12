@@ -1,7 +1,6 @@
 import logging
 import traceback
 from sqlalchemy.orm import Session
-from common.worker import celery_app
 from common.database import SessionLocal
 from models.communication_logs import CommunicationLog
 from services.notifications.providers.resend_client import ResendClient

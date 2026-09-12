@@ -120,8 +120,8 @@ def broadcast_notification(db: Session, payload: BroadcastIn) -> dict:
                 )
                 db.add(log)
                 db.commit()
-                # Queue celery task
-                send_email_task.delay(str(log.log_id), user.email, payload.title, f"<p>{payload.message}</p>")
+                # Synchronous execution
+                send_email_task(str(log.log_id), user.email, payload.title, f"<p>{payload.message}</p>")
                 email_count += 1
         
     # 3. Handle WhatsApp Delivery
@@ -141,11 +141,8 @@ def broadcast_notification(db: Session, payload: BroadcastIn) -> dict:
                 log.status = "QUEUED"
                 db.commit()
 
-                import threading
-                threading.Thread(
-                    target=send_whatsapp_task,
-                    args=(str(log.log_id), user.phone_number, f"*{payload.title}*\n\n{payload.message}")
-                ).start()
+                # Synchronous execution
+                send_whatsapp_task(str(log.log_id), user.phone_number, f"*{payload.title}*\n\n{payload.message}")
                 
                 whatsapp_count += 1
 

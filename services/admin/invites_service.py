@@ -8,7 +8,7 @@ class InvitesService:
     def __init__(self, db: Session):
         self.db = db
 
-    def generate_and_send_invite(self, email: str = None, phone_number: str = None, sender_id: str = None, message: str = "Welcome!", background_tasks=None) -> str:
+    def generate_and_send_invite(self, email: str = None, phone_number: str = None, sender_id: str = None, message: str = "Welcome!") -> str:
         """Generates an invite token and sends an invitation."""
         from common.utils import parse_uuid
         token = str(uuid.uuid4())
@@ -49,18 +49,16 @@ class InvitesService:
             self.db.add(log)
             self.db.commit()
 
-            if background_tasks:
-                background_tasks.add_task(send_email_task, str(log.log_id), email, subject, html_body)
-            else:
-                send_email_task(str(log.log_id), email, subject, html_body)
+            # Synchronous Execution (Bulletproof for Serverless/Migration)
+            send_email_task(str(log.log_id), email, subject, html_body)
             
         return token
     
-    def bulk_invite(self, emails: list, background_tasks=None, message: str = "Welcome!", sender_id: str = None) -> int:
+    def bulk_invite(self, emails: list, message: str = "Welcome!", sender_id: str = None) -> int:
         count = 0
         for email in emails:
             if email and "@" in email:
-                self.generate_and_send_invite(email=email, sender_id=sender_id, message=message, background_tasks=background_tasks)
+                self.generate_and_send_invite(email=email, sender_id=sender_id, message=message)
                 count += 1
         return count
 

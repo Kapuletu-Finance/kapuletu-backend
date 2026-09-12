@@ -21,7 +21,7 @@ from models.communication_logs import CommunicationLog
 
 def send_real_reminder(user: User, plan_name: str, days_left: int):
     """
-    Queues a reminder email via Celery Tasks and logs it to CommunicationLog.
+    Queues a reminder email synchronously and logs it to CommunicationLog.
     """
     db = SessionLocal()
     try:
