@@ -4,6 +4,16 @@ import secrets
 from sqlalchemy.orm import Session
 from models.invite import Invite
 
+def _dispatch_bulk_invite_background(emails: list, message: str, sender_id: str):
+    from common.database import SessionLocal
+    db = SessionLocal()
+    try:
+        service = InvitesService(db)
+        for email in emails:
+            service.generate_and_send_invite(email=email, sender_id=sender_id, message=message)
+    finally:
+        db.close()
+
 class InvitesService:
     def __init__(self, db: Session):
         self.db = db
@@ -53,12 +63,19 @@ class InvitesService:
             
         return token
     
-    def bulk_invite(self, emails: list, message: str = "Welcome!", sender_id: str = None) -> int:
-        count = 0
-        for email in emails:
-            if email and "@" in email:
+    def bulk_invite(self, emails: list, message: str = "Welcome!", sender_id: str = None, background_tasks = None) -> int:
+        valid_emails = [e for e in emails if e and "@" in e]
+        count = len(valid_emails)
+        
+        if background_tasks:
+            background_tasks.add_task(
+                _dispatch_bulk_invite_background,
+                valid_emails, message, sender_id
+            )
+        else:
+            for email in valid_emails:
                 self.generate_and_send_invite(email=email, sender_id=sender_id, message=message)
-                count += 1
+                
         return count
 
     def list_invites(self):

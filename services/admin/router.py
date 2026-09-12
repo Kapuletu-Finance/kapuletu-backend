@@ -594,6 +594,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 @router.post("/invites", summary="Send Invite(s)")
 async def send_invite(
     payload: Dict[str, Any],
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
@@ -607,7 +608,7 @@ async def send_invite(
     
     # Handle bulk
     if emails and isinstance(emails, list):
-        count = service.bulk_invite(emails, message=message, sender_id=current_user.get("sub"))
+        count = service.bulk_invite(emails, message=message, sender_id=current_user.get("sub"), background_tasks=background_tasks)
         return {"message": f"{count} invites generated and sent successfully"}
     
     # Handle single
