@@ -7,13 +7,14 @@ from models.support_ticket import SupportTicket
 from models.support_ticket_message import SupportTicketMessage
 from models.users import User
 
-def _dispatch_broadcast_background(campaign_id: str, title: str, message: str, channels: list, user_ids: list):
+def _dispatch_broadcast_background(campaign_id: str, title: str, message: str, channels: list, user_ids: list, extra_emails: list = None):
     from common.database import SessionLocal
     from models.broadcast import BroadcastCampaign
     from models.users import User
     from models.notification import Notification
     from models.communication_logs import CommunicationLog
     from services.notifications.tasks import send_email_task, send_whatsapp_task
+    import concurrent.futures
     
     db = SessionLocal()
     try:
@@ -23,44 +24,55 @@ def _dispatch_broadcast_background(campaign_id: str, title: str, message: str, c
             
         users = db.query(User).filter(User.user_id.in_(user_ids)).all()
         
-        # Dispatch In-App
+        # Create mock users for extra emails so we can process them identically
+        if extra_emails:
+            class MockUser:
+                def __init__(self, email):
+                    self.user_id = None
+                    self.email = email
+                    self.phone_number = None
+                    self.first_name = "User"
+            for e in extra_emails:
+                users.append(MockUser(e))
+        
+        # Dispatch In-App (DB only, fast)
         if "in_app" in channels:
             new_notifications = [
                 Notification(user_id=u.user_id, title=title, message=message, type="admin_broadcast", is_read=False)
-                for u in users
+                for u in users if u.user_id is not None
             ]
             if new_notifications:
                 db.add_all(new_notifications)
                 db.commit()
                 
-        # Dispatch Emails
-        if "email" in channels:
-            for user in users:
-                if user.email:
-                    log = CommunicationLog(
-                        user_id=user.user_id, channel="EMAIL", destination=user.email,
-                        subject=title, status="QUEUED", campaign_id=campaign.campaign_id
-                    )
-                    db.add(log)
-                    db.commit()
-                    
-                    personalized_message = message.replace("{{first_name}}", user.first_name if user.first_name else "")
-                    send_email_task(str(log.log_id), user.email, title, f"<p>{personalized_message}</p>")
-                    
-        # Dispatch WhatsApp
-        if "whatsapp" in channels:
-            for user in users:
-                if user.phone_number:
-                    log = CommunicationLog(
-                        user_id=user.user_id, channel="WHATSAPP", destination=user.phone_number,
-                        subject=title, status="QUEUED", campaign_id=campaign.campaign_id
-                    )
-                    db.add(log)
-                    db.commit()
-                    
-                    personalized_message = message.replace("{{first_name}}", user.first_name if user.first_name else "")
-                    send_whatsapp_task(str(log.log_id), user.phone_number, f"*{title}*\n\n{personalized_message}")
-                    
+        # Dispatch External Channels Concurrently
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            if "email" in channels:
+                for user in users:
+                    if user.email:
+                        log = CommunicationLog(
+                            user_id=user.user_id, channel="EMAIL", destination=user.email,
+                            subject=title, status="QUEUED", campaign_id=campaign.campaign_id
+                        )
+                        db.add(log)
+                        db.commit()
+                        
+                        personalized_message = message.replace("{{first_name}}", user.first_name if user.first_name else "")
+                        executor.submit(send_email_task, str(log.log_id), user.email, title, f"<p>{personalized_message}</p>")
+                        
+            if "whatsapp" in channels:
+                for user in users:
+                    if user.phone_number:
+                        log = CommunicationLog(
+                            user_id=user.user_id, channel="WHATSAPP", destination=user.phone_number,
+                            subject=title, status="QUEUED", campaign_id=campaign.campaign_id
+                        )
+                        db.add(log)
+                        db.commit()
+                        
+                        personalized_message = message.replace("{{first_name}}", user.first_name if user.first_name else "")
+                        executor.submit(send_whatsapp_task, str(log.log_id), user.phone_number, f"*{title}*\n\n{personalized_message}")
+                        
         campaign.status = "sent"
         db.commit()
     finally:
@@ -82,18 +94,9 @@ class CRMService:
         from models.broadcast import BroadcastCampaign
         from models.subscription import Subscription
         
-        # 1. Save campaign to database
-        campaign = BroadcastCampaign(
-            title=title,
-            message_body=message,
-            target_audience=target_audience,
-            channels=channels,
-            status="queued"
-        )
-        self.db.add(campaign)
-        self.db.flush() # flush to get campaign_id
-        
         # 2. Fetch target users
+        users = []
+        extra_emails = []
         if target_audience == "all_members":
             users = self.db.query(User).filter(User.is_active == True).all()
         elif target_audience == "active_subscribers":
@@ -104,11 +107,25 @@ class CRMService:
             users = self.db.query(User).filter(User.marketing_consent == True, User.is_active == True).all()
         elif target_audience == "custom_selection" and target_emails:
             users = self.db.query(User).filter(User.email.in_(target_emails)).all()
+            
+            existing_emails = {u.email for u in users if u.email}
+            extra_emails = [email for email in target_emails if email not in existing_emails]
         else:
             # fallback to treasurer for legacy compatibility if segment not found
             users = self.db.query(User).filter(User.role == "treasurer", User.is_active == True).all()
             
-        campaign.recipients_count = len(users)
+        campaign = BroadcastCampaign(
+            title=title,
+            message_body=message,
+            target_audience=target_audience,
+            channels=channels,
+            status="queued"
+        )
+        self.db.add(campaign)
+        self.db.flush() # flush to get campaign_id
+        
+        # update recipient count (users + non-users)
+        campaign.recipients_count = len(users) + len(extra_emails)
         self.db.commit()
         
         user_ids = [str(u.user_id) for u in users]
@@ -116,10 +133,10 @@ class CRMService:
         if background_tasks:
             background_tasks.add_task(
                 _dispatch_broadcast_background,
-                str(campaign.campaign_id), title, message, channels, user_ids
+                str(campaign.campaign_id), title, message, channels, user_ids, extra_emails
             )
         else:
-            _dispatch_broadcast_background(str(campaign.campaign_id), title, message, channels, user_ids)
+            _dispatch_broadcast_background(str(campaign.campaign_id), title, message, channels, user_ids, extra_emails)
             
         return {
             "status": "success", 

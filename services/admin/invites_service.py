@@ -6,11 +6,13 @@ from models.invite import Invite
 
 def _dispatch_bulk_invite_background(emails: list, message: str, sender_id: str):
     from common.database import SessionLocal
+    import concurrent.futures
     db = SessionLocal()
     try:
         service = InvitesService(db)
-        for email in emails:
-            service.generate_and_send_invite(email=email, sender_id=sender_id, message=message)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            for email in emails:
+                executor.submit(service.generate_and_send_invite, email=email, sender_id=sender_id, message=message)
     finally:
         db.close()
 

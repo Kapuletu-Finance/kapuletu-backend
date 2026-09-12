@@ -511,6 +511,7 @@ async def get_broadcast_recipients(
             "channel": log.CommunicationLog.channel,
             "destination": log.CommunicationLog.destination,
             "status": log.CommunicationLog.status,
+            "error_message": log.CommunicationLog.error_message,
             "created_at": log.CommunicationLog.created_at.isoformat()
         } for log in logs
     ]
