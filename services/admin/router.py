@@ -1,5 +1,5 @@
 from typing import Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from common.database import get_db
@@ -449,6 +449,7 @@ async def override_subscription(
 @router.post("/crm/broadcast", summary="Send Broadcast Message")
 async def send_broadcast(
     payload: Dict[str, Any],
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
@@ -463,7 +464,8 @@ async def send_broadcast(
         message=payload["message"],
         target_audience=payload.get("target_type", "all_members"),
         channels=payload.get("channels", ["in_app"]),
-        target_emails=payload.get("target_emails")
+        target_emails=payload.get("target_emails"),
+        background_tasks=background_tasks
     )
     return result
 

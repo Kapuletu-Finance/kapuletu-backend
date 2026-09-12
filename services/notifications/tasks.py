@@ -48,7 +48,7 @@ def send_email_task(log_id: str, to_email: str, subject: str, html_body: str):
             db.close()
             
         # Exponential backoff before retry
-        time.sleep(2 ** attempt)
+        time.sleep(1)
 
 
 def send_whatsapp_task(log_id: str, to_phone: str, message: str):
@@ -87,4 +87,4 @@ def send_whatsapp_task(log_id: str, to_phone: str, message: str):
         finally:
             db.close()
             
-        time.sleep(2 ** attempt)
+        time.sleep(1)
