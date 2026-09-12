@@ -18,7 +18,6 @@ class InvitesService:
             token=token,
             email=email,
             phone_number=phone_number,
-            invited_by=parse_uuid(sender_id) if sender_id else None,
             expires_at=expires,
             status="PENDING"
         )

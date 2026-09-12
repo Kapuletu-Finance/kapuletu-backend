@@ -38,3 +38,4 @@ class BroadcastIn(BaseModel):
     channels: List[BroadcastChannel] = Field(default=[BroadcastChannel.in_app])
     target_type: TargetType = Field(default=TargetType.all_members)
     target_ids: Optional[List[str]] = Field(None, description="List of user UUIDs if specific_member or custom_selection")
+    target_emails: Optional[List[str]] = Field(None, description="List of emails if custom_selection")

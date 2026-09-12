@@ -78,9 +78,12 @@ def broadcast_notification(db: Session, payload: BroadcastIn) -> dict:
     if payload.target_type == TargetType.all_members:
         target_users = db.execute(select(User)).scalars().all()
     elif payload.target_type in (TargetType.specific_member, TargetType.custom_selection):
-        if not payload.target_ids:
-            raise ValueError("target_ids must be provided for specific or custom selections")
-        stmt = select(User).where(User.user_id.in_(payload.target_ids))
+        if payload.target_emails:
+            stmt = select(User).where(User.email.in_(payload.target_emails))
+        elif payload.target_ids:
+            stmt = select(User).where(User.user_id.in_(payload.target_ids))
+        else:
+            raise ValueError("target_ids or target_emails must be provided for specific or custom selections")
         target_users = db.execute(stmt).scalars().all()
 
     in_app_count = 0
