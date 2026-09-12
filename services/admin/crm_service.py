@@ -16,7 +16,7 @@ class CRMService:
         self.sqs = boto3.client('sqs', region_name=os.environ.get('AWS_REGION', 'eu-west-1'))
         self.broadcast_queue_url = os.environ.get('BROADCAST_QUEUE_URL')
 
-    def send_broadcast(self, title: str, message: str, target_audience: str, channels: list):
+    def send_broadcast(self, title: str, message: str, target_audience: str, channels: list, target_emails: list = None):
         """
         Queues a platform-wide message to users based on audience segment, and saves to DB.
         """
@@ -43,37 +43,78 @@ class CRMService:
             ).all()
         elif target_audience == "marketing_opt_in":
             users = self.db.query(User).filter(User.marketing_consent == True, User.is_active == True).all()
+        elif target_audience == "custom_selection" and target_emails:
+            users = self.db.query(User).filter(User.email.in_(target_emails)).all()
         else:
             # fallback to treasurer for legacy compatibility if segment not found
             users = self.db.query(User).filter(User.role == "treasurer", User.is_active == True).all()
             
         campaign.recipients_count = len(users)
         
-        # 3. Push to SQS for background processing
-        for user in users:
-            # Simple variable replacement (can be expanded later)
-            personalized_message = message.replace("{{first_name}}", user.first_name if user.first_name else "")
-            
-            payload = {
-                "campaign_id": str(campaign.campaign_id),
-                "user_id": str(user.user_id),
-                "phone": user.phone_number,
-                "email": user.email,
-                "title": title,
-                "message": personalized_message,
-                "channels": channels
-            }
-            
-            if self.broadcast_queue_url:
-                self.sqs.send_message(
-                    QueueUrl=self.broadcast_queue_url,
-                    MessageBody=json.dumps(payload)
-                )
+        # 3. Synchronously dispatch via the Notification Service
+        in_app_count = 0
+        email_count = 0
+        whatsapp_count = 0
+        
+        # Dispatch In-App
+        if "in_app" in channels:
+            from models.notification import Notification
+            new_notifications = [
+                Notification(user_id=u.user_id, title=title, message=message, type="admin_broadcast", is_read=False)
+                for u in users
+            ]
+            if new_notifications:
+                self.db.add_all(new_notifications)
+                self.db.commit()
+                in_app_count = len(new_notifications)
                 
+        # Dispatch Emails
+        if "email" in channels:
+            from services.notifications.tasks import send_email_task
+            from models.communication_logs import CommunicationLog
+            for user in users:
+                if user.email:
+                    log = CommunicationLog(
+                        user_id=user.user_id, channel="EMAIL", destination=user.email,
+                        subject=title, status="QUEUED"
+                    )
+                    self.db.add(log)
+                    self.db.commit()
+                    
+                    personalized_message = message.replace("{{first_name}}", user.first_name if user.first_name else "")
+                    send_email_task(str(log.log_id), user.email, title, f"<p>{personalized_message}</p>")
+                    email_count += 1
+                    
+        # Dispatch WhatsApp
+        if "whatsapp" in channels:
+            from services.notifications.tasks import send_whatsapp_task
+            from models.communication_logs import CommunicationLog
+            for user in users:
+                if user.phone_number:
+                    log = CommunicationLog(
+                        user_id=user.user_id, channel="WHATSAPP", destination=user.phone_number,
+                        subject=title, status="QUEUED"
+                    )
+                    self.db.add(log)
+                    self.db.commit()
+                    
+                    personalized_message = message.replace("{{first_name}}", user.first_name if user.first_name else "")
+                    send_whatsapp_task(str(log.log_id), user.phone_number, f"*{title}*\n\n{personalized_message}")
+                    whatsapp_count += 1
+                    
         campaign.status = "sent"
         self.db.commit()
         
-        return {"status": "broadcast_queued", "campaign_id": str(campaign.campaign_id), "recipients": len(users)}
+        return {
+            "status": "success", 
+            "campaign_id": str(campaign.campaign_id), 
+            "recipients": len(users),
+            "dispatched": {
+                "in_app": in_app_count,
+                "email": email_count,
+                "whatsapp": whatsapp_count
+            }
+        }
 
     def list_tickets(self, status: str = "open"):
         """

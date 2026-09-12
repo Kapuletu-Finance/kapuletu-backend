@@ -462,7 +462,8 @@ async def send_broadcast(
         title=payload["title"],
         message=payload["message"],
         target_audience=payload.get("target_type", "all_members"),
-        channels=payload.get("channels", ["in_app"])
+        channels=payload.get("channels", ["in_app"]),
+        target_emails=payload.get("target_emails")
     )
     return result
 
