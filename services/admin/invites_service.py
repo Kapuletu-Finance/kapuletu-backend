@@ -44,7 +44,7 @@ class InvitesService:
             invite_url = get_config().FRONTEND_URL.rstrip('/') + f"/accept-invite?token={token}"
 
             html_body = render_email_template(
-                "invite_email.html",
+                "invite.html",
                 message=message,
                 invite_url=invite_url
             )
