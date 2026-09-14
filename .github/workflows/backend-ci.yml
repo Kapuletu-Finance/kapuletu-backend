@@ -27,6 +27,7 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
+          registry: ${{ secrets.DOCKER_REGISTRY }}
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
@@ -42,13 +43,13 @@ jobs:
           IMAGE_NAME=""
           
           if [[ "$BRANCH_NAME" == "dev" ]]; then
-            IMAGE_NAME="${{ secrets.DOCKER_USERNAME }}/kapuletu-backend-dev"
+            IMAGE_NAME="${{ secrets.DOCKER_REGISTRY }}/kapuletu-backend-dev"
           elif [[ "$BRANCH_NAME" == "test" ]]; then
-            IMAGE_NAME="${{ secrets.DOCKER_USERNAME }}/kapuletu-backend-test"
+            IMAGE_NAME="${{ secrets.DOCKER_REGISTRY }}/kapuletu-backend-test"
           elif [[ "$BRANCH_NAME" == "staging" ]]; then
-            IMAGE_NAME="${{ secrets.DOCKER_USERNAME }}/kapuletu-backend-staging"
+            IMAGE_NAME="${{ secrets.DOCKER_REGISTRY }}/kapuletu-backend-staging"
           elif [[ "$BRANCH_NAME" == "prod" ]]; then
-            IMAGE_NAME="${{ secrets.DOCKER_USERNAME }}/kapuletu-backend"
+            IMAGE_NAME="${{ secrets.DOCKER_REGISTRY }}/kapuletu-backend"
           else
             echo "Unsupported branch: $BRANCH_NAME"
             exit 1
@@ -66,3 +67,18 @@ jobs:
           tags: |
             ${{ steps.image.outputs.name }}:latest
             ${{ steps.image.outputs.name }}:${{ steps.image.outputs.sha }}
+
+  run-deploy-dev:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan ${{ secrets.VPS_IP }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to VPS
+        run: ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_IP }} "cd KapuLetu && ./update-pods.sh"
