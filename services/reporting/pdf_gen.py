@@ -1,5 +1,207 @@
-from reportlab.pdfgen import canvas
+import base64
+import io
+from datetime import datetime
 
-def generate_pdf(data):
-    # logic to generate PDF
-    return "s3://bucket/report.pdf"
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+except ImportError:
+    pass
+
+def generate_pdf_report(title: str, total_raised: float, target_amount: float, entries: list, settings: dict = None, tz: str = None) -> str:
+    """
+    Generates an Enterprise-Grade PDF using ReportLab and returns it as a Base64 string.
+    """
+    settings = settings or {}
+    
+    # Process timezone
+    from datetime import datetime, timezone
+    now_utc = datetime.now(timezone.utc)
+    tz = tz or "Africa/Nairobi"
+    try:
+        from zoneinfo import ZoneInfo
+        now_local = now_utc.astimezone(ZoneInfo(tz))
+        time_str = now_local.strftime('%d %B %Y at %I:%M %p') + f" ({tz})"
+    except Exception:
+        time_str = now_utc.strftime('%Y-%m-%d %H:%M:%S UTC')
+        
+    stream = io.BytesIO()
+    doc = SimpleDocTemplate(stream, pagesize=letter)
+    elements = []
+    
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'MainTitle',
+        parent=styles['Title'],
+        fontName='Helvetica-Bold',
+        fontSize=18,
+        textColor=colors.HexColor("#1A5D1A"),
+        spaceAfter=6
+    )
+    subtitle_style = ParagraphStyle(
+        'Subtitle',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=12,
+        textColor=colors.dimgrey,
+        alignment=TA_CENTER,
+        spaceAfter=12
+    )
+    
+    display_title = settings.get("report_title")
+    if not display_title or display_title in ["Campaign Update", "OFFICIAL CAMPAIGN REPORT"]:
+        display_title = title
+        
+    import os
+    logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "logos", "primary logo.png")
+    if os.path.exists(logo_path):
+        from reportlab.lib.units import inch
+        logo = Image(logo_path, width=2*inch, height=0.6*inch, kind='proportional')
+        logo.hAlign = 'CENTER'
+        elements.append(logo)
+        elements.append(Spacer(1, 12))
+    
+    # 1. Letterhead
+    elements.append(Paragraph(f"<b>{display_title}</b>", title_style))
+    elements.append(Paragraph("OFFICIAL CAMPAIGN REPORT", subtitle_style))
+    elements.append(Paragraph(f"Generated on {time_str}", subtitle_style))
+    elements.append(Spacer(1, 12))
+    
+    # 2. Summary Block
+    progress = min((float(total_raised) / float(target_amount) * 100), 100.0) if target_amount and float(target_amount) > 0 else 0.0
+    summary_data = [
+        [Paragraph("<b>Campaign:</b>", styles['Normal']), title],
+        [Paragraph("<b>Total Raised:</b>", styles['Normal']), f"KES {float(total_raised):,.2f}"],
+        [Paragraph("<b>Target Amount:</b>", styles['Normal']), f"KES {float(target_amount):,.2f}"],
+        [Paragraph("<b>Progress:</b>", styles['Normal']), f"{progress:.1f}%"]
+    ]
+    summary_table = Table(summary_data, colWidths=[120, 300])
+    summary_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8F9FA")),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#DDDDDD")),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#EEEEEE")),
+        ('PADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(summary_table)
+    elements.append(Spacer(1, 24))
+    
+    # 3. Financial Table
+    table_data = [["#", "Date", "Name", "Phone", "Amount (KES)", "Method"]]
+    from zoneinfo import ZoneInfo
+    for idx, txn in enumerate(entries, 1):
+        name = txn.sender_name or (f"Member {txn.sender_phone[-4:]}" if txn.sender_phone else "Anonymous")
+        
+        # Shift transaction time to target timezone
+        txn_time = txn.created_at
+        if hasattr(txn_time, 'replace'):
+            try:
+                txn_time = txn_time.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(tz))
+            except Exception:
+                pass
+                
+        table_data.append([
+            str(idx),
+            txn_time.strftime("%Y-%m-%d %I:%M %p"),
+            name[:30],
+            txn.sender_phone or "-",
+            f"{float(txn.amount):,.2f}",
+            txn.payment_method or "-"
+        ])
+        
+    try:
+        blank_slots = int(settings.get("blank_slots", 0))
+    except (ValueError, TypeError):
+        blank_slots = 0
+        
+    for _ in range(blank_slots):
+        table_data.append([str(len(table_data)), "", "", "", "", ""])
+        
+    t = Table(table_data, colWidths=[30, 90, 150, 90, 90, 80])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1A5D1A")), # KapuLetu Green
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (4, 1), (4, -1), 'RIGHT'), # STRICT RIGHT ALIGN FOR CURRENCY
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#F0FDF4")), # Zebra stripe 1
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#DDDDDD"))
+    ]))
+    
+    # Zebra striping logic
+    for i in range(1, len(table_data)):
+        if i % 2 == 0:
+            t.setStyle(TableStyle([('BACKGROUND', (0, i), (-1, i), colors.white)]))
+            
+    elements.append(t)
+    
+    report_footer = settings.get("report_footer")
+    if report_footer:
+        elements.append(Spacer(1, 24))
+        elements.append(Paragraph(report_footer, styles['Normal']))
+    
+    # 4. Footer Branding
+    if not settings.get("remove_watermark", False):
+        # 9. KapuLetu Branding (Bottom Right)
+        branding = Paragraph("<i>Report generated by KapuLetu.</i>", styles['Italic'])
+        elements.append(branding)
+        
+    doc.build(elements)
+    
+    stream.seek(0)
+    pdf_bytes = stream.getvalue()
+    
+    return base64.b64encode(pdf_bytes).decode('utf-8')
+
+def generate_receipt_pdf(payment_id: str, plan_name: str, amount: float, provider_ref: str, date_str: str, name: str) -> bytes:
+    stream = io.BytesIO()
+    doc = SimpleDocTemplate(stream, pagesize=letter)
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle(
+        'MainTitle',
+        parent=styles['Title'],
+        fontName='Helvetica-Bold',
+        fontSize=20,
+        textColor=colors.HexColor("#1A5D1A"),
+        spaceAfter=12
+    )
+    
+    elements.append(Paragraph("KapuLetu Systems", title_style))
+    elements.append(Paragraph("<b>Payment Receipt</b>", styles['Normal']))
+    elements.append(Spacer(1, 24))
+    
+    elements.append(Paragraph(f"<b>Billed To:</b> {name}", styles['Normal']))
+    elements.append(Paragraph(f"<b>Date:</b> {date_str}", styles['Normal']))
+    elements.append(Paragraph(f"<b>Receipt No:</b> {provider_ref}", styles['Normal']))
+    elements.append(Spacer(1, 24))
+    
+    table_data = [
+        ["Description", "Amount (KES)"],
+        [f"KapuLetu {plan_name} Subscription", f"{amount:,.2f}"]
+    ]
+    
+    t = Table(table_data, colWidths=[350, 150])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#F8F9FA")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#DDDDDD"))
+    ]))
+    
+    elements.append(t)
+    elements.append(Spacer(1, 40))
+    elements.append(Paragraph("<i>Thank you for your business!</i>", styles['Italic']))
+    
+    doc.build(elements)
+    stream.seek(0)
+    return stream.getvalue()

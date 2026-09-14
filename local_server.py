@@ -1,21 +1,217 @@
-from fastapi import FastAPI, Request, Response, APIRouter
+from __future__ import annotations
+import json
+import logging
+from typing import List, Optional, Dict, Any
+
+from fastapi import APIRouter, FastAPI, HTTPException, Request, Response, Depends
+
+# Ensure all logger.info() messages (like OTP codes) are printed to the console
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:\t  %(message)s", datefmt='%Y-%m-%d %H:%M:%S %Z')
+
+# Override logging time converter to EAT
+from datetime import datetime, timezone
+import zoneinfo
+def custom_time(*args):
+    return datetime.now(timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi")).timetuple()
+logging.Formatter.converter = custom_time
+
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-import json
+
+from services.approval.handler import handler as approval_handler
+from services.approval.schemas import ManualEntryIn
+from services.auth.router import router as auth
+
+from services.admin.router import router as admin_router
+from services.admin.config_router import router as admin_config_router
+from services.groups.router import router as groups
+from services.finance.ledger_router import router as ledger
+from services.finance.checkout_router import router as checkout_router
+from services.reporting.router import router as reporting
 
 # Import Handlers
 from services.ingestion.handler import handler as ingestion_handler
-from services.approval.handler import handler as approval_handler
-from services.reporting.handler import handler as reporting_handler
 from services.members.handler import handler as members_handler
-from services.campaigns.handler import handler as campaigns_handler
+
+openapi_tags = [
+    {"name": "1. Authentication", "description": "User registration, login, and profile management."},
+    {"name": "2. Workspace Overview", "description": "Treasurer's primary workspace dashboard and statistics."},
+    {"name": "3. Members Management", "description": "Manage community members and directories."},
+    {"name": "4. Groups Management", "description": "Manage contribution groups and communities."},
+    {"name": "5. Campaigns Management", "description": "Manage fundraising and contribution campaigns."},
+    {"name": "6. Finance & Subscriptions", "description": "Platform subscription plans and checkouts."},
+    {"name": "7. Transaction Ingestion", "description": "Automated ingestion via external webhooks (e.g., MPesa)."},
+    {"name": "8. Review & Approval Workflow", "description": "Review, approve, or reject pending transactions."},
+    {"name": "9. Ledger (Immutable)", "description": "Core immutable financial ledger records."},
+    {"name": "10. Reporting Service", "description": "Dashboards and detailed financial reports."},
+    {"name": "11. Notifications", "description": "System alerts and external communication."},
+    {"name": "12. Audit Logs", "description": "System-wide immutable audit trail."},
+    {"name": "13. Enterprise Settings", "description": "Global and entity-level configuration settings."},
+    {"name": "14. Admin Governance Suite", "description": "Platform-wide administrative controls."},
+    {"name": "15. System Health & Admin", "description": "Service health checks and metrics."},
+    {"name": "16. User Feedback", "description": "Structured product feedback and improvement suggestions from users."},
+]
+
+import orjson
+from fastapi.responses import JSONResponse
+import re
+
+def fix_datetime_strings(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        return {k: fix_datetime_strings(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [fix_datetime_strings(v) for v in obj]
+    elif isinstance(obj, str):
+        # Match ISO8601 naive datetime strings (YYYY-MM-DDTHH:MM:SS or with microseconds)
+        if re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$', obj):
+            return obj + 'Z'
+    return obj
+
+class CustomORJSONResponse(JSONResponse):
+    media_type = "application/json"
+
+    def render(self, content: Any) -> bytes:
+        # Fast API / Pydantic stringifies naive datetimes before they reach here.
+        # We must recursively inject 'Z' (UTC offset) so the frontend browser
+        # correctly localizes the timestamp (e.g. into EAT).
+        fixed_content = fix_datetime_strings(content)
+        return orjson.dumps(
+            fixed_content,
+            option=orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_NUMPY | orjson.OPT_NAIVE_UTC,
+        )
 
 app = FastAPI(
     title="KapuLetu Treasury API — Full Specification",
     description="Local development bridge mapping every endpoint from the technical specification (v1).",
     version="1.0.0",
+    swagger_ui_parameters={"persistAuthorization": True},
+    openapi_tags=openapi_tags,
+    default_response_class=CustomORJSONResponse
 )
+
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.middleware import SlowAPIMiddleware
+from services.auth.router import limiter
+from common.middleware import MaintenanceModeMiddleware
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(MaintenanceModeMiddleware)
+app.add_middleware(SlowAPIMiddleware)
+
+from fastapi.middleware.cors import CORSMiddleware
+from common.config import get_config
+import traceback
+from common.database import SessionLocal
+from services.admin.audit_service import AuditService
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_trace = traceback.format_exc()
+    logging.error(f"GLOBAL EXCEPTION: {error_trace}")
+    
+    try:
+        db = SessionLocal()
+        AuditService.log_action(
+            db=db,
+            actor_id=None,
+            action="server_crash",
+            entity_type="system",
+            details={
+                "message": str(exc),
+                "traceback": error_trace,
+                "path": request.url.path,
+                "method": request.method
+            }
+        )
+        db.close()
+    except Exception as db_e:
+        logging.error(f"Failed to log exception to audit: {db_e}")
+        
+    return CustomORJSONResponse(
+        status_code=500,
+        content={"error": "internal_server_error", "message": "An unexpected error occurred."}
+    )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://app.kapuletu.co.ke",
+        "https://dev.app.kapuletu.co.ke",
+        get_config().FRONTEND_URL.rstrip('/')
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+import time
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response as StarletteResponse
+
+class AuthLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if not request.url.path.startswith("/auth"):
+            return await call_next(request)
+
+        # Log Request
+        body = await request.body()
+        logging.info(f"========== INCOMING AUTH REQUEST ==========")
+        logging.info(f"{request.method} {request.url.path}")
+        if body:
+            try:
+                # Mask password if present
+                payload = json.loads(body)
+                if 'password' in payload:
+                    payload['password'] = '***MASKED***'
+                if 'new_password' in payload:
+                    payload['new_password'] = '***MASKED***'
+                if 'old_password' in payload:
+                    payload['old_password'] = '***MASKED***'
+                logging.info(f"Payload: {json.dumps(payload, indent=2)}")
+            except:
+                logging.info(f"Payload: {body}")
+                
+        # Re-inject body for the route handler
+        async def receive():
+            return {"type": "http.request", "body": body}
+        request._receive = receive
+
+        # Process Response
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = (time.time() - start_time) * 1000
+
+        # Log Response
+        logging.info(f"---------- AUTH RESPONSE ----------")
+        logging.info(f"Status: {response.status_code} ({process_time:.2f}ms)")
+        
+        # Consume response body to log it
+        response_body = b""
+        async for chunk in response.body_iterator:
+            response_body += chunk
+            
+        if response_body:
+            try:
+                logging.info(f"Body: {json.dumps(json.loads(response_body), indent=2)}")
+            except:
+                logging.info(f"Body: {response_body}")
+                
+        logging.info(f"===========================================\n")
+                
+        # Reconstruct response to send to client
+        return StarletteResponse(
+            content=response_body, 
+            status_code=response.status_code, 
+            headers=dict(response.headers),
+            media_type=response.media_type
+        )
+
+app.add_middleware(AuthLoggingMiddleware)
+
 
 # --- Pydantic Schemas for Swagger UI ---
 
@@ -24,12 +220,8 @@ class TransactionIn(BaseModel):
     From: str = Field(..., json_schema_extra={"example": "+254700000000"})
     MessageSid: Optional[str] = Field(None, json_schema_extra={"example": "SM12345"})
 
-class GroupIn(BaseModel):
-    name: str = Field(..., json_schema_extra={"example": "St. Peters Welfare"})
+# --- Group Schemas (Moved to services/groups/schemas.py) ---
 
-class CampaignIn(BaseModel):
-    title: str = Field(..., json_schema_extra={"example": "Hospital Fund"})
-    target_amount: float = Field(..., json_schema_extra={"example": 50000.0})
 
 class SplitAllocation(BaseModel):
     name: str = Field(..., json_schema_extra={"example": "John Doe"})
@@ -37,6 +229,72 @@ class SplitAllocation(BaseModel):
 
 class TransactionSplit(BaseModel):
     allocations: List[SplitAllocation]
+
+from services.approval.schemas import ManualEntryIn, TransactionActionIn, TransactionEditIn
+
+class BulkActionIn(BaseModel):
+    pending_ids: List[str] = Field(..., json_schema_extra={"example": ["uuid-1", "uuid-2"]})
+    internal_note: Optional[str] = Field(None, json_schema_extra={"example": "Bulk approval for Sunday collection"})
+
+# --- Admin Governance Schemas ---
+
+class AdminOverviewOut(BaseModel):
+    total_treasurers: int = Field(..., json_schema_extra={"example": 1250})
+    total_revenue_kes: float = Field(..., json_schema_extra={"example": 450000.0})
+    active_subscriptions: int = Field(..., json_schema_extra={"example": 890})
+    pending_tickets: int = Field(..., json_schema_extra={"example": 12})
+    ai_accuracy_rate: float = Field(..., json_schema_extra={"example": 0.94})
+
+class TreasurerStatusIn(BaseModel):
+    status: str = Field(..., json_schema_extra={"example": "suspended"})
+    reason: str = Field(..., json_schema_extra={"example": "Suspicious login pattern detected from new IP."})
+
+class AdminUserCreateIn(BaseModel):
+    first_name: str = Field(..., json_schema_extra={"example": "New"})
+    last_name: str = Field(..., json_schema_extra={"example": "User"})
+    email: str = Field(..., json_schema_extra={"example": "newuser@kapuletu.co.ke"})
+    phone_number: str = Field(..., json_schema_extra={"example": "+254700000001"})
+    role: str = Field("treasurer", json_schema_extra={"example": "treasurer"})
+    password: str = Field(..., json_schema_extra={"example": "TempPassword123!"})
+
+class AITrainingParamsIn(BaseModel):
+    epochs: int = Field(10, json_schema_extra={"example": 15})
+    dropout: float = Field(0.2, json_schema_extra={"example": 0.1})
+    use_treasurer_feedback: bool = Field(True)
+
+class SubscriptionPlanIn(BaseModel):
+    name: str = Field(..., json_schema_extra={"example": "Pro Treasurer"})
+    price: float = Field(..., json_schema_extra={"example": 1500.0})
+    billing_period: str = Field("monthly", json_schema_extra={"example": "annual"})
+    features: List[str] = Field(..., json_schema_extra={"example": ["Unlimited Groups", "AI Parsing"]})
+
+class SystemBroadcastIn(BaseModel):
+    message: str = Field(..., json_schema_extra={"example": "Platform maintenance scheduled for 10:00 PM EAT."})
+    channel: str = Field("all", json_schema_extra={"example": "whatsapp"})
+    target_role: str = Field("treasurer")
+
+# --- Members & Notifications ---
+
+class MemberIn(BaseModel):
+    member_name: str = Field(..., json_schema_extra={"example": "John Wainaina"})
+    member_phone: Optional[str] = Field(None, json_schema_extra={"example": "+254700000000"})
+    group_id: str = Field(..., json_schema_extra={"example": "group-uuid"})
+
+class NotificationIn(BaseModel):
+    pending_id: str = Field(..., json_schema_extra={"example": "pending-uuid"})
+    message_type: str = Field("confirmation", json_schema_extra={"example": "confirmation"})
+
+# --- Finance & Subscription Schemas ---
+
+class KapuletuCheckoutIn(BaseModel):
+    plan_id: str = Field(..., json_schema_extra={"example": "pro"})
+    provider: str = Field(..., json_schema_extra={"example": "flutterwave"}) # Options: mpesa, flutterwave, stripe (legacy)
+    phone_number: Optional[str] = Field(None, json_schema_extra={"example": "+254700000000"})
+
+class KapuletuCheckoutOut(BaseModel):
+    checkout_id: str = Field(..., json_schema_extra={"example": "CH-123"})
+    status: str = Field(..., json_schema_extra={"example": "initiated"})
+    provider_response: Any = Field(None)
 
 # --- Lambda Adapter Logic ---
 
@@ -77,169 +335,210 @@ async def placeholder(request: Request):
 
 # --- API Routers ---
 
-# 2. Authentication
-auth = APIRouter(prefix="/auth", tags=["2. Authentication"])
-@auth.post("/register", summary="Register Treasurer")
-async def register(request: Request): return await placeholder(request)
-@auth.post("/login", summary="Login")
-async def login(request: Request): return await placeholder(request)
-@auth.post("/refresh", summary="Refresh Token")
-async def refresh(request: Request): return await placeholder(request)
-@auth.post("/logout", summary="Logout")
-async def logout(request: Request): return await placeholder(request)
-@auth.get("/me", summary="Get Current User")
-async def get_me(request: Request): return await placeholder(request)
-@auth.patch("/me", summary="Update Profile")
-async def update_profile(request: Request): return await placeholder(request)
-@auth.post("/change-password", summary="Change Password")
-async def change_password(request: Request): return await placeholder(request)
-@auth.post("/forgot-password", summary="Request Password Reset")
-async def forgot_password(request: Request): return await placeholder(request)
-@auth.post("/reset-password", summary="Reset Password")
-async def reset_password(request: Request): return await placeholder(request)
-@auth.post("/verify", summary="Verify Phone / Email")
-async def verify(request: Request): return await placeholder(request)
+# 2. Authentication (Native FastAPI Router imported from services.auth.router)
 
-# 3. Groups Management
-groups = APIRouter(prefix="/groups", tags=["3. Groups Management"])
-@groups.post("", summary="Create Group")
-async def create_group(payload: GroupIn): return await placeholder(None)
-@groups.get("", summary="Get All My Groups")
-async def list_groups(request: Request): return await placeholder(request)
-@groups.get("/{group_id}", summary="Get Single Group")
-async def get_group(group_id: str): return await placeholder(None)
-@groups.patch("/{group_id}", summary="Update Group")
-async def update_group(group_id: str): return await placeholder(None)
-@groups.delete("/{group_id}", summary="Archive Group")
-async def archive_group(group_id: str): return await placeholder(None)
+# 3. Groups Management (Native FastAPI Router imported from services.groups.router)
 
-# 4. Campaigns Management
-campaigns = APIRouter(tags=["4. Campaigns Management"])
-@campaigns.post("/groups/{group_id}/campaigns", summary="Create Campaign")
-async def create_campaign(request: Request, group_id: str, payload: CampaignIn): return await lambda_adapter(request, campaigns_handler)
-@campaigns.get("/groups/{group_id}/campaigns", summary="List Campaigns")
-async def list_group_campaigns(request: Request, group_id: str): return await lambda_adapter(request, campaigns_handler)
-@campaigns.get("/campaigns/{campaign_id}", summary="Get Campaign")
-async def get_campaign(campaign_id: str): return await lambda_adapter(None, campaigns_handler)
-@campaigns.patch("/campaigns/{campaign_id}", summary="Update Campaign")
-async def update_campaign(campaign_id: str): return await lambda_adapter(None, campaigns_handler)
-@campaigns.post("/campaigns/{campaign_id}/status", summary="Change Campaign Status")
-async def campaign_status(campaign_id: str): return await lambda_adapter(None, campaigns_handler)
 
 # 5. Transaction Ingestion
-ingestion = APIRouter(tags=["5. Transaction Ingestion"])
-@ingestion.post("/ingestion/webhook", summary="Webhook (Twilio / External)")
+ingestion = APIRouter(tags=["7. Transaction Ingestion"])
+@ingestion.post("/ingestion/webhook", summary="Webhook (Meta / External)")
 async def ingestion_webhook_schema(payload: TransactionIn): return Response(status_code=200)
 @app.post("/ingestion/webhook", include_in_schema=False)
 async def ingestion_webhook_impl(request: Request): return await lambda_adapter(request, ingestion_handler)
-@ingestion.post("/transactions/manual", summary="Manual Entry")
-async def manual_entry(request: Request): return await placeholder(request)
-@ingestion.get("/transactions/pending", summary="Get Pending Transactions (Inbox)")
-async def get_pending(request: Request): return await lambda_adapter(request, approval_handler)
-@ingestion.get("/transactions/pending/{pending_id}", summary="Get Single Pending")
-async def get_pending_single(pending_id: str): return await lambda_adapter(None, approval_handler)
 
-# 6. Parsing & Validation
-parsing = APIRouter(prefix="/transactions", tags=["6. Parsing & Validation"])
-@parsing.post("/{pending_id}/reparse", summary="Re-parse Message")
-async def reparse(pending_id: str): return await placeholder(None)
-@parsing.post("/{pending_id}/validate", summary="Validate Transaction")
-async def validate_tx(pending_id: str): return await placeholder(None)
+@ingestion.get("/ingestion/webhook", summary="Meta Webhook Verification")
+async def ingestion_webhook_verify_schema(request: Request): return Response(status_code=200)
+@app.get("/ingestion/webhook", include_in_schema=False)
+async def ingestion_webhook_verify_impl(request: Request): return await lambda_adapter(request, ingestion_handler)
 
-# 7. Review & Approval
-review = APIRouter(prefix="/transactions", tags=["7. Review & Approval Workflow"])
-@review.post("/{pending_id}/approve", summary="Approve Transaction")
-async def approve(request: Request, pending_id: str): return await lambda_adapter(request, approval_handler)
-@review.post("/{pending_id}/reject", summary="Reject Transaction")
-async def reject(request: Request, pending_id: str): return await lambda_adapter(request, approval_handler)
-@review.patch("/{pending_id}", summary="Edit Transaction")
-async def edit_tx(request: Request, pending_id: str): return await lambda_adapter(request, approval_handler)
-@review.post("/{pending_id}/note", summary="Add Note")
-async def add_note(pending_id: str): return await placeholder(None)
-@review.post("/{pending_id}/split", summary="Split Transaction")
-async def split_tx(payload: TransactionSplit, pending_id: str): return await placeholder(None)
-@review.post("/bulk/approve", summary="Bulk Approval")
-async def bulk_approve(request: Request): return await placeholder(request)
-@review.post("/bulk/reject", summary="Bulk Reject")
-async def bulk_reject(request: Request): return await placeholder(request)
+from common.auth_dependencies import get_current_user, get_verified_user, get_admin_user, get_super_admin_user
+from common.database import get_db
+from sqlalchemy.orm import Session
+from models.users import User
+from services.auth.auth_service import get_password_hash
+from services.admin.user_service import UserService
+from common.enums import UserRole
+from fastapi import HTTPException
+from typing import Dict, Any
 
+@app.get("/temp-elevate", summary="Temporary Elevation Script", include_in_schema=False)
+async def temp_elevate(email: str, db: Session = Depends(get_db)):
+    from models.users import User
+    from common.enums import UserRole
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        return {"status": "error", "message": f"User {email} not found. Please register this email first."}
+    
+    user.role = UserRole.SUPER_ADMIN.value
+    db.commit()
+    return {"status": "success", "message": f"Elevated {email} to super_admin"}
+
+
+
+@ingestion.post("/transactions/manual", summary="Manual Entry", status_code=201)
+async def manual_entry(
+    payload: ManualEntryIn,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user),
+):
+    """
+    Manually record a finalized contribution directly into the ledger.
+    Requires ownership of the target group.
+    """
+    import uuid as _uuid
+    import logging
+    from repositories.group_repo import get_group
+    from repositories.campaign_repo import get_campaign
+    from models.transaction import Transaction
+    from models.pending_transaction import PendingTransaction
+    from services.approval.service import ApprovalService
+    from services.audit.service import AuditService
+
+    owner_id_str = current_user.get("sub")
+    try:
+        owner_uuid = _uuid.UUID(str(owner_id_str))
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid user identity in token.")
+
+    # IDOR guard: confirm the requesting treasurer owns this group
+    group = get_group(db, payload.group_id)
+    if not group or group.owner_id != owner_uuid:
+        logging.warning(f"manual_entry 403: User {owner_uuid} does not own group {payload.group_id}")
+        raise HTTPException(status_code=403, detail="Forbidden: You do not own this group.")
+
+    campaign = get_campaign(db, payload.campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+
+    txn_code = payload.transaction_code or f"MANUAL-{_uuid.uuid4().hex[:12].upper()}"
+
+    # Idempotency check
+    pending_exists = db.query(PendingTransaction).filter(
+        PendingTransaction.transaction_code == txn_code,
+        PendingTransaction.owner_id == owner_uuid,
+    ).first()
+    txn_exists = db.query(Transaction).filter(
+        Transaction.transaction_code == txn_code,
+        Transaction.owner_id == owner_uuid,
+    ).first()
+    if pending_exists or txn_exists:
+        raise HTTPException(status_code=409, detail="Transaction code already exists.")
+
+    new_txn = Transaction(
+        owner_id=owner_uuid,
+        group_id=group.group_id,
+        campaign_id=campaign.campaign_id,
+        transaction_code=txn_code,
+        amount=payload.amount,
+        sender_phone=payload.sender_phone,
+        sender_name=payload.sender_name,
+        payment_method=payload.payment_method or "Cash",
+        source_evidence="Manually entered by treasurer",
+        status="approved",
+    )
+    db.add(new_txn)
+    db.flush()
+
+    ApprovalService(db)._write_to_ledger(new_txn)
+    db.commit()
+
+    AuditService(db).log_action(
+        actor_id=owner_id_str,
+        action="MANUAL_ENTRY",
+        entity_type="TRANSACTION",
+        entity_id=str(new_txn.transaction_id),
+        details={
+            "amount": float(payload.amount),
+            "message": f"Manual contribution of Ksh. {float(payload.amount)} added",
+            "campaign_id": str(campaign.campaign_id),
+        },
+    )
+
+    return {"message": "Manual transaction recorded successfully", "transaction_id": str(new_txn.transaction_id)}
+
+# Removed parsing and review endpoints since they are now in native services/approval/router.py
 # 8. Ledger
-ledger = APIRouter(prefix="/ledger", tags=["8. Ledger (Immutable)"])
-@ledger.get("", summary="Get Ledger Entries")
-async def list_ledger(request: Request): return await placeholder(request)
-@ledger.get("/campaign/{campaign_id}", summary="Get Ledger by Campaign")
-async def ledger_by_campaign(campaign_id: str): return await placeholder(None)
-@ledger.get("/{ledger_id}", summary="Get Ledger Entry")
-async def get_ledger_entry(ledger_id: str): return await placeholder(None)
+# Removed ledger endpoints since they are now in native services/finance/ledger_router.py
 
 # 9. Members
-members = APIRouter(tags=["9. Members Management"])
-@members.get("/members/suggestions", summary="Auto-Suggest Members")
-async def suggest_members(request: Request): return await placeholder(request)
-@members.post("/members", summary="Create Member (Optional)")
-async def create_member(request: Request): return await lambda_adapter(request, members_handler)
-@members.get("/groups/{group_id}/members", summary="Get Members")
-async def group_members(group_id: str): return await lambda_adapter(None, members_handler)
+# members = APIRouter(tags=["3. Members Management"], dependencies=[Depends(get_verified_user)])
+# @members.get("/members/suggestions", summary="Auto-Suggest Members")
+# async def suggest_members(request: Request): return await lambda_adapter(request, members_handler)
+# @members.post("/members", summary="Create Member (Optional)")
+# async def create_member(request: Request, payload: MemberIn): return await lambda_adapter(request, members_handler)
+# @members.get("/groups/{group_id}/members", summary="Get Members")
+# async def group_members(request: Request, group_id: str): return await lambda_adapter(request, members_handler)
 
 # 10. Reporting
-reporting = APIRouter(prefix="/reports", tags=["10. Reporting Service"])
-@reporting.get("/daily", summary="Daily Summary")
-async def daily_report(request: Request): return await lambda_adapter(request, reporting_handler)
-@reporting.get("/campaign/{campaign_id}", summary="Campaign Progress")
-async def campaign_report(campaign_id: str): return await lambda_adapter(None, reporting_handler)
-@reporting.get("/contributors/{campaign_id}", summary="Contributor List")
-async def contributors_report(campaign_id: str): return await placeholder(None)
-@reporting.get("/export/excel", summary="Export Excel")
-async def export_excel(request: Request): return await lambda_adapter(request, reporting_handler)
-@reporting.get("/export/pdf", summary="Export PDF")
-async def export_pdf(request: Request): return await lambda_adapter(request, reporting_handler)
-@reporting.get("/whatsapp-summary", summary="WhatsApp Summary Format")
-async def whatsapp_summary(request: Request): return await placeholder(request)
-
 # 11. Evidence
-evidence = APIRouter(prefix="/transactions", tags=["11. Evidence Management"])
-@evidence.get("/{pending_id}/evidence", summary="Get Transaction Evidence")
-async def get_evidence(pending_id: str): return await placeholder(None)
-@evidence.post("/{pending_id}/evidence", summary="Upload Evidence (Future)")
-async def upload_evidence(pending_id: str): return await placeholder(None)
+# Removed evidence endpoints since they are now in native services/evidence/router.py
 
 # 12. Audit Logs
-audit = APIRouter(prefix="/audit", tags=["12. Audit Logs"])
-@audit.get("/logs", summary="Get Audit Logs")
-async def get_logs(request: Request): return await placeholder(request)
-@audit.get("/logs/{entity_type}/{entity_id}", summary="Get Logs by Entity")
-async def get_logs_by_entity(entity_type: str, entity_id: str): return await placeholder(None)
+# Removed audit placeholders since they are now in native services/audit/router.py
 
 # 13. Notifications
-notifications = APIRouter(prefix="/notifications", tags=["13. Notifications"])
-@notifications.post("/send", summary="Send Confirmation (After Approval)")
-async def send_notification(request: Request): return await placeholder(request)
+# Removed notifications endpoints since they are now in native services/notifications/router.py
 
 # 14. System Health
-health = APIRouter(tags=["14. System Health & Admin"])
+health = APIRouter(tags=["15. System Health & Admin"])
 @health.get("/health", summary="Health Check")
 async def health_check(): return {"status": "healthy"}
+
+
 @health.get("/metrics", summary="Metrics")
 async def metrics_check(): return {"metrics": "..."}
 
+
+
+# --- Section 16: Finance & Subscriptions (Treasurer Facing) ---
+# Removed placeholder finance endpoints since they are now in native services/finance/checkout_router.py
+
 # --- Include All Routers ---
-app.include_router(auth)
-app.include_router(groups)
-app.include_router(campaigns)
-app.include_router(ingestion)
-app.include_router(parsing)
-app.include_router(review)
-app.include_router(ledger)
-app.include_router(members)
-app.include_router(reporting)
-app.include_router(evidence)
-app.include_router(audit)
-app.include_router(notifications)
+app.include_router(auth) # 2
+app.include_router(groups) # 3
+from services.campaigns.router import router as campaigns_router
+from common.config import get_config
+app.include_router(campaigns_router) # 4
+app.include_router(ingestion) # 5
+
+from services.approval.router import router as approval
+app.include_router(approval) # 6
+
+from services.finance.ledger_router import router as ledger
+app.include_router(ledger) # 8
+
+# app.include_router(members) # 9
+app.include_router(reporting) # 10
+
+
+from services.audit.router import router as audit_router
+app.include_router(audit_router) # 12
+from services.notifications.router import router as notifications_router
+app.include_router(notifications_router) # 13
+from services.support.router import router as support_router
+app.include_router(support_router)
 app.include_router(health)
+from services.admin.router import router as admin_router
+app.include_router(admin_router)
+app.include_router(admin_config_router)
+
+from services.feedback.router import router as feedback_router
+app.include_router(feedback_router)  # 16. User Feedback
+
+app.include_router(checkout_router, tags=["6. Finance & Subscriptions"], prefix="/finance")
+
+from services.workspace.router import router as workspace_router
+app.include_router(workspace_router, dependencies=[Depends(get_verified_user)])
+
+from services.settings.router import router as settings_router
+app.include_router(settings_router, tags=["13. Enterprise Settings"], prefix="/settings", dependencies=[Depends(get_verified_user)])
 
 # Serve static assets (Logo, Favicons, etc.)
-from fastapi.staticfiles import StaticFiles
 import os
+
+from fastapi.staticfiles import StaticFiles
+
 if os.path.exists("assets"):
     app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 
@@ -251,7 +550,26 @@ async def root():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        <!-- Primary Meta Tags -->
         <title>KapuLetu Developer Portal</title>
+        <meta name="title" content="KapuLetu Developer Portal">
+        <meta name="description" content="Official API gateway for KapuLetu. Access the Treasury API core, documentation, and developer environment.">
+
+        <!-- Open Graph / Facebook -->
+        <meta property="og:type" content="website">
+        <meta property="og:url" content="https://dev-api.kapuletu.co.ke/">
+        <meta property="og:title" content="KapuLetu Developer Portal">
+        <meta property="og:description" content="Official API gateway for KapuLetu. Access the Treasury API core, documentation, and developer environment.">
+        <meta property="og:image" content="https://dev-api.kapuletu.co.ke/assets/logo.jpg">
+
+        <!-- Twitter -->
+        <meta property="twitter:card" content="summary_large_image">
+        <meta property="twitter:url" content="https://dev-api.kapuletu.co.ke/">
+        <meta property="twitter:title" content="KapuLetu Developer Portal">
+        <meta property="twitter:description" content="Official API gateway for KapuLetu. Access the Treasury API core, documentation, and developer environment.">
+        <meta property="twitter:image" content="https://dev-api.kapuletu.co.ke/assets/logo.jpg">
+
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -291,4 +609,4 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("local_server:app", host="0.0.0.0", port=8000, reload=True)

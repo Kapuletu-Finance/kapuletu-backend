@@ -1,0 +1,64 @@
+# Module 3: Groups and Campaigns - Implementation Plan
+
+This plan addresses all data-fetching flaws, N+1 query risks, and missing basic operational metrics in the Groups and Campaigns architecture.
+
+## Resolutions to Open Questions
+
+> [!TIP]
+> **Reporting Boundaries:** To answer your question—**we will split this**. 
+> We *will* include the basic aggregated stats (like `total_raised`, `progress_percentage`, and `contributor_count`) directly in this module so the UI can render lists without crashing or making N+1 API calls.
+> However, we will leave the heavy "micro-reporting" (like generating WhatsApp Templates, issuing secure public web reports, and exporting Excel sheets) entirely for **Module 6: Reporting and Exports**.
+
+## User Review Required
+
+> [!WARNING]
+> **API Contract Breakage:** By introducing a proper `PaginatedResponse` schema, the response for `GET /groups` and `GET /campaigns` will change from a flat array `[...]` to an object `{"items": [...], "total_items": 10, "total_pages": 1}`. This is the correct Enterprise standard, but it *will* require minor frontend adjustments if the frontend is already consuming the flat arrays.
+
+## Proposed Changes
+
+---
+### Schema Layer
+
+#### [MODIFY] `services/groups/schemas.py`
+- Add new operational fields to `GroupOut`: `total_campaigns`, `active_campaigns`, and `total_raised`.
+- Add a new `PaginatedGroupResponse` schema.
+
+#### [MODIFY] `services/campaigns/schemas.py`
+- Add new operational fields to `CampaignOut`: `total_raised`, `progress_percentage`, and `contributor_count`.
+- Add a new `PaginatedCampaignResponse` schema.
+
+---
+### Data Access Layer (Repositories)
+
+#### [MODIFY] `repositories/group_repo.py`
+- Update `get_owner_groups` to accept `search: Optional[str]` and `status: Optional[str]`.
+- Rewrite the SQLAlchemy query to join the `Campaign` and `Transaction` tables, utilizing `func.count()` and `func.sum()` with `GROUP BY` to dynamically compute the operational stats *inside the database engine* rather than in Python memory.
+
+#### [MODIFY] `repositories/campaign_repo.py`
+- Update `get_group_campaigns` to accept `search: Optional[str]` and `status: Optional[str]`.
+- Rewrite the query to join the `Transaction` table to compute `total_raised` and `contributor_count` directly in SQL.
+
+---
+### API Layer (Routers)
+
+#### [MODIFY] `services/groups/router.py`
+- Expose `search` and `status` query parameters on `GET /groups`.
+- Wrap the response in the new `PaginatedGroupResponse`.
+- Add `@limiter.limit("50/minute")` to prevent creation/fetch spam.
+
+#### [MODIFY] `services/campaigns/router.py`
+- Expose `search` and `status` query parameters on `GET /groups/{group_id}/campaigns`.
+- Wrap the response in the new `PaginatedCampaignResponse`.
+- Add `@limiter.limit("50/minute")` to prevent resource abuse.
+
+---
+### Documentation
+
+#### [MODIFY] `docs/kapuletu/3_module_groups_and_campaigns.md`
+- Append the **"Adjustments, Corrections, and Resolutions"** section detailing how the N+1 API flaws, Pagination, and Search capabilities were implemented.
+
+## Verification Plan
+
+### Automated/Manual Verification
+- I will execute syntax checks on the modified repositories and routers.
+- I will ensure SQLAlchemy `GROUP BY` logic does not introduce Cartesian product duplication bugs when joining Transactions and Campaigns.

@@ -46,16 +46,6 @@ cash contributions
 delayed confirmations
 This leads to incomplete financial records.
 
-
-
-
-
-
-
-
-
-
-
 Duplicate and Inconsistent Entries
 Without automated validation, the same payment may be recorded multiple times.
 Example:
@@ -160,7 +150,7 @@ This layer manages:
 system admins
 treasurers
 future contributors/member accounts
-It ensures only authorized users can:
+It ensures treasurers  can:
 approve transactions
 create campaigns and groups 
 generate reports
@@ -172,7 +162,6 @@ This is the system’s transaction entry point.
 It captures both structured and unstructured financial evidence.
 Supported Inputs
 WhatsApp forwarded messages
-SMS payment confirmations
 manual cash entry
 This ensures no contribution is left outside the system.
 3.3 Intelligent Parsing Engine
@@ -271,6 +260,27 @@ contributor complaints
 improvement suggestions
 issue reporting
 This supports continuous improvement.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

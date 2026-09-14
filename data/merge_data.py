@@ -1,5 +1,5 @@
-import random
 import os
+import random
 
 files_to_merge = [
     'give-to.txt',

@@ -1,0 +1,68 @@
+# Module 2: Auth and Security - Implementation Plan
+
+This plan addresses all the critical security and scaling flaws identified in the Auth & Security module.
+
+## User Review Required
+
+> [!WARNING]
+> **Rate Limiting Engine (`slowapi`):** 
+> *Implications:* Introduces a few milliseconds of latency to check the limit before executing the route. In its default "in-memory" mode, the limits are strictly per-instance (if you have 5 server instances, a user could hit the limit 5 times). 
+> *Redis Configuration:* To make it production-ready and globally synchronized across all servers/serverless-lambdas, you will need a Redis instance (like ElastiCache). The only configuration needed in KapuLetu will be adding a `REDIS_URL` environment variable (e.g., `redis://user:password@endpoint:6379/0`) which the Limiter will connect to.
+
+> [!IMPORTANT]
+> **Token Blacklist:** Since KapuLetu uses stateless JWTs, I am introducing a `TokenBlacklist` database table to support a true server-side `/logout` mechanism and token revocation. 
+
+## Resolutions to Open Questions
+
+> [!TIP]
+> **Currency Collisions Resolved:** As agreed, we will assume a global system currency. I will update the Workspace Overview to blindly sum all transactions, and I will ensure there is a `global_currency` setting mechanism in place (defaulting to KES) to align with this assumption.
+
+## Proposed Changes
+
+---
+### Dependencies
+
+#### [MODIFY] `requirements.txt`
+- Add `slowapi==0.1.9` for production-grade API rate limiting.
+
+---
+### Security & Authentication
+
+#### [NEW] `models/token_blacklist.py`
+- Create a SQLAlchemy model `TokenBlacklist` to store revoked JWT access and refresh tokens.
+
+#### [MODIFY] `services/auth/auth_service.py`
+- Update `logout()` to insert the `access_token` and `refresh_token` into the `TokenBlacklist`.
+- Update `verify_account()` to trigger `AuditService.log_action("ACCOUNT_VERIFIED")`.
+- Update `reset_password()` to trigger `AuditService.log_action("PASSWORD_RESET")`.
+
+#### [MODIFY] `common/auth_dependencies.py`
+- Update `get_current_user` to check the `TokenBlacklist` table before accepting a JWT as valid. If the token is blacklisted, raise a 401 Unauthorized.
+
+#### [MODIFY] `main.py`
+- Initialize the `slowapi` Limiter and attach it to the FastAPI application.
+
+#### [MODIFY] `services/auth/router.py`
+- Inject `@limiter.limit("5/minute")` to `login`, `register`, `verify`, `resend_code`, and `forgot_password` to prevent brute force and SMS bombing.
+
+---
+### Workspace Scaling
+
+#### [MODIFY] `services/workspace/router.py`
+- **Fix N+1 Query:** Replace the Python loop that counts campaigns per group with a highly optimized SQLAlchemy `GROUP BY` query.
+- **Fix Currency Collision:** Update the `total_collected` query to only sum transactions where the associated Group's currency is "KES" (or the platform default) to prevent catastrophic mixed-currency integer addition.
+
+---
+### Documentation
+
+#### [MODIFY] `docs/kapuletu/2_module_auth_and_security.md`
+- Append the new section: **"Adjustments, Corrections, and Resolutions"** detailing how Rate Limiting, Token Blacklisting, Audit Trails, and N+1 Workspace Queries were resolved end-to-end.
+
+## Verification Plan
+
+### Automated/Manual Verification
+- I will activate the virtual environment (if available) or rely on the local python environment.
+- I will run `pip install slowapi` to install the dependency locally.
+- I will update `requirements.txt` to include `slowapi`.
+- I will test the syntax of the modified files to ensure FastAPI compiles without errors.
+- I will review the API logic manually to guarantee end-to-end completion of Module 2.

@@ -1,0 +1,43 @@
+# KapuLetu Reporting Module: Technical Overview
+
+## Executive Summary
+The KapuLetu Reporting Module has been fully refactored into a high-performance, native FastAPI architecture. It seamlessly bridges the gap between cryptographic financial data (the Immutable Ledger) and cultural, community-facing transparency. By introducing a "Smart Template Engine" and real-time server-side document generation, the module completely eliminates manual spreadsheet tasks for treasurers while maintaining perfect accuracy.
+
+## Core Features & Capabilities
+
+### 1. The WhatsApp Smart Template Engine
+Instead of forcing treasurers to manually type and calculate contribution lists, the module dynamically generates a perfectly formatted text block that can be instantly copy-pasted into WhatsApp. 
+
+- **The KapuLetu Default Standard:** Out of the box, the system uses a highly professional, culturally relevant format (e.g., *"We continue to thank everyone for the overwhelming love..."*), calculates the Deficit automatically, and appends numbers to the contributor list.
+- **Dynamic Variable Injection:** The engine automatically replaces Smart Tags (`{{total_raised}}`, `{{deficit}}`) with real-time math from the Ledger.
+- **Custom Report Settings:** Treasurers can override the default format via the `campaign_report_settings` table. They can choose to toggle ✅ emojis, toggle `(paid)` status text, and even specify a number of blank lines to automatically append to the bottom of the list (e.g., `188. ____`) to psychologically encourage the next givers.
+
+### 2. Secure Public Web Ledger (The Transparency Link)
+To provide ultimate transparency without cluttering a WhatsApp chat, the system automatically appends a public web link and a generated **4-digit Access PIN** to the bottom of the WhatsApp report.
+- When a community member visits the link and enters the PIN, the `POST /reports/public/{campaign_id}` endpoint serves a beautifully formatted view of the ledger.
+- **Privacy Guard:** The backend strictly filters this public payload, explicitly stripping out all phone numbers and returning only names and amounts to protect contributor privacy.
+
+### 3. Institutional Export Generation (Zero Storage Cost)
+The module provides institutional-grade document generation using Excel and PDF.
+- **Real-Time Generation:** PDFs (via `fpdf2`) and Excel sheets (via `pandas`) are generated **on-the-fly** entirely in the server's memory. 
+- **Zero Storage Footprint:** No files are ever saved to an S3 bucket or database, drastically cutting AWS storage costs and eliminating the risk of a user downloading an outdated, cached report.
+
+## API Architecture
+
+The module exposes native REST endpoints documented in Swagger under "10. Reporting Service":
+
+| Endpoint | Method | Purpose |
+| :--- | :--- | :--- |
+| `/reports/dashboard` | `GET` | High-level summary JSON (totals/counts) for frontend dashboard widgets. |
+| `/reports/whatsapp/{id}` | `GET` | Compiles and returns the WhatsApp text block, applying the KapuLetu Default Standard or user-defined templates. |
+| `/reports/settings/{id}` | `POST` | Allows a treasurer to update their campaign's Smart Templates (intro, outro, emojis, blank slots). |
+| `/reports/public/{id}` | `POST` | The secure, PIN-verified endpoint that powers the frontend Public Web Report. |
+| `/reports/export/excel/{id}`| `GET` | Instantly downloads the cryptographically verified ledger as `.xlsx`. |
+| `/reports/export/pdf/{id}` | `GET` | Instantly downloads the formal ledger as a KapuLetu-branded `.pdf`. |
+
+## Technical Implementation Details
+- **`models/report_settings.py`**: A new relational table linking directly to a `Campaign`. It stores the custom templates and the generated `public_access_pin`.
+- **`services/reporting/template_engine.py`**: The brain of the module. It fetches the ledger, applies string replacements for the Smart Tags, formats the ✅ emojis, injects the blank slots, and calculates the math.
+- **`services/reporting/router.py`**: Native FastAPI endpoints mapping strictly to Pydantic schemas (`ReportSettingsIn`, `PublicReportOut`).
+
+*Note for Deployment: The new `pdf_gen.py` utilizes the lightweight `fpdf2` library. Please ensure `fpdf2` is added to the backend `requirements.txt` before pushing to production.*

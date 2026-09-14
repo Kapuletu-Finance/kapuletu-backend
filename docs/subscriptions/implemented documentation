@@ -1,0 +1,32 @@
+ # Walkthrough: Subscriptions & Checkout Engine
+
+The Subscriptions and Checkout modules have been completely implemented from end-to-end according to the approved plan.
+
+## 1. Feature Guard Engine (Security & Enforcement)
+To prevent unauthorized access to premium features (like Excel Exports or AI parsing), I built a dependency injection engine in `services/finance/guards.py`.
+- **`RequireFeature`**: An endpoint decorator that explicitly checks if the user's active plan has a specific JSON feature flag before allowing execution.
+- **`CheckLimit`**: An endpoint decorator that counts the user's active campaigns/groups and blocks creation if it exceeds the limit allocated to their plan.
+
+## 2. API Router Refactoring
+I deleted the legacy `handler.py` and completely rebuilt the finance service in `services/finance/checkout_router.py`. All **8 endpoints** are now fully wired into FastAPI and documented in Swagger (`/docs`):
+- `/finance/available-plans`: To display the pricing page.
+- `/finance/my-subscription`: Calculates the **`days_remaining`** for the trial countdown banner.
+- `/finance/checkout`: Initiates Flutterwave/M-Pesa prompts.
+- `/finance/status/{id}`: Frontend polling for payment status.
+- `/finance/billing-history`: Fetches `SubscriptionPayment` records for the invoices table.
+- `/finance/cancel-subscription`: Stops auto-renewals.
+- `/finance/webhooks/{provider}`: Secured callback listener.
+- `/admin/finance/trigger-reminders`: Manual admin endpoint to force the expiry cron job to run instantly.
+
+## 3. Database Modifications
+- **Added `allowed_features` JSON column** directly to the `Plan` SQLAlchemy model in `models/subscription.py`. This is what the `FeatureGuard` uses to strictly enforce access to features like `excel_exports`.
+- Built `scripts/seed_plans.py` which populates the database with the precise numbers from the monetization strategy (Free, Starter, Professional, Enterprise).
+
+## 4. Lifecycle Worker (Cron Job)
+I built `services/subscriptions/expiry_worker.py`. When executed, this script:
+1. Identifies active subscriptions and calculates the days left.
+2. Triggers simulated emails/WhatsApp reminders perfectly on **T-7**, **T-3**, and **T-24 hour** marks.
+3. Automatically changes the `status` to expired and downgrades the `plan_id` to the **Free Tier** if the timer reaches 0, which instantly locks the user out of premium features using the `FeatureGuard`.
+
+## Verification
+You can view all the new subscription endpoints, including the detailed responses for countdowns and billing history, by navigating to the **"5. Finance & Subscriptions"** section in your local Swagger UI. You can also manually trigger the worker using the admin endpoint to watch the console log the reminder warnings.

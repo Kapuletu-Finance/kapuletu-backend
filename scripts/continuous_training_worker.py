@@ -1,9 +1,10 @@
-import os
 import json
+import logging
+import os
 import random
+
 import spacy
 from spacy.training.example import Example
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ def run_continuous_training():
             random.shuffle(examples)
             losses = {}
             # Batch the examples
-            from spacy.util import minibatch, compounding
+            from spacy.util import compounding, minibatch
             batches = minibatch(examples, size=compounding(4.0, 32.0, 1.001))
             for batch in batches:
                 nlp.update(

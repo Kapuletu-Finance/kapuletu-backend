@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 
+
 class IngestionSchema(BaseModel):
     """
     Pydantic Schema for Inbound Webhook Validation.

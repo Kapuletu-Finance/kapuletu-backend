@@ -1,5 +1,7 @@
-from sqlalchemy import Column, String, UUID
+from sqlalchemy import UUID, Column, String
+
 from .base import Base
+
 
 class ReviewAction(Base):
     """

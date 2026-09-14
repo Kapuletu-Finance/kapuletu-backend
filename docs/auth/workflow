@@ -1,0 +1,44 @@
+# Two-Step Verification Implementation Plan
+
+You are absolutely correct to ask for an audit on this specific flow. I have audited the current implementation against AWS Cognito's behavior, and here is exactly what happens currently versus what we need to build.
+
+## The Audit Findings
+Currently, your Terraform infrastructure correctly tells Cognito to auto-verify BOTH `email` and `phone_number` (`auto_verified_attributes = ["email", "phone_number"]`). 
+
+When a user registers:
+1. **AWS Cognito Priority:** Because both are selected, Cognito prioritizes the **phone number**. It automatically sends the initial sign-up confirmation code to the user's phone via SMS/WhatsApp.
+2. **First Verification:** The user submits this code to `/auth/verify` (`confirm_sign_up`). Their account becomes `CONFIRMED` and they can log in.
+3. **The Missing Step:** At this point, their `phone_number_verified` is `true`, but their `email_verified` is `false`. To verify the email, the user must log in, request an email verification code, and submit it. **These endpoints currently do not exist in your backend.**
+
+## The Implementation Plan
+
+To ensure the backend perfectly supports this mandatory two-step verification, I will build the missing pieces:
+
+### 1. `services/auth/schemas.py`
+Add a new schema for the second verification step:
+- `VerifyEmailIn`: Takes the 6-digit code sent to their email.
+
+### 2. `services/auth/cognito_service.py`
+Add two new boto3 wrapper methods:
+- `request_email_verification(access_token)`: Calls Cognito's `get_user_attribute_verification_code(AttributeName='email')`. This will trigger Cognito to send an email with a new code.
+- `confirm_email_verification(access_token, code)`: Calls Cognito's `verify_user_attribute(AttributeName='email', Code=code)`. This flips `email_verified` to `true`.
+
+### 3. `services/auth/router.py`
+Add two new protected endpoints (meaning the user MUST be logged in after verifying their phone before they can hit these):
+- `POST /auth/verify-email/request`: Triggers the email code.
+- `POST /auth/verify-email/confirm`: Submits the email code.
+
+## End-to-End Flow Validation
+Once implemented, the frontend flow will be:
+1. `POST /auth/register` (Triggers WhatsApp code)
+2. `POST /auth/verify` (User submits WhatsApp code -> Account confirmed)
+3. `POST /auth/login` (User logs in, gets JWT token)
+4. Frontend checks `/auth/me`. Sees `email_verified: false`, so it prompts user.
+5. `POST /auth/verify-email/request` (Sends Email code)
+6. `POST /auth/verify-email/confirm` (User submits Email code -> Fully Verified!)
+
+## User Review Required
+> [!IMPORTANT]
+> Because you are using `custom_sender.py` for professional formatting, we must make sure the `CustomMessage_VerifyUserAttribute` trigger is handled. I will also quickly update `custom_sender.py` to ensure the email verification code looks just as beautiful as the initial sign-up code.
+> 
+> Does this two-step implementation plan align perfectly with your requirements?

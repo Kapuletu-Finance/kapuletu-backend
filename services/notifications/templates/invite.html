@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block header %}
+You're Invited to KapuLetu!
+{% endblock %}
+
+{% block content %}
+<p>Hello,</p>
+<p>You have been exclusively invited to join KapuLetu to manage your group's treasury with transparency and ease.</p>
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ invite_link }}" class="btn">Accept Invitation & Register</a>
+</div>
+<p>This invitation link will expire in {{ expires_in_days }} days.</p>
+<p>If you didn't expect this invitation, you can safely ignore this email.</p>
+{% endblock %}

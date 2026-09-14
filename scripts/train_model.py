@@ -1,7 +1,8 @@
-import os
-import sys
 import json
 import logging
+import os
+import sys
+
 import spacy
 from spacy.tokens import DocBin
 from spacy.util import filter_spans
@@ -94,6 +95,7 @@ def train_and_save_model():
 
     # 4. Perform Training
     import random
+
     from spacy.training.example import Example
     
     logger.info("Starting deep learning training loop (10 Epochs)...")
@@ -130,7 +132,7 @@ def train_and_save_model():
     # Save the model directly into the folder where parse_engine.py loads from
     nlp.to_disk(MODEL_OUTPUT_DIR)
     
-    logger.info(f"Success! Training complete.")
+    logger.info("Success! Training complete.")
     logger.info(f"Model weights automatically deployed to: {MODEL_OUTPUT_DIR}")
     logger.info("The Ingestion Service will now use these updated weights for all future messages.")
 

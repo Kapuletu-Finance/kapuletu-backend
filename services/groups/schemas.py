@@ -1,0 +1,51 @@
+from typing import Optional, List
+from pydantic import BaseModel, Field, ConfigDict
+from datetime import datetime
+from uuid import UUID
+from enum import Enum
+
+class CurrencyEnum(str, Enum):
+    KES = "KES"
+    USD = "USD"
+    EUR = "EUR"
+    GBP = "GBP"
+
+class GroupStatusEnum(str, Enum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+class GroupCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100, json_schema_extra={"example": "St. Peters Welfare"})
+    description: Optional[str] = Field(None, max_length=500, json_schema_extra={"example": "Community fund for emergencies"})
+    # Currency defaults to KES on creation but can be specified
+    currency: CurrencyEnum = Field(default=CurrencyEnum.KES, json_schema_extra={"example": "KES"})
+
+class GroupUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100, json_schema_extra={"example": "St. Peters Welfare Updated"})
+    description: Optional[str] = Field(None, max_length=500, json_schema_extra={"example": "Updated community fund"})
+    # Currency is intentionally removed from GroupUpdate to enforce immutability
+
+class GroupOut(BaseModel):
+    id: UUID = Field(alias="group_id", serialization_alias="id", json_schema_extra={"example": "123e4567-e89b-12d3-a456-426614174000"})
+    name: str = Field(alias="group_name", serialization_alias="name", json_schema_extra={"example": "St. Peters Welfare"})
+    description: Optional[str] = Field(None, json_schema_extra={"example": "Community fund for emergencies"})
+    currency: Optional[CurrencyEnum] = Field(CurrencyEnum.KES, json_schema_extra={"example": "KES"})
+    status: Optional[GroupStatusEnum] = Field(GroupStatusEnum.ACTIVE, json_schema_extra={"example": "active"})
+    is_active: Optional[bool] = Field(True, json_schema_extra={"example": True})
+    created_at: datetime
+    slug: Optional[str] = Field(None, json_schema_extra={"example": "st-peters-welfare"})
+    is_favorite: Optional[bool] = Field(False, json_schema_extra={"example": True})
+    
+    # New Operational Metrics
+    total_campaigns_count: int = Field(0, json_schema_extra={"example": 5})
+    active_campaigns_count: int = Field(0, json_schema_extra={"example": 2})
+    total_funds_raised: float = Field(0.0, json_schema_extra={"example": 150000.0})
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+class PaginatedGroupResponse(BaseModel):
+    items: List[GroupOut]
+    total_items: int = Field(..., json_schema_extra={"example": 45})
+    total_pages: int = Field(..., json_schema_extra={"example": 5})
+    page: int = Field(..., json_schema_extra={"example": 1})
+    limit: int = Field(..., json_schema_extra={"example": 10})

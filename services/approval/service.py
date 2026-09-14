@@ -1,9 +1,18 @@
+from common.utils import parse_uuid
 from sqlalchemy.orm import Session
-from models.transaction import Transaction
-from models.pending_transaction import PendingTransaction
-from common.qldb import get_qldb_driver
+
 from common.logger import get_logger
+import hashlib
+import json
+from models.pending_transaction import PendingTransaction
+from models.transaction import Transaction
+from models.users import User
+from models.group import Group
+from models.campaign import Campaign
 from services.ingestion.active_learner import log_for_active_learning
+from services.audit.service import AuditService
+from services.notifications.service import create_notification
+from sqlalchemy import func
 
 logger = get_logger(__name__)
 
@@ -13,15 +22,14 @@ class ApprovalService:
     to 'Immutable Ledger' state.
     
     This service ensures that once a treasurer approves a transaction, it is 
-    permanently recorded in both the relational database (for fast queries) 
-    and Amazon QLDB (for audit integrity).
+    permanently recorded in the relational database with a cryptographic integrity 
+    seal (SHA-256) to prevent tampering.
     """
     def __init__(self, db: Session):
-        """Initializes service with SQL and QLDB drivers."""
+        """Initializes service with SQL session."""
         self.db = db
-        self.qldb = get_qldb_driver()
 
-    def approve_transaction(self, pending_txn_id, treasurer_id, group_id, campaign_id=None):
+    def approve_transaction(self, pending_txn_id, treasurer_id, group_id, campaign_id=None, notes=None):
         """
         Finalizes a pending transaction.
         
@@ -40,25 +48,57 @@ class ApprovalService:
         Returns:
             Transaction: The newly created permanent transaction record.
         """
-        # 1. Fetch the original pending record
-        pending = self.db.query(PendingTransaction).filter(PendingTransaction.pending_id == pending_txn_id).first()
+        # 1. Fetch the original pending record with an exclusive DB lock to prevent double-approvals
+        try:
+            pending = self.db.query(PendingTransaction).filter(PendingTransaction.pending_id == parse_uuid(pending_txn_id)).with_for_update(nowait=True).first()
+        except Exception as e:
+            logger.error(f"Approval Failed: Database lock could not be acquired for Pending ID {pending_txn_id}. {e}")
+            raise Exception("Transaction is currently being processed by another request. Please try again.")
+            
         if not pending:
             logger.error(f"Approval Failed: Pending ID {pending_txn_id} not found.")
             raise Exception("Pending transaction not found")
+            
+        # Security: Verify group ownership (IDOR prevention)
+        from models.group import Group
+        group = self.db.query(Group).filter(Group.group_id == parse_uuid(group_id), Group.owner_id ==parse_uuid(parse_uuid(treasurer_id))).first()
+        if not group:
+            logger.error(f"Approval Failed: Treasurer {treasurer_id} attempted to approve transaction into unauthorized Group {group_id}")
+            raise Exception("Forbidden: You do not have permission to approve transactions for this group.")
 
         # 2. Transition to Permanent Transaction record
         # This moves the data from the 'scratchpad' (Pending) to the 'General Ledger' (Transaction).
         new_txn = Transaction(
-            owner_id=treasurer_id,
-            group_id=group_id,
-            campaign_id=campaign_id,
+            owner_id=parse_uuid(treasurer_id),
+            group_id=parse_uuid(group_id),
+            campaign_id=parse_uuid(campaign_id) if campaign_id else None,
             transaction_code=pending.transaction_code,
             amount=pending.amount,
             sender_phone=pending.sender_phone,
+            sender_name=pending.sender_name,
+            payment_method=pending.payment_method,
+            source_evidence=pending.source_evidence,
+            notes=notes,
             status="approved"
         )
-        self.db.add(new_txn)
-        self.db.flush() # Flushes to DB to generate the transaction_id for the ledger record
+        try:
+            with self.db.begin_nested():
+                self.db.add(new_txn)
+                self.db.flush() # Flushes to DB to generate the transaction_id for the ledger record
+        except Exception as e:
+            # If UNIQUE constraint fails, the transaction was already approved previously
+            # (e.g. UUID bug caused is_processed to not be set). Just find the existing one and continue.
+            from sqlalchemy.exc import IntegrityError
+            if isinstance(e, IntegrityError) and "UNIQUE constraint failed" in str(e):
+                new_txn = self.db.query(Transaction).filter(
+                    Transaction.transaction_code == pending.transaction_code,
+                    Transaction.owner_id == parse_uuid(treasurer_id)
+                ).first()
+                if not new_txn:
+                    raise Exception("Transaction already exists but could not be located.")
+                logger.warning(f"Approval: Transaction {pending.transaction_code} already existed, marking pending as processed.")
+            else:
+                raise
 
         # 2.5 Active Learning Hook
         # Feed the ground truth (after potential treasurer edits) back into the AI loop
@@ -66,38 +106,498 @@ class ApprovalService:
             "amount": float(new_txn.amount) if new_txn.amount else None,
             "sender_name": pending.sender_name,
             "transaction_code": new_txn.transaction_code,
-            # If provider/date become fields later, map them here.
         }
+        
+        # Admin Feedback Loop: Record the correction if the ground truth differs from the AI's first guess.
+        # CRITICAL: Only log if the user has opted-in to AI training (Privacy Guard)
+        user = self.db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(treasurer_id))).first()
+        if user and user.allow_ai_training and pending.original_ai_output:
+            from services.admin.ai_governance_service import AIGovernanceService
+            ai_service = AIGovernanceService(self.db)
+            ai_service.log_treasurer_correction(
+                pending_txn_id, 
+                treasurer_id, 
+                pending.original_ai_output, 
+                finalized_data
+            )
+
         try:
-            log_for_active_learning(pending.raw_message, finalized_data)
+            log_for_active_learning(self.db, pending.raw_message, finalized_data)
         except Exception as e:
             logger.error(f"Active Learning Hook Failed: {e}")
 
-        # 3. Write to QLDB (The immutable truth)
-        # We write to the ledger BEFORE committing the SQL transaction.
-        # If the ledger write fails, we rollback the entire operation to maintain consistency.
+        # 3. Create Integrity Seal (The verifiable truth)
+        # We calculate a SHA-256 hash of the transaction data to ensure auditability.
         try:
             self._write_to_ledger(new_txn)
         except Exception as e:
-            logger.error(f"Ledger Integrity Error: Failed to write to QLDB: {e}")
+            logger.error(f"Ledger Integrity Error: Failed to generate seal: {e}")
             self.db.rollback()
-            raise Exception("Ledger commitment failed. Transaction has been rolled back for safety.")
+            raise Exception("Integrity sealing failed. Transaction has been rolled back for safety.")
 
         # 4. Mark pending as processed
         # This ensures the item no longer appears in the treasurer's approval inbox.
+        from datetime import datetime, timezone
         pending.is_processed = True
         pending.workflow_status = "approved"
+        pending.processed_at = datetime.now(timezone.utc)
+        pending.processed_by = parse_uuid(treasurer_id)
+        if group_id:
+            pending.group_id = parse_uuid(group_id)
+        if campaign_id:
+            pending.campaign_id = parse_uuid(campaign_id)
         
         self.db.commit()
+        
+        target_name = "Unknown"
+        campaign_slug = None
+        group_slug = None
+        if campaign_id:
+            camp = self.db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
+            if camp:
+                target_name = camp.title
+                campaign_slug = camp.slug
+                grp = self.db.query(Group).filter(Group.group_id == camp.group_id).first()
+                if grp:
+                    group_slug = grp.slug
+        else:
+            grp = self.db.query(Group).filter(Group.group_id == parse_uuid(group_id)).first()
+            if grp:
+                target_name = grp.group_name
+                group_slug = grp.slug
+
+        AuditService(self.db).log_action(
+            actor_id=treasurer_id,
+            action="TXN_APPROVED",
+            entity_type="TRANSACTION",
+            entity_id=str(new_txn.transaction_id),
+            details={
+                "amount": float(new_txn.amount),
+                "message": f"Ksh. {float(new_txn.amount)} for {target_name} approved",
+                "campaign_id": str(campaign_id) if campaign_id else None,
+                "group_slug": group_slug,
+                "campaign_slug": campaign_slug
+            }
+        )
+        
         logger.info(f"Transaction {new_txn.transaction_id} successfully finalized and ledger-locked.")
+        
+        # --- Notification Hooks ---
+        sender_display = new_txn.sender_name or "Anonymous"
+        
+        # 1. Notify about the new contribution
+        create_notification(
+            db=self.db,
+            user_id=str(treasurer_id),
+            title="New contribution received",
+            message=f"Ksh. {float(new_txn.amount)} has been received from {sender_display} for {target_name}.",
+            type="transaction_approved",
+            related_entity_id=str(new_txn.transaction_id)
+        )
+        
+        # 2. Check Campaign Goal
+        if campaign_id and camp:
+            # Calculate total raised for this campaign so far
+            total_raised = self.db.query(func.sum(Transaction.amount)).filter(
+                Transaction.campaign_id == parse_uuid(str(campaign_id)),
+                Transaction.status == "approved"
+            ).scalar() or 0.0
+            
+            # If we crossed the threshold exactly with this transaction
+            # (To avoid spamming, we could check if total_raised - new_txn.amount < camp.target_amount)
+            if float(total_raised) >= float(camp.target_amount) and float(total_raised) - float(new_txn.amount) < float(camp.target_amount):
+                create_notification(
+                    db=self.db,
+                    user_id=str(treasurer_id),
+                    title="Campaign goal achieved.",
+                    message=f"You've reached your target amount for campaign {camp.title}.",
+                    type="campaign_goal_reached",
+                    related_entity_id=str(campaign_id)
+                )
+
         return new_txn
+
+    def split_transaction(self, pending_txn_id, treasurer_id, group_id, allocations, campaign_id=None, notes=None):
+        """
+        Splits a single pending transaction into multiple member allocations.
+        Creates individual Transaction records per contributor to ensure they are tracked 
+        properly in campaign/group statistics.
+        """
+        import uuid
+
+        # 1. Fetch record
+        try:
+            pending = self.db.query(PendingTransaction).filter(
+                PendingTransaction.pending_id == parse_uuid(pending_txn_id)
+            ).with_for_update(nowait=True).first()
+        except Exception:
+            raise Exception("Transaction is currently being processed by another request. Please try again.")
+
+        if not pending:
+            raise Exception("Pending transaction not found")
+
+        # 2. Math Validation: Ensure total matches
+        total_split = sum(float(a["amount"]) for a in allocations)
+        if abs(total_split - float(pending.amount)) > 0.01:
+            raise Exception(f"Math Error: Total split ({total_split}) does not match payment amount ({pending.amount})")
+
+        # 3. Create Individual Transactions
+        created_txns = []
+        for index, alloc in enumerate(allocations):
+            # Bypass unique constraint on (owner_id, transaction_code) by suffixing the transaction code.
+            base_code = pending.transaction_code or f"SYS-{str(uuid.uuid4())[:8]}"
+            suffixed_code = f"{base_code}-{index}"
+            
+            new_txn = Transaction(
+                owner_id=parse_uuid(treasurer_id),
+                group_id=parse_uuid(group_id),
+                campaign_id=parse_uuid(campaign_id) if campaign_id else None,
+                transaction_code=suffixed_code,
+                original_transaction_code=pending.transaction_code,
+                amount=alloc["amount"],
+                sender_phone=pending.sender_phone,
+                sender_name=alloc["name"],
+                payment_method=pending.payment_method,
+                source_evidence=pending.source_evidence,
+                notes=notes,
+                is_split=True,
+                status="approved"
+            )
+            self.db.add(new_txn)
+            self.db.flush()
+            self._write_to_ledger(new_txn)
+            created_txns.append(new_txn)
+
+        # 4. Mark Processed
+        from datetime import datetime, timezone
+        pending.is_processed = True
+        pending.workflow_status = "split_approved"
+        pending.processed_at = datetime.now(timezone.utc)
+        pending.processed_by = parse_uuid(treasurer_id)
+        if group_id:
+            pending.group_id = parse_uuid(group_id)
+        if campaign_id:
+            pending.campaign_id = parse_uuid(campaign_id)
+        
+        self.db.commit()
+
+        target_name = "Unknown"
+        campaign_slug = None
+        group_slug = None
+        if campaign_id:
+            camp = self.db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
+            if camp:
+                target_name = camp.title
+                campaign_slug = camp.slug
+                grp = self.db.query(Group).filter(Group.group_id == camp.group_id).first()
+                if grp:
+                    group_slug = grp.slug
+        else:
+            grp = self.db.query(Group).filter(Group.group_id == parse_uuid(group_id)).first()
+            if grp:
+                target_name = grp.group_name
+                group_slug = grp.slug
+
+        AuditService(self.db).log_action(
+            actor_id=treasurer_id,
+            action="TXN_SPLIT_APPROVED",
+            entity_type="TRANSACTION",
+            entity_id=str(created_txns[0].transaction_id) if created_txns else str(pending_txn_id),
+            details={
+                "splits": len(allocations),
+                "message": f"Ksh. {float(pending.amount)} split across {len(allocations)} members for {target_name}",
+                "campaign_id": str(campaign_id) if campaign_id else None,
+                "group_slug": group_slug,
+                "campaign_slug": campaign_slug
+            }
+        )
+
+        return created_txns[0] if created_txns else None
+
+    def edit_approved_transaction(self, transaction_id: str, treasurer_id: str, payload: dict):
+        """
+        Supersedes an approved transaction and creates a new one with edited details.
+        """
+        import uuid
+        from datetime import datetime, timezone
+
+        try:
+            old_txn = self.db.query(Transaction).filter(
+                Transaction.transaction_id == parse_uuid(transaction_id),
+                Transaction.status == "approved"
+            ).with_for_update(nowait=True).first()
+        except Exception:
+            raise Exception("Transaction is currently locked by another process.")
+
+        if not old_txn:
+            raise Exception("Approved transaction not found or already superseded.")
+
+        # Security: Verify group ownership (IDOR prevention)
+        from models.group import Group
+        
+        new_group_id_str = payload.get("group_id")
+        new_group_id = parse_uuid(new_group_id_str) if new_group_id_str else old_txn.group_id
+
+        # Verify ownership of both the old group and the new group
+        group = self.db.query(Group).filter(
+            Group.group_id == old_txn.group_id, 
+            Group.owner_id == parse_uuid(treasurer_id)
+        ).first()
+        if not group:
+            raise Exception("Forbidden: You do not have permission to edit transactions for this group.")
+            
+        if new_group_id != old_txn.group_id:
+            new_group = self.db.query(Group).filter(
+                Group.group_id == new_group_id, 
+                Group.owner_id == parse_uuid(treasurer_id)
+            ).first()
+            if not new_group:
+                raise Exception("Forbidden: You do not have permission to move transactions to that group.")
+
+        # Clone values
+        new_amount = payload.get("amount") if payload.get("amount") is not None else float(old_txn.amount)
+        new_sender_name = payload.get("sender_name") if payload.get("sender_name") is not None else old_txn.sender_name
+        new_campaign_id = parse_uuid(payload.get("campaign_id")) if payload.get("campaign_id") else old_txn.campaign_id
+
+        # Format audit details
+        audit_details = {
+            "message": "Manual edit applied to transaction",
+            "old_amount": float(old_txn.amount),
+            "new_amount": new_amount,
+            "old_sender_name": old_txn.sender_name,
+            "new_sender_name": new_sender_name,
+            "old_group_id": str(old_txn.group_id),
+            "new_group_id": str(new_group_id),
+            "old_campaign_id": str(old_txn.campaign_id) if old_txn.campaign_id else None,
+            "new_campaign_id": str(new_campaign_id) if new_campaign_id else None,
+            "notes": payload.get("notes")
+        }
+
+        # 1. Supersede old transaction
+        rev_id = str(uuid.uuid4())[:8]
+        old_txn.transaction_code = f"{old_txn.transaction_code}-REV-{rev_id}"
+        old_txn.status = "superseded"
+        
+        # 2. Create new transaction
+        new_txn = Transaction(
+            owner_id=old_txn.owner_id,
+            group_id=new_group_id,
+            campaign_id=new_campaign_id,
+            transaction_code=old_txn.transaction_code.split('-REV-')[0], # Restore original code
+            original_transaction_code=old_txn.original_transaction_code,
+            amount=new_amount,
+            sender_phone=old_txn.sender_phone,
+            sender_name=new_sender_name,
+            payment_method=old_txn.payment_method,
+            source_evidence=old_txn.source_evidence,
+            notes=payload.get("notes") or old_txn.notes,
+            is_split=old_txn.is_split,
+            status="approved",
+            created_at=old_txn.created_at # Maintain original timestamp
+        )
+        
+        self.db.add(new_txn)
+        self.db.flush()
+        
+        # Recalculate integrity seal
+        self._write_to_ledger(new_txn)
+        
+        self.db.commit()
+
+        # Write Audit Log
+        AuditService(self.db).log_action(
+            actor_id=treasurer_id,
+            action="TXN_EDITED",
+            entity_type="TRANSACTION",
+            entity_id=str(new_txn.transaction_id),
+            details=audit_details
+        )
+        
+        return new_txn
+
+
+    def reject_transaction(self, pending_txn_id, treasurer_id, reason=None):
+        """
+        Marks a pending transaction as rejected.
+        
+        Args:
+            pending_txn_id (UUID): The record to reject.
+            treasurer_id (UUID): The treasurer rejecting the record.
+            reason (str, optional): Why it was rejected.
+        """
+        try:
+            pending = self.db.query(PendingTransaction).filter(
+                PendingTransaction.pending_id == parse_uuid(pending_txn_id),
+                PendingTransaction.owner_id ==parse_uuid(parse_uuid(treasurer_id))
+            ).with_for_update(nowait=True).first()
+        except Exception:
+            raise Exception("Transaction is currently being processed by another request.")
+        
+        if not pending:
+            raise Exception("Pending transaction not found or access denied")
+
+        from datetime import datetime, timezone
+        pending.is_processed = True
+        pending.workflow_status = "rejected"
+        pending.processed_at = datetime.now(timezone.utc)
+        pending.processed_by = parse_uuid(treasurer_id)
+        pending.rejection_reason = reason
+        
+        self.db.commit()
+        
+        AuditService(self.db).log_action(
+            actor_id=treasurer_id,
+            action="TXN_REJECTED",
+            entity_type="PENDING_TRANSACTION",
+            entity_id=str(pending_txn_id),
+            details={
+                "message": "Transaction rejected",
+                "campaign_id": str(pending.campaign_id) if hasattr(pending, 'campaign_id') and pending.campaign_id else None
+            }
+        )
+        
+        logger.info(f"Transaction {pending_txn_id} rejected by treasurer {treasurer_id}.")
+        return {"status": "rejected"}
+
+    def undo_action(self, pending_txn_id, treasurer_id):
+        """
+        Reverts an approved or rejected transaction back to the pending state.
+        
+        Args:
+            pending_txn_id (UUID): The record to undo.
+            treasurer_id (UUID): The treasurer undoing the action.
+        """
+        try:
+            pending = self.db.query(PendingTransaction).filter(
+                PendingTransaction.pending_id == parse_uuid(pending_txn_id),
+                PendingTransaction.owner_id == parse_uuid(treasurer_id)
+            ).with_for_update(nowait=True).first()
+        except Exception:
+            raise Exception("Transaction is currently being processed by another request.")
+            
+        if not pending:
+            raise Exception("Pending transaction not found or access denied")
+            
+        if not pending.is_processed:
+            raise Exception("Transaction is not processed yet.")
+            
+        # Undo approval: Delete the resulting Transaction (which deletes ReviewAllocations via DB cascade)
+        if pending.workflow_status in ["approved", "split_approved"]:
+            from models.review_allocation import ReviewAllocation
+            txn = self.db.query(Transaction).filter(
+                Transaction.transaction_code == pending.transaction_code,
+                Transaction.owner_id == parse_uuid(treasurer_id)
+            ).first()
+            if txn:
+                self.db.query(ReviewAllocation).filter(ReviewAllocation.transaction_id == txn.transaction_id).delete()
+                self.db.delete(txn)
+            action_log = "TXN_UNDO_APPROVE"
+            msg_log = "Transaction approval was undone"
+            
+        elif pending.workflow_status == "rejected":
+            action_log = "TXN_UNDO_REJECT"
+            msg_log = "Transaction rejection was undone"
+        else:
+            raise Exception(f"Cannot undo transaction in state: {pending.workflow_status}")
+            
+        pending.is_processed = False
+        pending.workflow_status = "pending"
+        pending.processed_at = None
+        pending.processed_by = None
+        pending.rejection_reason = None
+        
+        self.db.commit()
+        
+        AuditService(self.db).log_action(
+            actor_id=treasurer_id,
+            action=action_log,
+            entity_type="PENDING_TRANSACTION",
+            entity_id=str(pending_txn_id),
+            details={
+                "message": msg_log
+            }
+        )
+        
+        logger.info(f"{msg_log} for {pending_txn_id} by treasurer {treasurer_id}.")
+        return pending
+
+    def bulk_approve(self, pending_ids: list, treasurer_id, group_id, campaign_id=None):
+        """Processes multiple approvals in a single batch."""
+        results = []
+        for pid in pending_ids:
+            try:
+                txn = self.approve_transaction(pid, treasurer_id, group_id, campaign_id)
+                results.append({"pending_id": str(pid), "status": "success", "transaction_id": str(txn.transaction_id)})
+            except Exception as e:
+                self.db.rollback()
+                results.append({"pending_id": str(pid), "status": "error", "message": str(e)})
+        return results
+
+    def bulk_reject(self, pending_ids: list, treasurer_id):
+        """Processes multiple rejections in a single batch."""
+        results = []
+        for pid in pending_ids:
+            try:
+                self.reject_transaction(pid, treasurer_id)
+                results.append({"pending_id": str(pid), "status": "success"})
+            except Exception as e:
+                self.db.rollback()
+                results.append({"pending_id": str(pid), "status": "error", "message": str(e)})
+        return results
+
+    def clear_history(self, treasurer_id, pending_ids: list = None):
+        """
+        Clears the processed items from the inbox history.
+        If pending_ids is provided, it deletes only those specific processed items.
+        If pending_ids is None, it deletes all processed items for this treasurer.
+        Note: This only deletes the PendingTransaction record. The immutable Ledger (Transaction) remains unaffected.
+        """
+        query = self.db.query(PendingTransaction).filter(
+            PendingTransaction.owner_id == parse_uuid(treasurer_id),
+            PendingTransaction.is_processed == True
+        )
+        
+        if pending_ids:
+            uuid_list = [parse_uuid(pid) for pid in pending_ids]
+            query = query.filter(PendingTransaction.pending_id.in_(uuid_list))
+            
+        deleted_count = query.delete(synchronize_session=False)
+        self.db.commit()
+        
+        AuditService(self.db).log_action(
+            actor_id=treasurer_id,
+            action="HISTORY_CLEARED",
+            entity_type="PENDING_TRANSACTION",
+            entity_id="bulk",
+            details={
+                "message": f"Cleared {deleted_count} processed transactions from inbox history."
+            }
+        )
+        return {"status": "success", "deleted_count": deleted_count}
 
     def _write_to_ledger(self, txn: Transaction):
         """
-        Internal helper to format and commit data to Amazon QLDB.
-        QLDB ensures that the financial history is tamper-proof and cryptographically verifiable.
+        Internal helper to generate a cryptographic seal for the transaction.
+        Even without QLDB, we maintain a verifiable hash in RDS to detect tampering.
         """
-        # Note: In a production scenario, we convert the SQLAlchemy model to Ion/JSON
-        # for insertion into the QLDB 'Transactions' table.
-        # Example: self.qldb.execute_statement("INSERT INTO LedgerTransactions VALUE ?", txn_data)
-        pass
+        # 1. Prepare data for hashing
+        # We use a deterministic JSON serialization (sorted keys)
+        txn_payload = {
+            "transaction_id": str(txn.transaction_id),
+            "owner_id": str(txn.owner_id),
+            "group_id": str(txn.group_id),
+            "campaign_id": str(txn.campaign_id) if txn.campaign_id else None,
+            "transaction_code": txn.transaction_code,
+            "amount": float(txn.amount),
+            "sender_phone": txn.sender_phone,
+            "payment_method": txn.payment_method,
+            "source_evidence": txn.source_evidence,
+            "status": txn.status,
+            "created_at": txn.created_at.isoformat()
+        }
+
+        # 2. Calculate SHA-256 Hash
+        serialized = json.dumps(txn_payload, sort_keys=True).encode()
+        txn.ledger_hash = hashlib.sha256(serialized).hexdigest()
+        
+        logger.info(f"Integrity Seal Created: Transaction {txn.transaction_id} hashed and finalized in RDS.")

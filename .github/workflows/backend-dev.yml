@@ -4,87 +4,117 @@ on:
   push:
     branches:
       - dev
+  pull_request:
+    branches:
+      - dev
   workflow_dispatch:
 
 permissions:
-  id-token: write # Required for OIDC
+  id-token: write
   contents: read
 
 env:
-  AWS_REGION: us-east-1 # Adjust as needed
+  AWS_REGION: eu-west-1
   STAGE: dev
-  PYTHON_VERSION: "3.11"
+  ECR_REPOSITORY: kapuletu-dev-backend
+  IMAGE_TAG: latest
+
 
 jobs:
   deploy:
-    name: Test, Lint and Deploy to Dev
+    name: Build and Push to ECR
     runs-on: ubuntu-latest
     environment: dev
 
     steps:
-      - name: 🛒 Checkout Code
-        # Fetches the latest source code from the repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: 🐍 Setup Python
-        # Configures the Python environment with caching for faster runs
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-
-      - name: 📦 Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install ruff pytest # Ensure CI tools are installed
-
-      - name: 🔍 Linting (Ruff)
-        run: ruff check .
-
-      - name: 🧪 Run Tests (Pytest)
-        run: pytest
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          QLDB_LEDGER_NAME: ${{ secrets.QLDB_LEDGER_NAME }}
-          TWILIO_SECRET: ${{ secrets.TWILIO_SECRET }}
-
-      - name: 🚀 Setup Node.js (for Serverless)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: ⚡ Install Serverless Framework
-        # Required for packaging and deploying AWS Lambda functions
-        run: npm install -g serverless
-
-      - name: 🔐 Configure AWS Credentials (OIDC)
-        # Authenticates securely with AWS using OpenID Connect (no keys needed)
+      # -----------------------------
+      # AWS OIDC AUTH
+      # -----------------------------
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/kapuletu-ci-cd-role-dev
+          role-to-assume: ${{ vars.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: 📦 Validate Package
-        run: serverless package --stage ${{ env.STAGE }}
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          QLDB_LEDGER_NAME: ${{ secrets.QLDB_LEDGER_NAME }}
-          TWILIO_SECRET: ${{ secrets.TWILIO_SECRET }}
+      # -----------------------------
+      # ECR LOGIN
+      # -----------------------------
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: 🚢 Deploy to AWS Lambda
-        run: serverless deploy --stage ${{ env.STAGE }} --verbose
+      # -----------------------------
+      # BUILD AND PUSH
+      # -----------------------------
+      - name: Build, tag, and push image to Amazon ECR
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          QLDB_LEDGER_NAME: ${{ secrets.QLDB_LEDGER_NAME }}
-          TWILIO_SECRET: ${{ secrets.TWILIO_SECRET }}
-
-      - name: ✨ Deployment Summary
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          echo "### ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
-          echo "- **Stage:** ${{ env.STAGE }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          docker build -f Dockerfile.aws -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} .
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          
+          echo "### Container Image Deployed ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Registry: $ECR_REGISTRY" >> $GITHUB_STEP_SUMMARY
+          echo "- Repository: ${{ env.ECR_REPOSITORY }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Tag: ${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
+
+      # -----------------------------
+      # UPDATE LAMBDA
+      # -----------------------------
+      - name: Update Lambda to use new image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          aws lambda update-function-code \
+            --function-name kapuletu-${{ env.STAGE }}-backend \
+            --image-uri $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+      # -----------------------------
+      # RUN DATABASE MIGRATIONS
+      # -----------------------------
+      - name: Run Alembic Migrations
+        run: |
+          # Wait for the Lambda function update to fully complete
+          echo "Waiting for Lambda to finish updating..."
+          aws lambda wait function-updated --function-name kapuletu-${{ env.STAGE }}-backend
+          
+          # Invoke the Lambda function to trigger the migration script
+          aws lambda invoke \
+            --function-name kapuletu-${{ env.STAGE }}-backend \
+            --payload '{"task": "migrate_database"}' \
+            --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 300 \
+            migration_response.json
+            
+          echo "Migration Response:"
+          cat migration_response.json
+          
+          # Check if the Lambda returned an error (statusCode 500 or FunctionError)
+          if grep -q '"statusCode": 500' migration_response.json || grep -q '"FunctionError"' migration_response.json; then
+            echo "Database migration failed on Lambda!"
+            exit 1
+          fi
+
+      # -----------------------------
+      # SEED DATABASE PLANS
+      # -----------------------------
+      - name: Seed Database Plans
+        run: |
+          echo "Triggering seed plans task on Lambda..."
+          aws lambda invoke \
+            --function-name kapuletu-${{ env.STAGE }}-backend \
+            --payload '{"task": "seed_plans"}' \
+            --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 300 \
+            seed_response.json
+            
+          echo "Seed Response:"
+          cat seed_response.json
+          
+          if grep -q '"statusCode": 500' seed_response.json || grep -q '"FunctionError"' seed_response.json; then
+            echo "Database seeding failed on Lambda!"
+            exit 1
+          fi

@@ -1,0 +1,173 @@
+from typing import List, Dict, Any
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+
+from common.database import get_db
+from common.auth_dependencies import get_verified_user
+from common.utils import parse_uuid
+from services.groups.schemas import GroupCreate, GroupUpdate, GroupOut, PaginatedGroupResponse
+from services.auth.router import limiter
+from repositories import group_repo
+from services.audit.service import AuditService
+from models.subscription import Subscription, Plan
+from sqlalchemy import select
+from models.group import Group
+
+router = APIRouter(prefix="/groups", tags=["4. Groups Management"])
+
+from services.finance.guards import CheckLimit
+
+@router.post("", response_model=GroupOut, status_code=status.HTTP_201_CREATED, summary="Create Group", dependencies=[Depends(CheckLimit("max_groups"))])
+@limiter.limit("50/minute")
+async def create_group(
+    request: Request,
+    payload: GroupCreate, 
+    db: Session = Depends(get_db), 
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Creates a new community organization or fund owned by the current treasurer."""
+    user_uuid = parse_uuid(current_user.get('sub'))
+    
+    try:
+        new_group = group_repo.create_group(
+            db=db, 
+            owner_id=user_uuid, 
+            name=payload.name, 
+            description=payload.description,
+            currency=payload.currency.value
+        )
+        
+        AuditService(db).log_action(
+            actor_id=current_user.get('sub'),
+            action="GROUP_CREATED",
+            entity_type="group",
+            entity_id=str(new_group.group_id),
+            details={"message": f"New group \"{new_group.group_name}\" created"}
+        )
+        
+        return new_group
+    except IntegrityError as e:
+        db.rollback()
+        if "uq_group_owner_slug" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A group with this name already exists."
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Could not create group. Please ensure your user profile is fully synchronized."
+        )
+
+@router.get("", response_model=PaginatedGroupResponse, summary="Get All My Groups")
+@limiter.limit("50/minute")
+async def list_groups(
+    request: Request,
+    skip: int = Query(0, ge=0, description="Pagination skip"),
+    limit: int = Query(10, ge=1, le=100, description="Pagination limit"),
+    search: str = Query(None, description="Search group by name"),
+    group_status: str = Query(None, description="active, archived, or all"),
+    db: Session = Depends(get_db), 
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Lists all groups owned by the current treasurer with pagination, search, and stats."""
+    groups = group_repo.get_owner_groups(db=db, owner_id=parse_uuid(current_user.get('sub')), skip=skip, limit=limit, search=search, status=group_status)
+    return groups
+
+@router.get("/{group_id}", response_model=GroupOut, summary="Get Single Group")
+async def get_group(
+    group_id: str, 
+    db: Session = Depends(get_db), 
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Retrieves specific details of a group."""
+    group = group_repo.get_group(db=db, identifier=str(group_id))
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    
+    # Security Check: Ensure the user actually owns this group
+    if str(group.owner_id) != str(current_user.get('sub')):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this group.")
+        
+    return group
+
+@router.patch("/{group_id}", response_model=GroupOut, summary="Update Group")
+async def update_group(
+    group_id: str, 
+    payload: GroupUpdate, 
+    db: Session = Depends(get_db), 
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Updates group properties (Name, Description). Currency is immutable."""
+    group = group_repo.get_group(db=db, identifier=str(group_id))
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    
+    if str(group.owner_id) != str(current_user.get('sub')):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to modify this group.")
+        
+    if not group.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot modify an archived group.")
+        
+    updates = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    if not updates:
+        return group
+        
+    updated_group = group_repo.update_group(db=db, group_id=str(group.group_id), updates=updates)
+    
+    AuditService(db).log_action(
+        actor_id=current_user.get('sub'),
+        action="GROUP_UPDATED",
+        entity_type="group",
+        entity_id=str(group_id),
+        details={"message": f"Group \"{updated_group.group_name}\" settings updated"}
+    )
+    
+    return updated_group
+
+@router.patch("/{group_id}/favorite", response_model=GroupOut, summary="Toggle Favorite Group")
+async def toggle_favorite_group(
+    group_id: str, 
+    db: Session = Depends(get_db), 
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Toggles the is_favorite status of a group for the current treasurer."""
+    group = group_repo.get_group(db=db, identifier=str(group_id))
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    
+    if str(group.owner_id) != str(current_user.get('sub')):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to modify this group.")
+        
+    updated_group = group_repo.update_group(db=db, group_id=str(group.group_id), updates={"is_favorite": not group.is_favorite})
+    return updated_group
+
+@router.delete("/{group_id}", response_model=GroupOut, summary="Archive Group")
+async def archive_group(
+    group_id: str, 
+    db: Session = Depends(get_db), 
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Safely archives (soft deletes) a group, preserving historical ledger data."""
+    group = group_repo.get_group(db=db, identifier=str(group_id))
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+        
+    if str(group.owner_id) != str(current_user.get('sub')):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to archive this group.")
+        
+    if not group.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group is already archived.")
+        
+    archived_group = group_repo.archive_group(db=db, group_id=str(group.group_id))
+    
+    AuditService(db).log_action(
+        actor_id=current_user.get('sub'),
+        action="GROUP_ARCHIVED",
+        entity_type="group",
+        entity_id=str(group_id),
+        details={"message": f"Group \"{archived_group.group_name}\" archived"}
+    )
+    
+    return archived_group

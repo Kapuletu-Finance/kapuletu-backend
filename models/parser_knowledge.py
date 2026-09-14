@@ -1,10 +1,9 @@
-from sqlalchemy import Column, String, DateTime, JSON
 import datetime
+
+from sqlalchemy import JSON, Column, DateTime, String
+
 from .base import Base
 
-from sqlalchemy import Column, String, JSON, DateTime
-from .users import Base
-import datetime
 
 class ParserKnowledge(Base):
     """

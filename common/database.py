@@ -1,6 +1,6 @@
-import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import sessionmaker
+
 from common.config import get_config
 
 # Database Configuration & Session Management
@@ -11,15 +11,23 @@ config = get_config()
 # SQLAlchemy Engine Initialization
 # We use pooled connections to optimize performance, but with a small pool size
 # to accommodate the high-concurrency, short-lived nature of AWS Lambda.
+is_sqlite = config.DATABASE_URL.startswith("sqlite")
+
+engine_kwargs = {}
+if is_sqlite:
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+else:
+    engine_kwargs["pool_size"] = 5
+    engine_kwargs["max_overflow"] = 10
+    if config.DB_SSL_REQUIRED:
+        engine_kwargs["connect_args"] = {"sslmode": "require"}
+
 engine = create_engine(
     config.DATABASE_URL,
-    # pool_size: The number of connections to keep open in the pool.
-    pool_size=5,
-    # max_overflow: The number of additional connections that can be created if the pool is full.
-    max_overflow=10,
-    # SSL is required for production RDS instances but disabled for local development.
-    connect_args={"sslmode": "require"} if all(h not in config.DATABASE_URL for h in ["localhost", "127.0.0.1"]) else {}
+    **engine_kwargs
 )
+
+
 
 # SessionLocal is the factory for individual database sessions.
 # - autocommit=False: Transactions must be explicitly committed (Best Practice).

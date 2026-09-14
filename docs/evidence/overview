@@ -1,0 +1,30 @@
+# KapuLetu Evidence Management: Technical Overview
+
+## Executive Summary
+The KapuLetu Evidence module has been entirely refactored to eliminate the need for manual file uploads (screenshots, PDFs). The system now utilizes a "Frictionless Text Automation" pipeline where the absolute source of truth (the raw M-Pesa SMS or a system-generated tag) mathematically acts as the permanent evidence. This completely removes AWS S3 overhead, drastically improves user experience by requiring zero typing from the treasurer, and strictly protects contributor privacy.
+
+## Core Features & Capabilities
+
+### 1. The "Frictionless" Automation Pipeline
+Treasurers no longer interact with "Evidence" fields during ingestion. The system completely automates it:
+- **WhatsApp Ingestion (AI):** When a forward message is received, the system automatically flags `payment_method = "M-Pesa"` and seamlessly injects the raw, unedited WhatsApp message string as the `source_evidence`.
+- **Manual Dashboard Entries:** When a treasurer logs a transaction manually, the system automatically defaults to `payment_method = "Cash"` and injects a default tag: *"Manually entered by treasurer"*. 
+
+### 2. Internal Audit & Privacy Shield
+The evidence is captured entirely for **Internal Audit** purposes.
+- When the treasurer approves the transaction, the `ApprovalService` copies the `payment_method` and `source_evidence` into the Immutable Ledger (`Transaction` table).
+- These fields are structurally included in the cryptographic hash seal (SHA-256), meaning the evidence cannot be silently modified later.
+- **Privacy Guard:** The `source_evidence` (which often contains phone numbers and raw M-Pesa IDs) is strictly excluded from the Public Web Report and WhatsApp summaries. Only the Treasurer/Admin can view this evidence on their secure dashboard via the `/ledger` endpoints.
+
+## Architectural Changes
+
+### Deprecated Infrastructure
+- **`services/evidence/`:** This directory and all its `POST /evidence` file-upload endpoints have been permanently deleted from the source code.
+- **`evidence_url` column:** Dropped from both `Transaction` and `PendingTransaction` databases.
+
+### New Relational Structure (`models/transaction.py`)
+- `payment_method` (String): e.g., "M-Pesa", "Cash".
+- `source_evidence` (Text): The raw SMS or manual entry note.
+
+### Cryptographic Sealing (`services/approval/service.py`)
+The `_write_to_ledger` algorithm has been mathematically updated to encompass the new `payment_method` and `source_evidence` fields. If anyone manually tampers with the database to change an M-Pesa transaction into a "Cash" transaction, the `LedgerService` integrity check will instantly fail and flag the transaction as compromised.
