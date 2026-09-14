@@ -279,6 +279,23 @@ async def update_profile(payload: UpdateProfileIn, current_user: Dict[str, Any] 
         auth_service.update_profile(db=db, user_id=current_user['sub'], updates=updates)
     
     return MessageOut(message="Profile updated successfully.")
+    
+class HeartbeatIn(BaseModel):
+    current_action: str = Field(..., description="The user's current action or route")
+
+@router.put("/me/heartbeat", response_model=MessageOut, summary="Heartbeat Endpoint")
+async def heartbeat(payload: HeartbeatIn, current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Updates the user's last_active_at timestamp and current_action."""
+    from models.users import User
+    import datetime
+    
+    user = db.query(User).filter(User.user_id == parse_uuid(current_user.get('sub'))).first()
+    if user:
+        user.last_active_at = datetime.datetime.utcnow()
+        user.current_action = payload.current_action
+        db.commit()
+        
+    return MessageOut(message="Heartbeat received.")
 
 @router.post("/verify-email/request", response_model=MessageOut, summary="Request Email Verification Code")
 async def request_email_verification(current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
