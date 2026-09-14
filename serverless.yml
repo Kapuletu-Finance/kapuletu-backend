@@ -3,32 +3,86 @@ service: kapuletu-backend
 provider:
   name: aws
   runtime: python3.11
-  region: us-east-1
+  region: eu-west-1
+  vpc:
+    securityGroupIds:
+      - ${env:LAMBDA_SG_ID}
+    subnetIds:
+      # These must be passed in via CI/CD from Terraform outputs
+      - ${env:PRIVATE_SUBNET_1}
+      - ${env:PRIVATE_SUBNET_2}
+  iam:
+    role:
+      statements:
+        - Effect: "Allow"
+          Action:
+            - "kms:Decrypt"
+            - "cognito-idp:DescribeUserPool"
+          Resource: "*"
   environment:
+    RESEND_API_KEY: ${env:RESEND_API_KEY}
     STAGE: ${opt:stage, 'dev'}
     DATABASE_URL: ${env:DATABASE_URL}
     SECRET_KEY: ${env:SECRET_KEY}
-    QLDB_LEDGER_NAME: ${env:QLDB_LEDGER_NAME}
-    TWILIO_SECRET: ${env:TWILIO_SECRET}
+    META_VERIFY_TOKEN: ${env:META_VERIFY_TOKEN}
     # Brought in from kapuletu-infra (Terraform outputs)
     COGNITO_USER_POOL_ARN: ${env:COGNITO_USER_POOL_ARN}
     COGNITO_CLIENT_ID: ${env:COGNITO_CLIENT_ID}
     # Welcome Message Configs
     DASHBOARD_URL: ${env:DASHBOARD_URL, 'https://app.kapuletu.com'}
-    TWILIO_ACCOUNT_SID: ${env:TWILIO_ACCOUNT_SID}
-    TWILIO_AUTH_TOKEN: ${env:TWILIO_AUTH_TOKEN}
+    META_ACCESS_TOKEN: ${env:META_ACCESS_TOKEN}
+    META_PHONE_NUMBER_ID: ${env:META_PHONE_NUMBER_ID}
     SENDER_EMAIL: ${env:SENDER_EMAIL, 'welcome@kapuletu.com'}
     SUPPORT_EMAIL: ${env:SUPPORT_EMAIL, 'support@kapuletu.com'}
     SUPPORT_PHONE: ${env:SUPPORT_PHONE, '+254700000000'}
+    # Finance Gateway Configs
+    MPESA_CONSUMER_KEY: ${env:MPESA_CONSUMER_KEY}
+    MPESA_CONSUMER_SECRET: ${env:MPESA_CONSUMER_SECRET}
+    MPESA_SHORTCODE: ${env:MPESA_SHORTCODE}
+    MPESA_PASSKEY: ${env:MPESA_PASSKEY}
+    MPESA_CALLBACK_URL: ${env:MPESA_CALLBACK_URL}
+    FLW_SECRET_KEY: ${env:FLW_SECRET_KEY}
+    FLW_PUBLIC_KEY: ${env:FLW_PUBLIC_KEY}
+    FLW_SECRET_HASH: ${env:FLW_SECRET_HASH}
+    FLW_CURRENCY: ${env:FLW_CURRENCY, 'KES'}
+    FLW_REDIRECT_URL: ${env:FLW_REDIRECT_URL, 'https://app.kapuletu.com/payment/success'}
 
 functions:
+  finance_api:
+    handler: services/finance/handler.handler
+    events:
+      - http:
+          path: finance/checkout
+          method: post
+          cors: true
+          authorizer:
+            name: KapuLetuAuthorizer
+            type: COGNITO_USER_POOLS
+            arn: ${env:COGNITO_USER_POOL_ARN}
+      - http:
+          path: finance/available-plans
+          method: get
+          cors: true
+      - http:
+          path: finance/status/{id}
+          method: get
+          cors: true
+      - http:
+          path: finance/webhooks/{provider}
+          method: post
+          cors: true
+          # Publicly accessible, but verified internally via signature
+  
   ingestion:
     handler: services/ingestion/handler.handler
     events:
       - http:
-          path: ingestion
+          path: ingestion/webhook
           method: post
-          # No Cognito Authorizer here: Twilio uses its own webhook secret to authenticate
+          # No Cognito Authorizer here: Meta uses its own verify token
+      - http:
+          path: ingestion/webhook
+          method: get
   
   approval:
     handler: services/approval/handler.handler
@@ -132,6 +186,18 @@ functions:
       - http:
           path: auth/me
           method: patch
+          cors: true
+          authorizer:
+            name: KapuLetuAuthorizer
+            type: COGNITO_USER_POOLS
+            arn: ${env:COGNITO_USER_POOL_ARN}
+
+  admin_api:
+    handler: services/admin/handler.handler
+    events:
+      - http:
+          path: admin/v1/{proxy+}
+          method: any
           cors: true
           authorizer:
             name: KapuLetuAuthorizer

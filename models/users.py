@@ -1,8 +1,12 @@
-from sqlalchemy import Column, String, UUID, Boolean, ForeignKey, Numeric, DateTime
-from sqlalchemy.orm import relationship
 import datetime
 import uuid
+
+from sqlalchemy import UUID, Boolean, Column, DateTime, String, JSON
+from sqlalchemy.orm import relationship
+
 from .base import Base
+from common.enums import UserRole
+
 
 class User(Base):
     """
@@ -22,22 +26,40 @@ class User(Base):
     last_name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False)
     
+    # URL-friendly slug for routing (e.g. dorothy-kahenya)
+    slug = Column(String, unique=True, index=True, nullable=True)
+    
     # Primary identifier for incoming webhook messages (Twilio/WhatsApp)
     # Must be a verified WhatsApp number via Cognito Custom Sender
     phone_number = Column(String, unique=True, nullable=False)
     
-    # Security: Passwords are managed entirely by Amazon Cognito.
-    # We do NOT store password hashes in our local database anymore.
+    # Security
+    hashed_password = Column(String, nullable=True)
+    email_verified = Column(Boolean, default=False)
+    phone_number_verified = Column(Boolean, default=False)
+    
+    # Two-Factor Authentication
+    two_factor_enabled = Column(Boolean, default=False)
+    two_factor_channel = Column(String, nullable=True) # 'email' or 'whatsapp'
     
     # Permissions Role: Controls access to specific dashboard features
     # - treasurer: Manages specific groups
     # - admin: Platform-level management
     # - super_admin: Infrastructure control
-    role = Column(String, default="treasurer") 
+    role = Column(String, default=UserRole.TREASURER.value)
     
     # Account Status
     is_active = Column(Boolean, default=True)
+    has_used_trial = Column(Boolean, default=False)
+    # allow_ai_training: If True, the user's corrections are used to retrain the parsing model.
+    allow_ai_training = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    last_active_at = Column(DateTime, nullable=True)
+    
+    preferences = Column(JSON, default=dict)
+    
+    # Marketing & Promos
+    marketing_consent = Column(Boolean, default=False)
 
     # Relationships
     # A user can have multiple active feature subscriptions

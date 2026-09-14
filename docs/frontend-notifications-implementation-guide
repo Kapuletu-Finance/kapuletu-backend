@@ -1,0 +1,94 @@
+# Frontend Integration Guide: Notifications Module
+
+ **11. Notifications** and are protected by `get_verified_user` (except broadcast, which requires `get_admin_user`).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| **GET** | `/api/notifications` | Fetches a paginated list of notifications for the logged-in user, along with the `unread_count`. |
+| **GET** | `/api/notifications/unread-count` | Lightweight query specifically for fetching just the badge integer. |
+| **PATCH** | `/api/notifications/{id}/read` | Marks a specific notification as read. |
+| **POST** | `/api/notifications/mark-all-read` | Marks all of the user's notifications as read. |
+| **DELETE**| `/api/notifications/{id}` | Deletes a specific notification from the database. |
+| **DELETE**| `/api/notifications/clear-all` | Empties the user's entire notification inbox. |
+| **POST** | `/api/notifications/broadcast` | **Admin Only**. Broadcasts a message to target users via multiple channels (In-App, Email, WhatsApp). |
+
+---
+
+## 2. API Response Schemas
+
+### `GET /api/notifications`
+Returns the `NotificationListOut` object.
+
+```json
+{
+  "notifications": [
+    {
+      "notification_id": "uuid-string",
+      "title": "Transaction Approved",
+      "message": "Your transaction of KES 500 has been approved.",
+      "type": "transaction_approved",
+      "is_read": false,
+      "related_entity_id": "uuid-string-or-null",
+      "created_at": "2026-07-27T09:43:00Z"
+    }
+  ],
+  "unread_count": 1
+}
+```
+
+### `POST /api/notifications/broadcast`
+This is what your Admin panel form will send to the backend.
+
+```json
+{
+  "title": "System Maintenance",
+  "message": "The system will be down for 2 hours.",
+  "channels": ["in_app", "email", "whatsapp"],
+  "target_type": "all_members", // or "specific_member", "custom_selection"
+  "target_ids": null // List of UUIDs if specific_member or custom_selection
+}
+```
+
+---
+
+## 3. Recommended Frontend Implementation Steps
+
+### Step 1: Set up TanStack Queries
+In your `services/queries.ts` (or a dedicated `notification-queries.ts`), create a query to fetch the notifications. 
+> [!TIP] Polling
+> Use React Query's `refetchInterval` to poll the backend. **30000ms (30 seconds)** is highly recommended. It keeps the data fresh without overwhelming the backend with WebSocket connections.
+
+```typescript
+export const useNotificationsQuery = () => {
+  return useQuery({
+    queryKey: ["notifications"],
+    queryFn: async () => {
+      const response = await apiClient.get("/notifications");
+      return response.data;
+    },
+    refetchInterval: 30000, // Poll every 30s - or the most seelmess approach could help
+  });
+};
+```
+
+### Step 2: Implement Mutations
+Create mutations for marking notifications as read and clearing them:
+```typescript
+export const useMarkNotificationReadMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => apiClient.patch(`/notifications/${id}/read`),
+    onSuccess: () => {
+      // Invalidate the query to refresh the list and badge count
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    }
+  });
+};
+```
+
+### Step 3: Update `NotificationsDropdown.tsx`
+1. Remove `mockNotifications`.
+2. Hook in `const { data } = useNotificationsQuery()`.
+3. Use `data.unread_count` for your red badge indicator.
+4. When a user clicks a notification item in the dropdown, fire the `markAsRead` mutation for that `notification_id`.
+5. Add a "Clear All" or "Mark All as Read" button at the top/bottom of the dropdown that triggers the bulk mutations.

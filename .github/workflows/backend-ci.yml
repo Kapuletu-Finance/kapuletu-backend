@@ -1,48 +1,84 @@
-name: Backend Code Quality (CI)
+name: Build and Push Backend Image
 
 on:
-  pull_request:
-    branches:
-      - dev
   push:
     branches:
-      - 'feature/*'
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-env:
-  PYTHON_VERSION: "3.11"
+      - dev
+  pull_request:
+    types: [closed]
+    branches:
+      - test
+      - staging
+      - prod
 
 jobs:
-  quality:
-    name: Lint and Test
+  build-and-push:
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
-
     steps:
-      - name: 🛒 Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
+          registry: ${{ secrets.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: 📦 Install Dependencies
+      - name: Determine image name
+        id: image
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install ruff pytest
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          else
+            BRANCH_NAME="${{ github.base_ref }}"
+          fi
+          
+          IMAGE_NAME=""
+          
+          if [[ "$BRANCH_NAME" == "dev" ]]; then
+            IMAGE_NAME="${{ secrets.DOCKER_REGISTRY }}/kapuletu-backend-dev"
+          elif [[ "$BRANCH_NAME" == "test" ]]; then
+            IMAGE_NAME="${{ secrets.DOCKER_REGISTRY }}/kapuletu-backend-test"
+          elif [[ "$BRANCH_NAME" == "staging" ]]; then
+            IMAGE_NAME="${{ secrets.DOCKER_REGISTRY }}/kapuletu-backend-staging"
+          elif [[ "$BRANCH_NAME" == "prod" ]]; then
+            IMAGE_NAME="${{ secrets.DOCKER_REGISTRY }}/kapuletu-backend"
+          else
+            echo "Unsupported branch: $BRANCH_NAME"
+            exit 1
+          fi
+          
+          echo "name=$IMAGE_NAME" >> $GITHUB_OUTPUT
+          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
-      - name: 🔍 Linting (Ruff)
-        run: ruff check .
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ steps.image.outputs.sha }}
 
-      - name: 🧪 Run Tests (Pytest)
-        run: pytest
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          QLDB_LEDGER_NAME: ${{ secrets.QLDB_LEDGER_NAME }}
-          TWILIO_SECRET: ${{ secrets.TWILIO_SECRET }}
+  run-deploy-dev:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan ${{ secrets.VPS_IP }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to VPS
+        run: ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_IP }} "cd KapuLetu && ./update-pods.sh"

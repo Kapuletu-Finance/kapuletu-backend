@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="text-align: center; margin-bottom: 20px;">
+    {% if days_left == 0 %}
+        <h2 style="color: #ef4444; margin-top: 0;">Subscription Expired</h2>
+    {% elif days_left == 1 %}
+        <h2 style="color: #f59e0b; margin-top: 0;">Subscription Expiring in 24 Hours</h2>
+    {% else %}
+        <h2 style="color: #3b82f6; margin-top: 0;">Subscription Expiring Soon</h2>
+    {% endif %}
+</div>
+<p>Hi {{ name }},</p>
+
+{% if days_left == 0 %}
+    <p>Your <strong>{{ plan_name }}</strong> subscription has expired. Your account has been safely downgraded to the Basic tier.</p>
+    <p>To regain access to your premium features, please upgrade your subscription from your dashboard.</p>
+{% elif days_left == 1 %}
+    <p>This is an urgent reminder that your <strong>{{ plan_name }}</strong> subscription will expire in exactly 24 hours.</p>
+    <p>Please renew your subscription to avoid any interruption to your premium features.</p>
+{% else %}
+    <p>This is a friendly reminder that your <strong>{{ plan_name }}</strong> subscription is set to expire in {{ days_left }} days.</p>
+    <p>You can renew early from your dashboard to ensure continuous access.</p>
+{% endif %}
+
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ dashboard_url }}" class="button">Go to Dashboard</a>
+</div>
+{% endblock %}

@@ -1,72 +1,168 @@
 import json
-from common.decorators import with_auth, with_subscription_check
+import logging
 from common.database import SessionLocal
+from common.decorators import with_auth, with_subscription_check
 from services.approval.service import ApprovalService
+
+logger = logging.getLogger(__name__)
 
 @with_auth(role_required="treasurer")
 @with_subscription_check(required_feature="approvals")
 def handler(event, context):
     """
-    Treasurer Approval Handler (AWS Lambda).
-    
-    This endpoint allows a treasurer to transition a transaction from 'Pending' (unvalidated)
-    to the official immutable ledger. It is the core human-in-the-loop validation point.
-    
-    Security:
-    - @with_auth: Ensures only authenticated users with the 'treasurer' role can proceed.
-    - @with_subscription_check: Verifies the group has an active subscription for this feature.
-    
-    Workflow:
-    1. Extract the pending transaction ID and context (group/campaign).
-    2. Initialize the ApprovalService with a scoped DB session.
-    3. Execute business logic to move data from Postgres (pending) to the Ledger (official).
-    
-    Args:
-        event (dict): Lambda event. Must contain 'user_id' injected by @with_auth.
-        context (object): Lambda context.
+    Unified Transaction Approval & Review Handler.
+    Routes requests based on the specific action (Approve, Split, Reject).
     """
-    # Parse incoming request parameters
-    body = json.loads(event.get("body", "{}"))
-    pending_id = body.get("pending_id")
-    group_id = body.get("group_id")
-    campaign_id = body.get("campaign_id")
-    
-    # Validation: Ensure we have enough data to link the transaction
-    if not pending_id or not group_id:
-        return {
-            "statusCode": 400, 
-            "body": json.dumps({"error": "Missing required fields: pending_id and group_id are mandatory."})
-        }
-
-    # Initialize persistence layer
-    db = SessionLocal()
-    service = ApprovalService(db)
-    
     try:
-        # Business Logic Execution:
-        # The service layer handles state transitions, validation, and ledger commitment.
-        # It also implicitly handles multi-tenancy by verifying that the treasurer 
-        # owns the group/pending transaction.
-        txn = service.approve_transaction(
-            pending_txn_id=pending_id,
-            treasurer_id=event["user_id"],
-            group_id=group_id,
-            campaign_id=campaign_id
-        )
+        body = json.loads(event.get("body", "{}"))
+        path = event.get("path", "")
         
-        return {
-            "statusCode": 200,
-            "body": json.dumps({
-                "message": "Transaction successfully approved and committed to the immutable ledger.",
-                "transaction_id": str(txn.transaction_id)
-            })
-        }
+        # 1. Context Extraction
+        # pending_id can come from body or path parameter depending on route
+        pending_id = body.get("pending_id") or event.get("pathParameters", {}).get("pending_id")
+        group_id = body.get("group_id")
+        user_id = event["user_id"]
+        
+        db = SessionLocal()
+        service = ApprovalService(db)
+
+        # 3. Action Routing
+        try:
+            if event.get("httpMethod") == "GET" and "/pending" in path:
+                from repositories.transaction_repo import TransactionRepository
+                repo = TransactionRepository(db)
+                pendings = repo.fetch_pending_transactions_by_owner(user_id)
+                
+                import decimal
+                from uuid import UUID
+                from datetime import datetime
+                
+                def default_serializer(obj):
+                    if isinstance(obj, UUID): return str(obj)
+                    if isinstance(obj, decimal.Decimal): return float(obj)
+                    if isinstance(obj, datetime): return obj.isoformat()
+                    return str(obj)
+                    
+                results = [
+                    {
+                        "pending_id": p.pending_id,
+                        "raw_message": p.raw_message,
+                        "sender_name": p.sender_name,
+                        "amount": p.amount,
+                        "currency": p.currency,
+                        "transaction_code": p.transaction_code,
+                        "sender_phone": p.sender_phone,
+                        "purpose": p.purpose,
+                        "confidence_score": p.confidence_score,
+                        "workflow_status": p.workflow_status,
+                        "created_at": p.created_at
+                    }
+                    for p in pendings
+                ]
+                return {"statusCode": 200, "body": json.dumps({"results": results}, default=default_serializer)}
+
+            elif event.get("httpMethod") == "GET" and "/history" in path:
+                from repositories.transaction_repo import TransactionRepository
+                repo = TransactionRepository(db)
+                qs = event.get("queryStringParameters") or {}
+                skip = int(qs.get("skip", 0))
+                limit = int(qs.get("limit", 10))
+                status_val = qs.get("status")
+                search = qs.get("search")
+                date_from = qs.get("date_from")
+                date_to = qs.get("date_to")
+                
+                results, total = repo.fetch_inbox_history(
+                    user_id, skip, limit, status_val, search, date_from, date_to
+                )
+                
+                import decimal
+                from uuid import UUID
+                from datetime import datetime
+                
+                def default_serializer(obj):
+                    if isinstance(obj, UUID): return str(obj)
+                    if isinstance(obj, decimal.Decimal): return float(obj)
+                    if isinstance(obj, datetime): return obj.isoformat()
+                    return str(obj)
+
+                formatted = []
+                for r in results:
+                    p = r["pending"]
+                    formatted.append({
+                        "pending_id": p.pending_id,
+                        "sender_name": p.sender_name,
+                        "sender_phone": p.sender_phone,
+                        "amount": p.amount,
+                        "currency": p.currency,
+                        "transaction_code": p.transaction_code,
+                        "purpose": p.purpose,
+                        "workflow_status": p.workflow_status,
+                        "processed_at": p.processed_at,
+                        "processed_by_name": r["processed_by_name"],
+                        "rejection_reason": p.rejection_reason,
+                        "created_at": p.created_at
+                    })
+                    
+                import math
+                return {"statusCode": 200, "body": json.dumps({
+                    "items": formatted,
+                    "total_items": total,
+                    "total_pages": math.ceil(total / limit) if total > 0 else 1,
+                    "page": (skip // limit) + 1,
+                    "limit": limit
+                }, default=default_serializer)}
+
+            if "/bulk/approve" in path:
+                pending_ids = body.get("pending_ids", [])
+                result = service.bulk_approve(pending_ids, user_id, group_id, body.get("campaign_id"))
+                return {"statusCode": 200, "body": json.dumps({"results": result})}
+            
+            elif "/bulk/reject" in path:
+                pending_ids = body.get("pending_ids", [])
+                result = service.bulk_reject(pending_ids, user_id)
+                return {"statusCode": 200, "body": json.dumps({"results": result})}
+
+            elif "/approve" in path:
+                if not pending_id: return {"statusCode": 400, "body": json.dumps({"error": "Missing pending_id"})}
+                txn = service.approve_transaction(pending_id, user_id, group_id, body.get("campaign_id"))
+                msg = "Transaction approved and committed to ledger."
+            
+            elif "/split" in path:
+                if not pending_id: return {"statusCode": 400, "body": json.dumps({"error": "Missing pending_id"})}
+                allocations = body.get("allocations", [])
+                if not allocations:
+                    return {"statusCode": 400, "body": json.dumps({"error": "Missing allocations for split"})}
+                txn = service.split_transaction(pending_id, user_id, group_id, allocations, body.get("campaign_id"))
+                msg = "Transaction split and committed to ledger."
+            
+            elif "/reject" in path:
+                if not pending_id: return {"statusCode": 400, "body": json.dumps({"error": "Missing pending_id"})}
+                reason = body.get("internal_note")
+                service.reject_transaction(pending_id, user_id, reason)
+                msg = "Transaction rejected."
+                txn = None
+                
+            elif "/undo" in path:
+                if not pending_id: return {"statusCode": 400, "body": json.dumps({"error": "Missing pending_id"})}
+                pending = service.undo_rejection(pending_id, user_id)
+                msg = "Rejection undone."
+                txn = None
+            
+            else:
+                return {"statusCode": 404, "body": json.dumps({"error": "Unknown approval action"})}
+
+            return {
+                "statusCode": 200,
+                "body": json.dumps({
+                    "message": msg,
+                    "transaction_id": str(txn.transaction_id) if txn else None
+                })
+            }
+
+        finally:
+            db.close()
+
     except Exception as e:
-        # Error handling: Catch business logic violations (e.g. already approved, unauthorized)
-        return {
-            "statusCode": 500, 
-            "body": json.dumps({"error": "Failed to approve transaction", "details": str(e)})
-        }
-    finally:
-        # Resource cleanup: Close DB connections
-        db.close()
+        logger.error(f"Approval Error: {str(e)}")
+        return {"statusCode": 500, "body": json.dumps({"error": str(e)})}

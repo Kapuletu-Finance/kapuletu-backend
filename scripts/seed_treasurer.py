@@ -1,12 +1,13 @@
-import sys
-import os
-import uuid
 import logging
+import os
+import sys
+import uuid
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from common.database import SessionLocal
 from sqlalchemy import text
+
+from common.database import SessionLocal
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -1,0 +1,16 @@
+# Core Ledger Logic
+services/finance/ledger_service.py
+services/finance/ledger_router.py
+repositories/transaction_repo.py
+
+# Ingestion & Parsing
+services/ingestion/parser_engine.py
+services/ingestion/handler.py
+
+# Reporting & WhatsApp Integration
+services/notifications/providers/whatsapp_client.py
+services/reporting/daily_summary.py
+services/reporting/template_engine.py
+
+# Frontend Unique Logic
+../kapuletu-frontend/src/features/finance/services/mutations.ts

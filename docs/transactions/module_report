@@ -1,0 +1,49 @@
+# Review & Approval Module Report
+
+## 1. Executive Summary of Changes
+The Review and Approval functionalities, which handle transitioning parsed transactions into finalized records, have been refactored and consolidated into the `services/approval` native FastAPI router. 
+- **Consolidation**: The `parsing` and `review` logic previously scattered in `local_server.py` were fully moved into `services/approval/router.py`.
+- **Cleanup**: Leftover and undefined router registrations (e.g. `app.include_router(review)`) that were causing startup errors (`NameError`) in `local_server.py` were removed.
+- **Service Isolation**: Business logic for approving, rejecting, and splitting transactions was cleanly encapsulated inside `ApprovalService` (`services/approval/service.py`).
+- **Data Access Layer**: Database queries related to fetching or checking duplicate transactions are now fully managed by `TransactionRepository` (`repositories/transaction_repo.py`).
+
+## 2. High-Level Module Flow
+The Approval Module sits between the **Ingestion/Parsing Engine** (which receives SMS/WhatsApp messages and extracts data) and the **General Ledger**. It serves as the treasurer's "Inbox" for verifying AI-extracted data.
+
+1. **Inbox Retrieval**: Treasurers fetch their pending transactions (scratchpad records) via the `/transactions/pending` endpoints.
+2. **Review & Action**: Treasurers can review the extracted fields (Amount, Sender Name, Transaction Code). They can:
+   - **Approve**: Move the transaction to the Immutable Ledger.
+   - **Reject**: Discard the transaction as irrelevant or spam.
+   - **Split**: Break down a single payment into multiple allocations for different members.
+   - **Edit/Reparse**: Manually adjust incorrectly extracted fields, or re-run the AI parser on the raw message.
+3. **Active Learning Hook**: When a transaction is finalized, if the treasurer edited the AI's extraction, the difference is fed back into an Active Learning pipeline (`log_for_active_learning`). This continuously improves the parsing model based on actual user corrections.
+4. **Ledger Commitment**: Once approved or split, the `ApprovalService` converts the `PendingTransaction` into a permanent `Transaction`. It calculates a SHA-256 hash (Integrity Seal) to make it tamper-proof before committing it to the database.
+
+## 3. Full Endpoints & Functionalities
+
+### Inbox Management
+- **`GET /transactions/pending`**: Retrieves a list of all unprocessed pending transactions belonging to the current user.
+- **`GET /transactions/pending/{pending_id}`**: Retrieves a specific pending transaction's details.
+
+### Review Actions
+- **`POST /transactions/{pending_id}/approve`**: Finalizes the transaction. Requires an optional group or campaign ID. Creates a permanent `Transaction`, generates an integrity seal, updates the active learning system, and marks the pending record as processed.
+- **`POST /transactions/{pending_id}/reject`**: Discards the pending transaction, marking it as processed with a `rejected` workflow status.
+- **`POST /transactions/{pending_id}/split`**: Accepts an array of member allocations. Validates that the sum of the splits matches the total transaction amount. Creates a parent `Transaction` and multiple `ReviewAllocation` records.
+- **`POST /transactions/bulk/approve`** & **`POST /transactions/bulk/reject`**: Applies the approve or reject logic across an array of `pending_ids`. Useful for rapidly clearing known-good receipts.
+
+### Editing & Validation
+- **`PATCH /transactions/{pending_id}`**: Manually edits the extracted fields (Amount, Sender Name, Transaction Code). 
+- **`POST /transactions/{pending_id}/note`**: Appends an internal note to the transaction's purpose (e.g., "Matched with paper receipt #123").
+- **`POST /transactions/{pending_id}/reparse`**: Forces the `parser_engine` to re-process the raw text message if the initial parse failed or yielded low confidence.
+- **`POST /transactions/{pending_id}/validate`**: A pre-check endpoint to verify if the transaction has all required fields (Amount, Sender Name) before the treasurer attempts to approve it.
+
+## 4. Workings of Core Components
+
+### `ApprovalService` (`services/approval/service.py`)
+- **`approve_transaction`**: The heart of the module. Fetches the pending record, creates a new `Transaction`, runs the `log_for_active_learning` hook to record treasurer corrections, generates the `_write_to_ledger` cryptographic seal, and marks the pending record as processed.
+- **`split_transaction`**: Handles mathematical validation to ensure allocations exactly sum to the extracted amount, generating a parent ledger entry and child allocations.
+- **`_write_to_ledger`**: Generates a deterministic JSON payload of the transaction, calculates a SHA-256 hash, and saves it as `ledger_hash` to detect subsequent tampering.
+
+### `TransactionRepository` (`repositories/transaction_repo.py`)
+- **`check_duplicate_transaction_code`**: A critical safeguard that ensures a transaction code (e.g., an M-Pesa code) isn't double-counted. It checks both the `PendingTransaction` inbox and the finalized `Transaction` ledger.
+- **`fetch_pending_transactions_by_owner`**: Provides isolated data access ensuring treasurers only ever see pending transactions assigned to their own `owner_id`.

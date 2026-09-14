@@ -1,5 +1,6 @@
 from events.event_bus import emit_event
 
+
 def handle_transaction_approved(transaction):
     """
     Hook called when a transaction is officially approved and committed to the ledger.

@@ -9,7 +9,7 @@ Ledger & Audit (truth & traceability)
 
 
 1. IDENTITY & OWNERSHIP
-🧑‍💼 users (Treasurers + System Admins)
+🧑 users (Treasurers + System Admins)
 users
 Field	Type	Notes
 user_id	UUID (PK)	

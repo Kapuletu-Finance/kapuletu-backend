@@ -1,0 +1,67 @@
+# Frontend Cookie Migration Guide
+
+## 1. The Change
+The KapuLetu backend has been upgraded to support **HTTP-Only Cookies** for maximum security against XSS attacks. 
+The backend now automatically sets `kapuletu_access_token` and `kapuletu_refresh_token` as secure, invisible cookies in the browser upon a successful login.
+
+**Note:** The backend is currently **Backwards Compatible**. It is still returning the JSON tokens, so your current code isn't broken. However, you should migrate to the Cookie method as soon as possible, at which point we can stop returning the JSON tokens.
+
+## 2. What you need to do
+
+### Step 1: Configure your HTTP Client
+You no longer need to manually grab the tokens from the JSON response, save them to `localStorage`, or attach them via the `Authorization: Bearer <token>` header.
+Instead, simply tell your HTTP client to automatically send the browser's cookies with every request.
+
+**If you are using Axios:**
+```javascript
+import axios from 'axios';
+
+// Configure Axios globally to send cookies
+axios.defaults.withCredentials = true;
+
+// Or configure a specific instance:
+const apiClient = axios.create({
+  baseURL: 'https://dev-api.kapuletu.co.ke',
+  withCredentials: true // CRITICAL: This enables the browser to send the HTTP-Only cookies
+});
+```
+
+**If you are using Fetch:**
+```javascript
+fetch('https://dev-api.kapuletu.co.ke/auth/me', {
+  method: 'GET',
+  credentials: 'include' // CRITICAL: This enables the browser to send the HTTP-Only cookies
+})
+```
+
+### Step 2: Stop storing tokens manually
+Remove any code that looks like this:
+```javascript
+// DELETE THIS:
+localStorage.setItem('AccessToken', response.data.AccessToken);
+
+// DELETE THIS:
+apiClient.interceptors.request.use(config => {
+   config.headers.Authorization = `Bearer ${localStorage.getItem('AccessToken')}`;
+   return config;
+});
+```
+
+### Step 3: Handle Logout
+To log a user out, simply call the `POST /auth/logout` endpoint. The backend will automatically command the browser to delete the HTTP-Only cookies. You do not need to manually delete anything on the frontend.
+```javascript
+async function handleLogout() {
+   await apiClient.post('/auth/logout');
+   window.location.href = '/login';
+}
+```
+
+## 3. Dealing with CORS Errors
+Because we are now using `withCredentials: true`, your browser's CORS policy will become much stricter.
+The backend has already been configured to allow:
+- `http://localhost:3000`
+- `http://localhost:5173`
+- `https://app.kapuletu.co.ke`
+- `https://dev-app.kapuletu.co.ke`
+
+If you are running the frontend on a different port locally (e.g. `localhost:8080`), you will get a CORS error. Please ask the backend team to whitelist your specific local port.

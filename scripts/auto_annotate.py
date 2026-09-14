@@ -1,9 +1,21 @@
-import re
 import json
-import os
+import re
 
 INPUT_FILE = r"c:\Users\josep\kapuletu-backend\data\merged_training_data.txt"
 OUTPUT_FILE = r"c:\Users\josep\kapuletu-backend\data\merged_annotated_dataset.json"
+
+def clean_sender_span(text, start, end):
+    """
+    Trims trailing phone numbers or IDs from the SENDER name span.
+    Example: 'Joseph Kirika 5439452' -> 'Joseph Kirika'
+    Example: 'ELVIS WEKESA 0791***401' -> 'ELVIS WEKESA'
+    """
+    sender_text = text[start:end]
+    # Look for a space followed by digits and stars (at least 5 chars) at the end
+    match = re.search(r"\s+[\d\*]{5,}\s*$", sender_text)
+    if match:
+        return start, start + match.start()
+    return start, end
 
 patterns = [
     # 1. Confirmed.You have received Ksh700.00 from Jane Wanjiru on 4/4/26
@@ -60,6 +72,10 @@ with open(INPUT_FILE, 'r', encoding='utf-8') as f:
                     if value:
                         start = match.start(label)
                         end = match.end(label)
+                        
+                        if label == "SENDER":
+                            start, end = clean_sender_span(line, start, end)
+                            
                         entities.append([start, end, label])
                 dataset.append({"text": line, "entities": entities})
                 matched = True

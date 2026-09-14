@@ -1,13 +1,98 @@
-def generate_summary():
-    """
-    Calculates a high-level financial summary for the requested context.
-    
-    In production, this would perform aggregations on the Transaction table
-    to find totals, counts, and trend data.
-    """
-    # Placeholder return data
+from sqlalchemy import func
+from common.utils import parse_uuid
+from sqlalchemy.orm import Session
+from datetime import datetime
+
+from models.campaign import Campaign
+from models.transaction import Transaction
+
+def generate_summary(db: Session, owner_id: str):
+    """Calculates a real-time financial summary for the treasurer dashboard."""
+    total_collected = db.query(func.sum(Transaction.amount)).filter(
+        Transaction.owner_id == parse_uuid(owner_id)
+    ).scalar() or 0.0
+
+    campaign_breakdown = db.query(
+        Campaign.title,
+        func.sum(Transaction.amount).label("total")
+    ).join(Transaction, Transaction.campaign_id == parse_uuid(Campaign.campaign_id))\
+     .filter(Transaction.owner_id == parse_uuid(owner_id))\
+     .group_by(Campaign.title).all()
+
     return {
-        "total_collected": 10000,
-        "active_campaigns": 3,
-        "latest_updates": []
+        "total_collected": float(total_collected),
+        "campaigns": [{"title": row.title, "total": float(row.total)} for row in campaign_breakdown]
     }
+
+def generate_campaign_whatsapp_report(db: Session, campaign_id: str, manual_instructions: str = None):
+    """
+    Generates a Hyper-Clean, Professional WhatsApp Contribution Report.
+    Prioritizes instructions set during campaign creation.
+    """
+    # 1. Fetch Data
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
+    if not campaign:
+        return "ERROR: CAMPAIGN RECORD NOT FOUND."
+
+    txns = db.query(Transaction).filter(
+        Transaction.campaign_id == parse_uuid(campaign_id),
+        Transaction.status == "approved"
+    ).order_by(Transaction.created_at.asc()).all()
+
+    # 2. Financial Context
+    total_collected = sum(float(t.amount) for t in txns)
+    target = float(campaign.target_amount) if campaign.target_amount else 0.0
+    remaining_balance = max(0, target - total_collected)
+    
+    from datetime import timezone
+    import zoneinfo
+    now_eat = datetime.now(timezone.utc).astimezone(zoneinfo.ZoneInfo("Africa/Nairobi"))
+    date_str = now_eat.strftime("%d %B %Y")
+    
+    # 3. Instruction Logic (Priority: Manual Override > Campaign DB > Default)
+    instructions = manual_instructions or campaign.payment_instructions or "Pay via M-Pesa to the Treasury Number"
+
+    # 4. Build the Hyper-Clean Structured Message
+    report = f"TREASURY REPORT: {campaign.title.upper()}\n"
+    report += f"STATUS REPORT AS OF {date_str.upper()}\n"
+    report += f"====================================\n\n"
+    
+    report += f"PAYMENT INSTRUCTIONS:\n"
+    report += f"{instructions}\n\n"
+    
+    if campaign.description:
+        report += f"GOAL DESCRIPTION:\n"
+        report += f"{campaign.description}\n\n"
+    
+    report += f"CONTRIBUTOR LIST:\n"
+    report += f"------------------------------------\n"
+    if not txns:
+        report += f"(No approved records to display)\n"
+    else:
+        counter = 1
+        for t in txns:
+            if t.allocations:
+                # If the transaction is split, list each allocation separately
+                for alloc in t.allocations:
+                    name = alloc.member_name or "Member"
+                    report += f"{counter:2}. {name:18} KES {float(alloc.allocated_amount):>8,.0f}\n"
+                    counter += 1
+            else:
+                # Standard single-member transaction
+                name = t.sender_name or (f"Member {t.sender_phone[-4:]}" if t.sender_phone else "Member")
+                report += f"{counter:2}. {name:18} KES {float(t.amount):>8,.0f}\n"
+                counter += 1
+    
+    report += f"------------------------------------\n\n"
+    
+    report += f"FINANCIAL SUMMARY:\n"
+    report += f"TOTAL COLLECTED:   KES {total_collected:>10,.2f}\n"
+    if target > 0:
+        report += f"CAMPAIGN TARGET:   KES {target:>10,.2f}\n"
+        report += f"OUTSTANDING:       KES {remaining_balance:>10,.2f}\n"
+    
+    report += f"====================================\n\n"
+    report += f"This is an automated treasury update. "
+    report += f"For corrections, please contact the treasurer."
+
+    return report

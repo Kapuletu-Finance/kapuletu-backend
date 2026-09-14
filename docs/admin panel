@@ -1,0 +1,70 @@
+# Kapuletu Admin Panel Architecture & Implementation Plan
+
+This document outlines the proposed implementation plan for the Kapuletu Platform Admin Panel, based on a deep-dive audit of the current codebase infrastructure.
+
+## 1. Goal Description
+
+The objective is to provide Kapuletu administrators with a professional, end-to-end, and fully functional admin panel. This panel will enable platform supervision, user management, intelligence analytics, logs auditing, financial tracking, and system configuration. 
+
+### Audit Findings
+- **Backend Status:** The `kapuletu-backend` already has a heavily structured and well-defined admin API located at `services/admin/router.py`. It includes comprehensive modules for:
+  - **Module A:** Platform Intelligence (`AnalyticsService`)
+  - **Module B:** User Lifecycle & Support (`UserService`)
+  - **Module C:** AI Parser Governance (`AIGovernanceService`)
+  - **Module D:** Subscription Revenue & Plans (`FinanceService`)
+  - **Module E:** CRM & System Communications (`CRMService`)
+  - **Module F:** Forensic Audit & Forensics (`AuditService`)
+- **Frontend Status:** The `kapuletu-frontend` (Next.js application) has the beginnings of an admin interface under `src/app/(protected)/admin` with routes for `audit`, `groups`, and `profile`. However, it lacks the full suite of UI modules to consume the powerful backend APIs.
+- **Codebase Strategy:** We **DO NOT need another codebase**. The most efficient, scalable, and maintainable approach is to build the Admin Panel within the existing `kapuletu-frontend` Next.js application, extending the `(protected)/admin` route structure. This ensures we share UI components, styling (Tailwind/CSS), and authentication logic seamlessly.
+
+> [!TIP]
+> Building the admin panel in the existing Next.js frontend minimizes technical debt, avoids cross-origin request issues, and centralizes deployment.
+
+## 2. User Review Required
+
+> [!IMPORTANT]
+> **Approval needed on the Monorepo Approach:** Please confirm that you approve building these admin features inside the existing Next.js frontend application (`kapuletu-frontend`) rather than spinning up a completely separate React/Vue dashboard project.
+
+## 3. Open Questions
+
+Before we begin writing code, please clarify the following:
+1. **Design System:** Should the Admin Panel share the exact same visual identity as the main user-facing application, or should it have a distinct "internal tool" aesthetic (e.g., darker sidebar, more data-dense tables)?
+2. **Role-Based Access Control (RBAC):** Are there multiple tiers of administrators (e.g., Super Admin vs. Support Agent), or does anyone with "admin" access get full capabilities across all modules?
+3. **Data Visualization:** Do you have a preferred charting library in the frontend for the Intelligence Analytics (e.g., Recharts, Chart.js, Tremor)?
+
+## 4. Proposed Changes
+
+We will systematically expand the frontend `(protected)/admin` directory to create a cohesive Admin Dashboard.
+
+### Frontend Routing & Pages
+We will add the following file structure to `kapuletu-frontend/src/app/(protected)/admin/`:
+
+#### [NEW] [admin/layout.tsx](file:///c:/Users/josep/kapuletu-frontend/src/app/(protected)/admin/layout.tsx)
+- Create a dedicated layout with a permanent sidebar navigation linking to all the modules below.
+
+#### [NEW] [admin/overview/page.tsx](file:///c:/Users/josep/kapuletu-frontend/src/app/(protected)/admin/overview/page.tsx)
+- **Platform Intelligence:** Consume the `/admin/overview` API. Display high-level KPIs, charts, and platform health metrics.
+
+#### [NEW] [admin/users/page.tsx](file:///c:/Users/josep/kapuletu-frontend/src/app/(protected)/admin/users/page.tsx)
+- **User Lifecycle:** Consume `/admin/users/treasurers` APIs. A data table showing all users, their statuses, plans, and capabilities to upgrade roles, ban users, or override plans.
+
+#### [NEW] [admin/ai-governance/page.tsx](file:///c:/Users/josep/kapuletu-frontend/src/app/(protected)/admin/ai-governance/page.tsx)
+- **AI Parser Governance:** Consume `/admin/ai/parser/*` APIs. Interface to review the feedback queue, inject manual training samples, and trigger model retraining.
+
+#### [NEW] [admin/finance/page.tsx](file:///c:/Users/josep/kapuletu-frontend/src/app/(protected)/admin/finance/page.tsx)
+- **Subscription Revenue:** Consume `/admin/finance/*` APIs. Manage subscription plans, view payments, and apply manual subscription overrides.
+
+#### [NEW] [admin/crm/page.tsx](file:///c:/Users/josep/kapuletu-frontend/src/app/(protected)/admin/crm/page.tsx)
+- **CRM & Support:** Consume `/admin/crm/*` APIs. Interface to send broadcast messages (SMS/WhatsApp) and manage support tickets.
+
+#### [MODIFY] [admin/audit/page.tsx](file:///c:/Users/josep/kapuletu-frontend/src/app/(protected)/admin/audit/page.tsx)
+- Refine existing audit UI to ensure it fully integrates with `/admin/audit/logs` with rich filtering and pagination.
+
+## 5. Verification Plan
+
+### Manual Verification
+1. Log in as an Administrator user.
+2. Navigate to the new `/admin` URL structure.
+3. Validate that the sidebar correctly routes between all modules.
+4. Verify that data populates correctly in the Overview, Users, AI Governance, Finance, and CRM views by successfully communicating with the backend APIs.
+5. Attempt actionable tasks (e.g., suspending a test user, adding a training sample) and verify the backend state changes.

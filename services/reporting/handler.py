@@ -1,17 +1,61 @@
 import json
-from services.reporting.daily_summary import generate_summary
+import logging
+
+from common.database import SessionLocal
+from services.reporting.daily_summary import generate_summary, generate_campaign_whatsapp_report
+
+logger = logging.getLogger(__name__)
 
 def handler(event, context):
     """
-    Reporting Service Handler: Generates financial summaries and exports.
-    
-    This service provides treasurers with insights into group performance,
-    campaign progress, and daily transaction volume.
+    Reporting Service Handler: Generates financial summaries and WhatsApp group lists.
     """
-    # Logic to generate and return a summary report
-    summary = generate_summary()
-    
-    return {
-        "statusCode": 200,
-        "body": json.dumps(summary)
-    }
+    try:
+        # 1. Identify the user/context
+        owner_id = event.get('requestContext', {}).get('authorizer', {}).get('claims', {}).get('sub')
+        query_params = event.get('queryStringParameters', {}) or {}
+        path_params = event.get('pathParameters', {}) or {}
+        
+        if not owner_id:
+            owner_id = query_params.get('owner_id')
+
+        # 2. Check for Campaign-Specific Request
+        campaign_id = path_params.get('campaign_id') or query_params.get('campaign_id')
+        
+        db = SessionLocal()
+        try:
+            if campaign_id:
+                # Generate the 'Official Group List' for WhatsApp
+                from models.campaign import Campaign
+                from common.utils import parse_uuid
+                campaign = db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
+                if not campaign:
+                    return {"statusCode": 404, "body": "Campaign not found"}
+                
+                from services.reporting.shared import build_campaign_report_data
+                report_data = build_campaign_report_data(db, campaign, is_preview=False)
+                
+                return {
+                    "statusCode": 200,
+                    "body": json.dumps({
+                        "campaign_id": campaign_id,
+                        "whatsapp_format": report_data["preview_text"]
+                    })
+                }
+            
+            # Default: General Daily Summary
+            summary = generate_summary(db, owner_id)
+            return {
+                "statusCode": 200,
+                "body": json.dumps(summary)
+            }
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Reporting Error: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": str(e)})
+        }

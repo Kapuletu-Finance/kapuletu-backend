@@ -1,7 +1,8 @@
-import os
 import json
-import re
 import logging
+import os
+import re
+
 import pandas as pd
 
 logging.basicConfig(level=logging.INFO)
@@ -111,11 +112,11 @@ def import_and_bootstrap_excel():
         json.dump(dataset, f, indent=2)
 
     logger.info("=" * 60)
-    logger.info(f"✅ EXCEL IMPORT COMPLETE!")
+    logger.info("✅ EXCEL IMPORT COMPLETE!")
     logger.info(f"Total Messages Extracted: {len(dataset)}")
     logger.info(f"  - M-Pesa Column   : {mpesa_count}")
     logger.info(f"  - Provider Column : {bank_count}")
-    logger.info(f"All data intelligently mapped for: SENDER, AMOUNT, CODE, PROVIDER, ACCOUNT, and DATE.")
+    logger.info("All data intelligently mapped for: SENDER, AMOUNT, CODE, PROVIDER, ACCOUNT, and DATE.")
     logger.info("=" * 60)
 
 if __name__ == "__main__":

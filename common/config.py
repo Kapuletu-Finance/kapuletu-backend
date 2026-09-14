@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,15 +14,32 @@ class Config:
     # PostgreSQL connection string (e.g. postgresql://user:pass@host:port/db)
     DATABASE_URL: str = os.getenv("DATABASE_URL")
     
+    # Require SSL for database connections (set to false in local docker or VPS without SSL)
+    DB_SSL_REQUIRED: bool = os.getenv("DB_SSL_REQUIRED", "true").lower() == "true"
+    
     # Amazon QLDB Ledger name for immutable records
     QLDB_LEDGER_NAME: str = os.getenv("QLDB_LEDGER_NAME", "kapuletu-ledger")
     
-    # Twilio Webhook Secret for signature validation (security layer)
-    TWILIO_AUTH_TOKEN: str = os.getenv("TWILIO_AUTH_TOKEN", os.getenv("TWILIO_SECRET", ""))
+    # Meta WhatsApp Cloud API Webhook Verification Token
+    META_VERIFY_TOKEN: str = os.getenv("META_VERIFY_TOKEN", "")
     
-    # Twilio credentials for sending WhatsApp notifications back to the Treasurer
-    TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")
-    TWILIO_WHATSAPP_NUMBER: str = os.getenv("TWILIO_WHATSAPP_NUMBER", "")
+    # Meta WhatsApp Cloud API credentials for sending messages
+    META_ACCESS_TOKEN: str = os.getenv("META_ACCESS_TOKEN", "")
+    META_PHONE_NUMBER_ID: str = os.getenv("META_PHONE_NUMBER_ID", "")
+    
+    # Africa's Talking Credentials
+    AT_USERNAME: str = os.getenv("AT_USERNAME", "sandbox")
+    AT_API_KEY: str = os.getenv("AT_API_KEY", "")
+    AT_SENDER_ID: str = os.getenv("AT_SENDER_ID", "")
+    
+    # JWT Secret Key for signing custom tokens
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "your-super-secret-local-dev-key")
+    
+    # Frontend URL for generating public links
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://app.kapuletu.co.ke")
+    
+    # Local development mode — set to True when running locally (disables secure cookies, etc.)
+    IS_LOCAL: bool = os.getenv("IS_LOCAL", "false").lower() == "true"
 
 def get_config() -> Config:
     """
