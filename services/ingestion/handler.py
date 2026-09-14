@@ -161,12 +161,13 @@ def process_ingestion(body_str: str, config):
     try:
         from common.system_config_service import get_system_config
         maintenance_mode = get_system_config(db, "maintenance_mode", default=False)
-        maintenance_modules = get_system_config(db, "maintenance_modules", default={"web_app": True, "whatsapp_bot": False, "public_api": True})
+        maintenance_modules = get_system_config(db, "maintenance_modules", default={"web_app": True, "whatsapp_bot": True, "public_api": True})
+        maintenance_message = get_system_config(db, "maintenance_message", default="Kapuletu is currently undergoing scheduled maintenance. Please try again later.")
         
-        if maintenance_mode and maintenance_modules.get("whatsapp_bot", False):
+        if maintenance_mode and maintenance_modules.get("whatsapp_bot", True):
             send_meta_reply(
                 sender_phone, 
-                "Kapuletu is currently undergoing scheduled maintenance to bring you new features. We will be back shortly! 🛠️", 
+                maintenance_message, 
                 config
             )
             return {"statusCode": 200, "body": "OK"}
