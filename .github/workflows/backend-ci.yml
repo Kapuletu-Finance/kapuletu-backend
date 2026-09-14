@@ -68,7 +68,7 @@ jobs:
             ${{ steps.image.outputs.name }}:latest
             ${{ steps.image.outputs.name }}:${{ steps.image.outputs.sha }}
 
-  run-deploy-dev:
+  run-deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     needs: build-and-push
