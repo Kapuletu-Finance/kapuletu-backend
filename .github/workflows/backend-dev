@@ -1,0 +1,120 @@
+# name: Backend Deployment (DEV)
+
+# on:
+#   push:
+#     branches:
+#       - dev
+#   pull_request:
+#     branches:
+#       - dev
+#   workflow_dispatch:
+
+# permissions:
+#   id-token: write
+#   contents: read
+
+# env:
+#   AWS_REGION: eu-west-1
+#   STAGE: dev
+#   ECR_REPOSITORY: kapuletu-dev-backend
+#   IMAGE_TAG: latest
+
+
+# jobs:
+#   deploy:
+#     name: Build and Push to ECR
+#     runs-on: ubuntu-latest
+#     environment: dev
+
+#     steps:
+#       - name: Checkout Code
+#         uses: actions/checkout@v4
+
+#       # -----------------------------
+#       # AWS OIDC AUTH
+#       # -----------------------------
+#       - name: Configure AWS Credentials
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           role-to-assume: ${{ vars.AWS_OIDC_ROLE_ARN }}
+#           aws-region: ${{ env.AWS_REGION }}
+
+#       # -----------------------------
+#       # ECR LOGIN
+#       # -----------------------------
+#       - name: Login to Amazon ECR
+#         id: login-ecr
+#         uses: aws-actions/amazon-ecr-login@v2
+
+#       # -----------------------------
+#       # BUILD AND PUSH
+#       # -----------------------------
+#       - name: Build, tag, and push image to Amazon ECR
+#         env:
+#           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+#         run: |
+#           docker build -f Dockerfile.aws -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} .
+#           docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          
+#           echo "### Container Image Deployed ✅" >> $GITHUB_STEP_SUMMARY
+#           echo "- Registry: $ECR_REGISTRY" >> $GITHUB_STEP_SUMMARY
+#           echo "- Repository: ${{ env.ECR_REPOSITORY }}" >> $GITHUB_STEP_SUMMARY
+#           echo "- Tag: ${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
+
+#       # -----------------------------
+#       # UPDATE LAMBDA
+#       # -----------------------------
+#       - name: Update Lambda to use new image
+#         env:
+#           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+#         run: |
+#           aws lambda update-function-code \
+#             --function-name kapuletu-${{ env.STAGE }}-backend \
+#             --image-uri $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+#       # -----------------------------
+#       # RUN DATABASE MIGRATIONS
+#       # -----------------------------
+#       - name: Run Alembic Migrations
+#         run: |
+#           # Wait for the Lambda function update to fully complete
+#           echo "Waiting for Lambda to finish updating..."
+#           aws lambda wait function-updated --function-name kapuletu-${{ env.STAGE }}-backend
+          
+#           # Invoke the Lambda function to trigger the migration script
+#           aws lambda invoke \
+#             --function-name kapuletu-${{ env.STAGE }}-backend \
+#             --payload '{"task": "migrate_database"}' \
+#             --cli-binary-format raw-in-base64-out \
+#             --cli-read-timeout 300 \
+#             migration_response.json
+            
+#           echo "Migration Response:"
+#           cat migration_response.json
+          
+#           # Check if the Lambda returned an error (statusCode 500 or FunctionError)
+#           if grep -q '"statusCode": 500' migration_response.json || grep -q '"FunctionError"' migration_response.json; then
+#             echo "Database migration failed on Lambda!"
+#             exit 1
+#           fi
+
+#       # -----------------------------
+#       # SEED DATABASE PLANS
+#       # -----------------------------
+#       - name: Seed Database Plans
+#         run: |
+#           echo "Triggering seed plans task on Lambda..."
+#           aws lambda invoke \
+#             --function-name kapuletu-${{ env.STAGE }}-backend \
+#             --payload '{"task": "seed_plans"}' \
+#             --cli-binary-format raw-in-base64-out \
+#             --cli-read-timeout 300 \
+#             seed_response.json
+            
+#           echo "Seed Response:"
+#           cat seed_response.json
+          
+#           if grep -q '"statusCode": 500' seed_response.json || grep -q '"FunctionError"' seed_response.json; then
+#             echo "Database seeding failed on Lambda!"
+#             exit 1
+#           fi

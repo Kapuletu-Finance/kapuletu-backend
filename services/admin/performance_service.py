@@ -14,30 +14,80 @@ class PerformanceService:
 
     def get_system_health(self) -> dict:
         """
-        Returns core system health KPIs.
-        In a real prod app, these would come from APM / Datadog / psutil.
+        Returns core system health KPIs from SystemMetric.
         """
+        from models.system_metric import SystemMetric
+        # Get the most recent metric
+        latest = self.db.query(SystemMetric).order_by(SystemMetric.timestamp.desc()).first()
+        
+        if not latest:
+            return {
+                "uptime_percent": 100.0,
+                "avg_response_time_ms": 0,
+                "cpu_load_percent": 0,
+                "error_rate_percent": 0.0,
+                "active_connections": 0
+            }
+            
+        error_rate = (latest.error_count / latest.request_count * 100) if latest.request_count > 0 else 0.0
+
         return {
-            "uptime_percent": 99.98,
-            "avg_response_time_ms": random.randint(120, 250),
-            "cpu_load_percent": random.randint(35, 75),
-            "error_rate_percent": round(random.uniform(0.1, 0.9), 2),
-            "active_connections": random.randint(150, 450)
+            "uptime_percent": 99.99, # Hardcoded uptime for now until we have uptime monitoring
+            "avg_response_time_ms": int(latest.avg_response_time_ms),
+            "cpu_load_percent": int(latest.cpu_percent),
+            "error_rate_percent": round(error_rate, 2),
+            "active_connections": latest.request_count # Using requests per minute as active connections proxy
         }
 
     def get_activity_trend(self) -> list:
         """
-        Generates a 24-hour trend for active sessions and API volume.
+        Generates a 24-hour trend for active sessions and API volume by querying SystemMetric.
         """
-        trend = []
+        from models.system_metric import SystemMetric
+        from sqlalchemy import cast, Integer
+
         now = datetime.datetime.utcnow()
+        twenty_four_hours_ago = now - datetime.timedelta(hours=24)
+        
+        # We query the sum of requests and max active sessions per hour
+        # using PostgreSQL date_trunc
+        results = self.db.query(
+            func.date_trunc('hour', SystemMetric.timestamp).label('hour'),
+            func.sum(SystemMetric.request_count).label('api_requests'),
+            func.max(SystemMetric.active_sessions_count).label('active_sessions')
+        ).filter(
+            SystemMetric.timestamp >= twenty_four_hours_ago
+        ).group_by(
+            func.date_trunc('hour', SystemMetric.timestamp)
+        ).order_by('hour').all()
+        
+        # Build a map of results by hour string
+        data_map = {}
+        for row in results:
+            hour_str = row.hour.strftime("%H:00")
+            data_map[hour_str] = {
+                "active_sessions": int(row.active_sessions or 0),
+                "api_requests": int(row.api_requests or 0)
+            }
+            
+        # Fill in the blanks to ensure exactly 24 points are returned in chronological order
+        trend = []
         for i in range(24, -1, -1):
             time_point = now - datetime.timedelta(hours=i)
-            trend.append({
-                "time": time_point.strftime("%H:00"),
-                "active_sessions": random.randint(20, 200),
-                "api_requests": random.randint(1000, 5000)
-            })
+            hour_str = time_point.strftime("%H:00")
+            if hour_str in data_map:
+                trend.append({
+                    "time": hour_str,
+                    "active_sessions": data_map[hour_str]["active_sessions"],
+                    "api_requests": data_map[hour_str]["api_requests"]
+                })
+            else:
+                trend.append({
+                    "time": hour_str,
+                    "active_sessions": 0,
+                    "api_requests": 0
+                })
+                
         return trend
 
     def get_extended_active_users(self) -> dict:
@@ -62,14 +112,13 @@ class PerformanceService:
         # Enhance the response for the UI
         detailed_active = []
         for u in active_users:
-            actions = ["Viewing Dashboard", "Processing Payment", "Reviewing Campaign", "Exporting Data"]
             detailed_active.append({
                 "user_id": str(u.user_id),
                 "full_name": f"{u.first_name} {u.last_name}".strip(),
                 "email": u.email,
                 "role": u.role,
                 "last_active_at": u.last_active_at.isoformat() if u.last_active_at else None,
-                "current_action": random.choice(actions) # Simulated detailed state
+                "current_action": u.current_action or "Active"
             })
 
         return {
@@ -81,15 +130,38 @@ class PerformanceService:
 
     def get_system_events(self) -> list:
         """
-        Returns a list of simulated critical system events for the data table.
-        Could be hooked up to `AuditService` in the future.
+        Returns recent system events by querying the AuditLog table.
         """
-        now = datetime.datetime.utcnow()
-        events = [
-            {"id": "ev_1", "type": "error", "message": "High latency detected on Payment Gateway API", "timestamp": (now - datetime.timedelta(minutes=5)).isoformat(), "source": "Finance Module"},
-            {"id": "ev_2", "type": "info", "message": "Database automated backup completed successfully", "timestamp": (now - datetime.timedelta(minutes=45)).isoformat(), "source": "System"},
-            {"id": "ev_3", "type": "warning", "message": "Unusual spike in login failures", "timestamp": (now - datetime.timedelta(hours=2)).isoformat(), "source": "Auth Service"},
-            {"id": "ev_4", "type": "info", "message": "AI Model Retraining Triggered", "timestamp": (now - datetime.timedelta(hours=4)).isoformat(), "source": "AI Governance"},
-            {"id": "ev_5", "type": "error", "message": "SMTP Connection Timeout", "timestamp": (now - datetime.timedelta(hours=12)).isoformat(), "source": "CRM Service"},
-        ]
+        from models.audit_log import AuditLog
+        
+        # Get the 10 most recent system-level audit logs
+        logs = self.db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(10).all()
+        
+        events = []
+        for log in logs:
+            action_lower = log.action.lower()
+            
+            # Determine type
+            event_type = "info"
+            if any(x in action_lower for x in ["fail", "error", "crash", "exception", "reject"]):
+                event_type = "error"
+            elif any(x in action_lower for x in ["warn", "suspend", "block", "unusual"]):
+                event_type = "warning"
+                
+            # Determine message
+            message = log.action.replace("_", " ").title()
+            if log.details and isinstance(log.details, dict) and "message" in log.details:
+                message += f": {log.details['message']}"
+                
+            # Determine source
+            source = str(log.entity_type).title()
+                
+            events.append({
+                "id": str(log.log_id),
+                "type": event_type,
+                "message": message,
+                "timestamp": log.created_at.isoformat() + "Z" if log.created_at else None,
+                "source": source
+            })
+            
         return events

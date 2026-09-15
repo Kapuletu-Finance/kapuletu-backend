@@ -47,7 +47,7 @@ class InvitesService:
 
             html_body = render_email_template(
                 "invite.html",
-                message=message,
+                message=message.replace('\n', '<br>'),
                 invite_url=invite_url
             )
             

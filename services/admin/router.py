@@ -1,3 +1,4 @@
+from models import User
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -515,6 +516,38 @@ async def get_broadcast_recipients(
             "created_at": log.CommunicationLog.created_at.isoformat()
         } for log in logs
     ]
+
+@router.get("/crm/communication-logs", summary="List All Communication Logs")
+async def list_communication_logs(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from models.communication_logs import CommunicationLog
+    
+    total = db.query(CommunicationLog).count()
+    logs = db.query(CommunicationLog, User).outerjoin(
+        User, CommunicationLog.user_id == User.user_id
+    ).order_by(CommunicationLog.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+    
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "logs": [
+            {
+                "log_id": str(log.CommunicationLog.log_id),
+                "user_name": f"{log.User.first_name} {log.User.last_name}" if log.User else "System / Non-User",
+                "channel": log.CommunicationLog.channel,
+                "destination": log.CommunicationLog.destination,
+                "subject": log.CommunicationLog.subject,
+                "status": log.CommunicationLog.status,
+                "error_message": log.CommunicationLog.error_message,
+                "created_at": log.CommunicationLog.created_at.isoformat()
+            } for log in logs
+        ]
+    }
 
 # --- Module F: System & Audit Logs ---
 @router.get("/audit/logs", summary="List System & Audit Logs")
