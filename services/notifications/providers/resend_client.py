@@ -11,7 +11,7 @@ class ResendClient:
     """
     def __init__(self):
         self.api_key = os.environ.get("RESEND_API_KEY")
-        self.default_from = os.environ.get("DEFAULT_FROM_EMAIL", "Kapuletu <noreply@kapuletu.co.ke>")
+        self.default_from = os.environ.get("DEFAULT_FROM_EMAIL", "KapuLetu <noreply@kapuletu.co.ke>")
         self.base_url = "https://api.resend.com/emails"
 
     def send_email(self, to_email: str, subject: str, html_body: str) -> bool:
