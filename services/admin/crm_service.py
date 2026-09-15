@@ -37,10 +37,13 @@ def _dispatch_broadcast_background(campaign_id: str, title: str, message: str, c
         
         # Dispatch In-App (DB only, fast)
         if "in_app" in channels:
-            new_notifications = [
-                Notification(user_id=u.user_id, title=title, message=message, type="admin_broadcast", is_read=False)
-                for u in users if u.user_id is not None
-            ]
+            new_notifications = []
+            for u in users:
+                if u.user_id is not None:
+                    p_msg = message.replace("{{first_name}}", u.first_name or "").replace("{{last_name}}", getattr(u, 'last_name', "") or "").replace("{{email}}", u.email or "")
+                    new_notifications.append(
+                        Notification(user_id=u.user_id, title=title, message=p_msg, type="admin_broadcast", is_read=False)
+                    )
             if new_notifications:
                 db.add_all(new_notifications)
                 db.commit()
@@ -57,8 +60,8 @@ def _dispatch_broadcast_background(campaign_id: str, title: str, message: str, c
                         db.add(log)
                         db.commit()
                         
-                        personalized_message = message.replace("{{first_name}}", user.first_name if user.first_name else "")
-                        executor.submit(send_email_task, str(log.log_id), user.email, title, f"<p>{personalized_message}</p>")
+                        p_msg = message.replace("{{first_name}}", user.first_name or "").replace("{{last_name}}", getattr(user, 'last_name', "") or "").replace("{{email}}", user.email or "")
+                        executor.submit(send_email_task, str(log.log_id), user.email, title, f"<p>{p_msg}</p>")
                         
             if "whatsapp" in channels:
                 for user in users:
@@ -70,8 +73,8 @@ def _dispatch_broadcast_background(campaign_id: str, title: str, message: str, c
                         db.add(log)
                         db.commit()
                         
-                        personalized_message = message.replace("{{first_name}}", user.first_name if user.first_name else "")
-                        executor.submit(send_whatsapp_task, str(log.log_id), user.phone_number, f"*{title}*\n\n{personalized_message}")
+                        p_msg = message.replace("{{first_name}}", user.first_name or "").replace("{{last_name}}", getattr(user, 'last_name', "") or "").replace("{{email}}", user.email or "")
+                        executor.submit(send_whatsapp_task, str(log.log_id), user.phone_number, f"*{title}*\n\n{p_msg}")
                         
         campaign.status = "sent"
         db.commit()
