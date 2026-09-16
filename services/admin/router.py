@@ -711,6 +711,44 @@ async def get_waitlisted_users(
     service = UserService(db)
     return service.list_waitlisted_users(page, limit)
 
+@router.get("/users/waitlist/history", summary="Get Waitlist and Whitelist History")
+async def get_waitlist_history(
+    limit: int = Query(50),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from models.audit_log import AuditLog
+    from models.users import User
+    
+    # We want actions related to Waitlist and Whitelist
+    actions = [
+        "Whitelist Added",
+        "Whitelist Removed",
+        "Whitelist Invite Sent",
+        "Waitlist Approved"
+    ]
+    
+    logs = db.query(AuditLog, User).outerjoin(
+        User, AuditLog.actor_id == User.user_id
+    ).filter(
+        AuditLog.action.in_(actions)
+    ).order_by(
+        AuditLog.created_at.desc()
+    ).limit(limit).all()
+    
+    result = []
+    for log, actor in logs:
+        result.append({
+            "id": str(log.log_id),
+            "actor": f"{actor.first_name} {actor.last_name}" if actor else "System",
+            "action": log.action,
+            "entity_id": log.entity_id,
+            "details": log.details,
+            "created_at": log.created_at.isoformat() if log.created_at else None
+        })
+        
+    return {"history": result}
+
 @router.post("/users/waitlist/{identifier}/approve", summary="Approve Waitlisted User")
 async def approve_waitlisted_user(
     identifier: str,
@@ -748,6 +786,19 @@ async def add_to_whitelist(
         raise HTTPException(status_code=400, detail="Missing phone_number or email (both are required)")
         
     entry_id = service.add_whitelist_entry(phone_number, email, name, description)
+    
+    from models.audit_log import AuditLog
+    from common.utils import parse_uuid
+    log = AuditLog(
+        actor_id=parse_uuid(current_user["user_id"]),
+        action="Whitelist Added",
+        entity_type="waitlist_whitelist",
+        entity_id=entry_id,
+        details={"email": email, "phone_number": phone_number, "name": name}
+    )
+    db.add(log)
+    db.commit()
+    
     return {"message": "Added to whitelist", "id": entry_id}
 
 @router.post("/users/whitelist/{entry_id}/invite", summary="Send Invite to Whitelisted Person")
@@ -774,6 +825,19 @@ async def invite_whitelist_user(
     service = UserService(db)
     service.mark_whitelist_invite_sent(entry_id)
     
+    # Audit log
+    from models.audit_log import AuditLog
+    from common.utils import parse_uuid
+    log = AuditLog(
+        actor_id=parse_uuid(current_user["user_id"]),
+        action="Whitelist Invite Sent",
+        entity_type="waitlist_whitelist",
+        entity_id=entry_id,
+        details={"email": entry.email, "resend": entry.invite_sent}
+    )
+    db.add(log)
+    db.commit()
+    
     return {"message": "Invite sent successfully"}
 
 
@@ -787,6 +851,19 @@ async def remove_from_whitelist(
     success = service.remove_whitelist_entry(entry_id)
     if not success:
         raise HTTPException(status_code=404, detail="Entry not found")
+        
+    from models.audit_log import AuditLog
+    from common.utils import parse_uuid
+    log = AuditLog(
+        actor_id=parse_uuid(current_user["user_id"]),
+        action="Whitelist Removed",
+        entity_type="waitlist_whitelist",
+        entity_id=entry_id,
+        details={"removed": True}
+    )
+    db.add(log)
+    db.commit()
+    
     return {"message": "Removed from whitelist"}
 
 # --- Module: Email Templates Preview ---
