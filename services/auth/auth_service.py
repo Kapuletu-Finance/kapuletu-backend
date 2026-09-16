@@ -238,6 +238,20 @@ class AuthService:
         while db.query(User).filter(User.slug == slug).first():
             slug = f"{base_slug}-{random.randint(1000, 9999)}"
 
+        # Check Waitlist Logic
+        from common.system_config_service import get_system_config
+        from models.waitlist_whitelist import WaitlistWhitelist
+        
+        is_waitlisted = False
+        waitlist_mode = get_system_config(db, "WAITLIST_MODE_ENABLED", default=False)
+        if str(waitlist_mode).lower() == "true":
+            # Check if email or phone is whitelisted
+            whitelisted = db.query(WaitlistWhitelist).filter(
+                or_(WaitlistWhitelist.identifier == email, WaitlistWhitelist.identifier == phone_number)
+            ).first()
+            if not whitelisted:
+                is_waitlisted = True
+
         new_user = User(
             email=email,
             phone_number=phone_number,
@@ -245,7 +259,8 @@ class AuthService:
             last_name=last_name,
             slug=slug,
             hashed_password=hashed_pw,
-            marketing_consent=marketing_consent
+            marketing_consent=marketing_consent,
+            is_waitlisted=is_waitlisted
         )
         db.add(new_user)
         db.commit()
@@ -468,13 +483,14 @@ class AuthService:
         if config.META_ACCESS_TOKEN and config.META_PHONE_NUMBER_ID and user.phone_number:
             try:
                 url = f"https://graph.facebook.com/v19.0/{config.META_PHONE_NUMBER_ID}/messages"
+                template_name = "kapuletu_waitlist_welcome" if user.is_waitlisted else "kapuletu_welcome"
                 payload = {
                     "messaging_product": "whatsapp",
                     "recipient_type": "individual",
                     "to": user.phone_number.replace("+", ""),
                     "type": "template",
                     "template": {
-                        "name": "kapuletu_welcome",
+                        "name": template_name,
                         "language": {"code": "en"},
                         "components": [
                             {
@@ -503,6 +519,24 @@ class AuthService:
 
         # 2. Premium Email Welcome
         support_email = os.environ.get('SUPPORT_EMAIL', 'support@kapuletu.co.ke')
+        
+        if user.is_waitlisted:
+            email_subject = "Welcome to KapuLetu! You're on the Waitlist"
+            email_title = f"Welcome to KapuLetu, {user.first_name}."
+            email_body = """
+            <p>You have successfully created your account. We are currently in a controlled testing phase to ensure the best experience, so we have added you to our waitlist.</p>
+            <p>We will notify you the moment your workspace is ready. In the meantime, feel free to check out our resources.</p>
+            """
+            button_html = f'<a href="{dashboard_url}/waitlist" class="button">View Status</a>'
+        else:
+            email_subject = "Welcome to KapuLetu! Your account is ready."
+            email_title = f"Welcome to KapuLetu, {user.first_name}."
+            email_body = """
+            <p>Your account is verified and ready to go. You can now easily track contributions, manage your campaigns, and generate official reports.</p>
+            <p>To begin managing your community's finances, please log in to your dashboard and invite your members.</p>
+            """
+            button_html = f'<a href="{dashboard_url}" class="button">Access Dashboard</a>'
+
         html_body = f"""
         <!DOCTYPE html>
         <html>
@@ -538,13 +572,11 @@ class AuthService:
                         <p>Community Financial Management</p>
                     </div>
                     <div class="content">
-                        <h2>Welcome to KapuLetu, {user.first_name}.</h2>
-                        <p>Your account is verified and ready to go. You can now easily track contributions, manage your campaigns, and generate official reports.</p>
-                        
-                        <p>To begin managing your community's finances, please log in to your dashboard and invite your members.</p>
+                        <h2>{email_title}</h2>
+                        {email_body}
                         
                         <div class="button-container">
-                            <a href="{dashboard_url}" class="button">Access Dashboard</a>
+                            {button_html}
                         </div>
                         
                         <p>Thank you for joining us!</p>
@@ -566,7 +598,7 @@ class AuthService:
             payload = {
                 "from": "KapuLetu <no-reply@kapuletu.co.ke>",
                 "to": [user.email],
-                "subject": "Welcome to KapuLetu! Your account is ready.",
+                "subject": email_subject,
                 "html": html_body
             }
             try:

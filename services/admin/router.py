@@ -133,6 +133,29 @@ async def escalated_update(
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Profile updated"}
 
+@router.get("/users/whatsapp-blocklist", summary="Get WhatsApp Blocklist")
+async def get_whatsapp_blocklist(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    return service.get_whatsapp_blocklist(page, limit, search)
+
+@router.post("/users/whatsapp-blocklist/{phone_number}/unblock", summary="Unblock WhatsApp Number")
+async def unblock_whatsapp_number(
+    phone_number: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    try:
+        return service.unblock_whatsapp_number(phone_number)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 @router.patch("/users/treasurers/{identifier}/role", summary="Upgrade User Role")
 async def upgrade_user_role(
     identifier: str,
@@ -661,5 +684,58 @@ async def list_invites(
     service = InvitesService(db)
     return service.list_invites()
 
+# --- Module G: Waitlist Management ---
+@router.get("/users/waitlist", summary="List Waitlisted Users")
+async def get_waitlisted_users(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    return service.list_waitlisted_users(page, limit)
 
+@router.post("/users/waitlist/{identifier}/approve", summary="Approve Waitlisted User")
+async def approve_waitlisted_user(
+    identifier: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    success = service.approve_waitlisted_user(identifier, current_user.get("sub"))
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found or not on waitlist")
+    return {"message": "User approved successfully"}
 
+@router.get("/users/whitelist", summary="List Waitlist Whitelist")
+async def get_waitlist_whitelist(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    return service.list_whitelist()
+
+@router.post("/users/whitelist", summary="Add to Whitelist")
+async def add_to_whitelist(
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    if "identifier" not in payload or "identifier_type" not in payload:
+        raise HTTPException(status_code=400, detail="Missing identifier or identifier_type")
+    
+    entry_id = service.add_whitelist_entry(payload["identifier"], payload["identifier_type"])
+    return {"message": "Added to whitelist", "id": entry_id}
+
+@router.delete("/users/whitelist/{entry_id}", summary="Remove from Whitelist")
+async def remove_from_whitelist(
+    entry_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    success = service.remove_whitelist_entry(entry_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    return {"message": "Removed from whitelist"}

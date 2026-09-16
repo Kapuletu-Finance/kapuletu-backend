@@ -196,6 +196,17 @@ def process_ingestion(body_str: str, config):
             logger.warning(f"Blocklist table not available yet, skipping check: {_blocklist_err}")
             db.rollback()
 
+        # 3.0b Check if user is waitlisted
+        from models.users import User
+        user_record = db.query(User).filter(User.phone_number == sender_phone).first()
+        if user_record and getattr(user_record, 'is_waitlisted', False):
+            send_meta_reply(
+                sender_phone,
+                "Hello! You are currently on our waitlist for the KapuLetu testing phase. We will notify you as soon as your workspace is ready. Thank you for your patience!",
+                config
+            )
+            return {"statusCode": 200, "body": "OK"}
+
         # --- Interactive Report Flow ---
         from repositories.transaction_repo import TransactionRepository
         from models.campaign import Campaign
@@ -691,7 +702,18 @@ def process_ingestion(body_str: str, config):
 
 def handle_unauthorized_access(phone: str, config, db_session):
     from models.whatsapp_blocklist import WhatsAppBlocklist
+    from models.users import User
+    from models.waitlist_whitelist import WaitlistWhitelist
     
+    # Check if the user is waitlisted
+    waitlisted_user = db_session.query(User).filter(User.phone_number == phone, User.is_waitlisted == True).first()
+    whitelist_entry = db_session.query(WaitlistWhitelist).filter(WaitlistWhitelist.phone_number == phone).first()
+    
+    if waitlisted_user or (whitelist_entry and not whitelist_entry.is_active):
+        msg = "Hi there! 👋 Thank you so much for your interest in KapuLetu. You are currently on our exclusive waitlist! We are rolling out access in phases to ensure the best experience, and we will notify you as soon as your spot opens up. Stay tuned!"
+        send_meta_reply(phone, msg, config)
+        return
+
     record = db_session.query(WhatsAppBlocklist).filter(WhatsAppBlocklist.phone_number == phone).first()
     if not record:
         record = WhatsAppBlocklist(phone_number=phone, attempt_count=1, is_blocked=False)

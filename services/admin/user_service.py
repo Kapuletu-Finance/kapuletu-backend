@@ -8,6 +8,7 @@ from models.campaign import Campaign
 import uuid
 import datetime
 from sqlalchemy import func, or_
+from models.whatsapp_blocklist import WhatsAppBlocklist
 
 class UserService:
     """
@@ -364,3 +365,108 @@ class UserService:
         self.db.add(log)
         self.db.commit()
         return True
+
+    def list_waitlisted_users(self, page=1, limit=50):
+        from models.users import User
+        query = self.db.query(User).filter(User.is_waitlisted == True)
+        total = query.count()
+        users = query.order_by(User.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+        return {
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "users": [{
+                "user_id": str(u.user_id),
+                "full_name": f"{u.first_name} {u.last_name}",
+                "email": u.email,
+                "phone": u.phone_number,
+                "created_at": u.created_at.isoformat() if u.created_at else None
+            } for u in users]
+        }
+
+    def approve_waitlisted_user(self, identifier: str, actor_id: str):
+        try:
+            uid = parse_uuid(identifier)
+            user = self.db.query(User).filter(User.user_id == uid).first()
+        except ValueError:
+            user = self.db.query(User).filter(User.email == identifier).first()
+            
+        if not user or not getattr(user, 'is_waitlisted', False):
+            return False
+            
+        user.is_waitlisted = False
+        log = AuditLog(actor_id=actor_id, action="Waitlist Approved", entity_type="user", entity_id=user.user_id, details="Approved from waitlist")
+        self.db.add(log)
+        self.db.commit()
+        
+        # Send approval emails
+        from services.auth.auth_service import auth_service
+        auth_service._send_welcome_messages(user)
+        
+        return True
+
+    def list_whitelist(self):
+        from models.waitlist_whitelist import WaitlistWhitelist
+        items = self.db.query(WaitlistWhitelist).order_by(WaitlistWhitelist.created_at.desc()).all()
+        return [{
+            "id": i.id,
+            "identifier": i.identifier,
+            "identifier_type": i.identifier_type.value,
+            "created_at": i.created_at.isoformat() if i.created_at else None
+        } for i in items]
+
+    def add_whitelist_entry(self, identifier: str, identifier_type: str):
+        from models.waitlist_whitelist import WaitlistWhitelist, IdentifierType
+        
+        existing = self.db.query(WaitlistWhitelist).filter(WaitlistWhitelist.identifier == identifier).first()
+        if existing:
+            return str(existing.id)
+            
+        new_entry = WaitlistWhitelist(identifier=identifier, identifier_type=IdentifierType(identifier_type))
+        self.db.add(new_entry)
+        self.db.commit()
+        return str(new_entry.id)
+
+    def remove_whitelist_entry(self, entry_id: str):
+        from models.waitlist_whitelist import WaitlistWhitelist
+        entry = self.db.query(WaitlistWhitelist).filter(WaitlistWhitelist.id == entry_id).first()
+        if entry:
+            self.db.delete(entry)
+            self.db.commit()
+            return True
+        return False
+
+    def get_whatsapp_blocklist(self, page=1, limit=50, search=None):
+        query = self.db.query(WhatsAppBlocklist)
+        if search:
+            query = query.filter(WhatsAppBlocklist.phone_number.ilike(f"%{search}%"))
+            
+        total = query.count()
+        offset = (page - 1) * limit
+        records = query.order_by(WhatsAppBlocklist.last_attempt_at.desc()).offset(offset).limit(limit).all()
+        
+        return {
+            "items": [
+                {
+                    "phone_number": r.phone_number,
+                    "attempt_count": r.attempt_count,
+                    "is_blocked": r.is_blocked,
+                    "last_attempt_at": r.last_attempt_at.isoformat() if r.last_attempt_at else None,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                } for r in records
+            ],
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "pages": (total + limit - 1) // limit
+        }
+
+    def unblock_whatsapp_number(self, phone_number: str):
+        record = self.db.query(WhatsAppBlocklist).filter(WhatsAppBlocklist.phone_number == phone_number).first()
+        if not record:
+            raise ValueError(f"Phone number {phone_number} not found in blocklist.")
+            
+        record.is_blocked = False
+        record.attempt_count = 0
+        self.db.commit()
+        return {"status": "success", "message": f"Number {phone_number} unblocked successfully."}

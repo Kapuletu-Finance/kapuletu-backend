@@ -50,6 +50,7 @@ class User(Base):
     
     # Account Status
     is_active = Column(Boolean, default=True)
+    is_waitlisted = Column(Boolean, default=False)
     has_used_trial = Column(Boolean, default=False)
     # allow_ai_training: If True, the user's corrections are used to retrain the parsing model.
     allow_ai_training = Column(Boolean, default=True)
