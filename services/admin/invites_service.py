@@ -43,7 +43,7 @@ class InvitesService:
 
             subject = "You've been invited to KapuLetu!"
             from common.config import get_config
-            invite_url = get_config().FRONTEND_URL.rstrip('/') + f"/accept-invite?token={token}"
+            invite_url = get_config().FRONTEND_URL.rstrip('/') + f"/sign-up?invite_token={token}"
 
             html_body = render_email_template(
                 "invite.html",

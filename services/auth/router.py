@@ -25,6 +25,24 @@ router = APIRouter(prefix="/auth", tags=["1. Authentication"])
 # PUBLIC ENDPOINTS
 # ==========================================
 
+@router.get("/public-config", summary="Get Public System Configuration")
+@limiter.limit("20/minute")
+async def get_public_config(request: Request, db: Session = Depends(get_db)):
+    from common.system_config_service import get_system_config
+    open_signups = get_system_config(db, "open_signups", default=True)
+    msg = get_system_config(db, "signup_restricted_message", default="Public registrations are currently closed. An invite token is required.")
+    
+    # Handle the string "false" case
+    if open_signups == "false":
+        open_signups = False
+    elif open_signups == "true":
+        open_signups = True
+        
+    return {
+        "open_signups": bool(open_signups),
+        "signup_restricted_message": msg
+    }
+
 @router.post("/register", response_model=RegisterOut, summary="Register Treasurer")
 @limiter.limit("5/minute")
 async def register(request: Request, payload: RegisterIn, db: Session = Depends(get_db)):

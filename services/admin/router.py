@@ -753,3 +753,78 @@ async def remove_from_whitelist(
     if not success:
         raise HTTPException(status_code=404, detail="Entry not found")
     return {"message": "Removed from whitelist"}
+
+# --- Module: Email Templates Preview ---
+from fastapi.responses import HTMLResponse
+
+@router.get("/templates/preview/{name}", summary="Preview Email Template")
+async def preview_template(
+    name: str,
+    message: str = "This is a live preview of the message you just typed. It shows how it will appear within the KapuLetu email branding.",
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from services.notifications.templates.render import render_email_template
+    
+    # Inject safe dummy variables
+    invite_url = "https://kapuletu.co.ke/sign-up?invite_token=preview-token-12345"
+    
+    try:
+        html_body = render_email_template(
+            name,
+            message=message.replace('\n', '<br>'),
+            invite_url=invite_url
+        )
+        return HTMLResponse(content=html_body)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Template error: {str(e)}")
+
+import os
+
+@router.get("/templates", summary="List Email Templates")
+async def list_templates(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from services.notifications.templates.render import TEMPLATE_DIR
+    try:
+        files = [f for f in os.listdir(TEMPLATE_DIR) if f.endswith(".html")]
+        return {"templates": [{"id": f, "name": f.replace(".html", "").replace("_", " ").title()} for f in files]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not read templates: {str(e)}")
+
+@router.get("/templates/raw/{name}", summary="Get Raw Email Template")
+async def get_raw_template(
+    name: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from services.notifications.templates.render import TEMPLATE_DIR
+    path = os.path.join(TEMPLATE_DIR, name)
+    if not os.path.exists(path) or not name.endswith(".html"):
+        raise HTTPException(status_code=404, detail="Template not found")
+        
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return {"name": name, "content": content}
+
+@router.put("/templates/raw/{name}", summary="Save Raw Email Template")
+async def save_raw_template(
+    name: str,
+    payload: Dict[str, str],
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from services.notifications.templates.render import TEMPLATE_DIR
+    path = os.path.join(TEMPLATE_DIR, name)
+    if not os.path.exists(path) or not name.endswith(".html"):
+        raise HTTPException(status_code=404, detail="Template not found")
+        
+    content = payload.get("content")
+    if content is None:
+        raise HTTPException(status_code=400, detail="Missing content")
+        
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return {"message": "Template saved successfully"}
+
