@@ -175,21 +175,31 @@ class AuthService:
             logger.warning("Missing RESEND_API_KEY, skipping email.")
             return
 
-        html_body = f"""
-        <html>
-        <body style="font-family: 'Inter', sans-serif; background-color: #f4f7f9; padding: 40px; margin: 0;">
-            <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e1e8ed;">
-                <h1 style="color: #0a2540; text-align: center;">KapuLetu</h1>
-                <p>Hello {name},</p>
-                <p>To {action_text}, please use the following secure verification code:</p>
-                <div style="background-color: #f8fafd; border: 1px dashed #cbd5e0; border-radius: 8px; padding: 20px; text-align: center; margin: 30px 0;">
-                    <span style="font-family: 'Courier New', monospace; font-size: 32px; font-weight: bold; color: #0056b3; letter-spacing: 5px;">{code}</span>
-                </div>
-                <p style="font-size: 14px; color: #718096;">This code will expire in 10 minutes.</p>
+        try:
+            import jinja2
+            import datetime
+            from common.config import get_config
+            env = jinja2.Environment(loader=jinja2.FileSystemLoader('templates'))
+            template = env.get_template('email_base.html')
+            
+            body_content = f"""
+            <p>Hello {name},</p>
+            <p>To {action_text}, please use the following secure verification code:</p>
+            <div style="background-color: #f8fafd; border: 1px dashed #cbd5e0; border-radius: 8px; padding: 20px; text-align: center; margin: 30px 0;">
+                <span style="font-family: 'Courier New', monospace; font-size: 32px; font-weight: bold; color: #097255; letter-spacing: 5px;">{code}</span>
             </div>
-        </body>
-        </html>
-        """
+            <p style="font-size: 14px; color: #718096;">This code will expire in 10 minutes.</p>
+            """
+            
+            html_body = template.render(
+                subject=subject,
+                frontend_url=get_config().FRONTEND_URL.rstrip('/'),
+                body=body_content,
+                current_year=datetime.datetime.utcnow().year
+            )
+        except Exception as e:
+            logger.error(f"Failed to load Jinja2 template: {e}")
+            html_body = f"<p>Your verification code is: <b>{code}</b></p>"
         
         url = "https://api.resend.com/emails"
         payload = {
@@ -223,10 +233,10 @@ class AuthService:
 
     def register(self, db: Session, email: str, password: str, first_name: str, last_name: str, phone_number: str, marketing_consent: bool = False) -> str:
         # Check existing
-        if db.query(User).filter(User.phone_number == phone_number).first():
+        if db.query(User).filter(User.phone_number == phone_number, User.deleted_at.is_(None)).first():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This phone number is already registered.")
             
-        if db.query(User).filter(User.email == email).first():
+        if db.query(User).filter(User.email == email, User.deleted_at.is_(None)).first():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This email is already registered.")
             
         hashed_pw = get_password_hash(password)
@@ -268,24 +278,22 @@ class AuthService:
         
         # Issue Registration OTP to Phone Number (per user's flow)
         code = self._save_otp(db, new_user.user_id, new_user.phone_number, "registration")
-        self._send_whatsapp_with_fallback(new_user.phone_number, code)
+        import threading
+        threading.Thread(target=self._send_whatsapp_with_fallback, args=(new_user.phone_number, code)).start()
         
-        # Give the user a 21-day Trial Subscription
+        # Give the user an indefinite Basic Subscription
         from models.subscription import Plan, Subscription
-        pro_plan = db.query(Plan).filter(Plan.name == "Professional").first()
-        if not pro_plan:
-            pro_plan = db.query(Plan).filter(Plan.name == "Basic").first()
+        basic_plan = db.query(Plan).filter(Plan.name == "Basic").first()
             
-        if pro_plan:
-            trial_sub = Subscription(
+        if basic_plan:
+            sub = Subscription(
                 user_id=new_user.user_id,
-                plan_id=pro_plan.plan_id,
+                plan_id=basic_plan.plan_id,
                 status="active",
                 start_date=datetime.datetime.utcnow(),
-                end_date=datetime.datetime.utcnow() + datetime.timedelta(days=21),
                 is_auto_renew=False
             )
-            db.add(trial_sub)
+            db.add(sub)
             db.commit()
         
         create_notification(
@@ -537,59 +545,30 @@ class AuthService:
             """
             button_html = f'<a href="{dashboard_url}" class="button">Access Dashboard</a>'
 
-        html_body = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.6; margin: 0; padding: 0; background-color: #f1f5f9; }}
-                .wrapper {{ padding: 40px 20px; }}
-                .container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 48px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); }}
-                .header {{ border-bottom: 2px solid #f1f5f9; padding-bottom: 24px; margin-bottom: 32px; text-align: center; }}
-                .header h1 {{ margin: 0; color: #0f172a; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }}
-                .header p {{ margin: 8px 0 0; color: #64748b; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }}
-                .content h2 {{ font-size: 22px; color: #0f172a; margin-top: 0; font-weight: 600; }}
-                .content p {{ font-size: 16px; color: #334155; margin-bottom: 24px; }}
-                .value-prop {{ background: linear-gradient(145deg, #f8fafc, #f1f5f9); padding: 28px; border-radius: 8px; margin: 32px 0; border: 1px solid #e2e8f0; }}
-                .value-prop h3 {{ margin: 0 0 16px; color: #0f172a; font-size: 16px; font-weight: 600; }}
-                .feature-list {{ padding-left: 0; list-style: none; margin: 0; }}
-                .feature-list li {{ margin-bottom: 12px; font-size: 15px; color: #475569; position: relative; padding-left: 24px; }}
-                .feature-list li:before {{ content: "✓"; position: absolute; left: 0; color: #2563eb; font-weight: bold; }}
-                .button-container {{ text-align: center; margin: 40px 0; }}
-                .button {{ background-color: #2563eb; color: #ffffff !important; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; display: inline-block; transition: background-color 0.2s; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2); }}
-                .button:hover {{ background-color: #1d4ed8; }}
-                .footer {{ margin-top: 48px; padding-top: 24px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #94a3b8; text-align: center; }}
-                .footer strong {{ color: #64748b; }}
-                .legal {{ margin-top: 16px; font-size: 11px; color: #cbd5e1; }}
-            </style>
-        </head>
-        <body>
-            <div class="wrapper">
-                <div class="container">
-                    <div class="header">
-                        <h1>KapuLetu</h1>
-                        <p>Community Financial Management</p>
-                    </div>
-                    <div class="content">
-                        <h2>{email_title}</h2>
-                        {email_body}
-                        
-                        <div class="button-container">
-                            {button_html}
-                        </div>
-                        
-                        <p>Thank you for joining us!</p>
-                    </div>
-                    <div class="footer">
-                        <p>If you require support, please reach out to our team at <strong>{support_email}</strong>.</p>
-                        <p>&copy; 2026 KapuLetu. All rights reserved.</p>
-                    </div>
-                </div>
+        try:
+            import jinja2
+            import datetime
+            from common.config import get_config
+            env = jinja2.Environment(loader=jinja2.FileSystemLoader('templates'))
+            template = env.get_template('email_base.html')
+            
+            body_content = f"""
+            <h2>{email_title}</h2>
+            {email_body}
+            <div style="text-align: center; margin: 40px 0;">
+                {button_html}
             </div>
-        </body>
-        </html>
-        """
+            """
+            
+            html_body = template.render(
+                subject=email_subject,
+                frontend_url=get_config().FRONTEND_URL.rstrip('/'),
+                body=body_content,
+                current_year=datetime.datetime.utcnow().year
+            )
+        except Exception as e:
+            logger.error(f"Failed to load Jinja2 template for welcome email: {e}")
+            html_body = email_body + button_html
         
         # Use Resend directly via urllib to avoid extra dependencies, matching the rest of auth_service
         resend_api_key = os.environ.get('RESEND_API_KEY')
