@@ -293,6 +293,15 @@ class UserService:
 
         if group_count == 0 and payment_count == 0:
             # Hard Delete
+            from models.notification import Notification
+            from models.subscription import Subscription
+            from models.otp import OTP
+            
+            # Remove related child records to prevent NotNullViolations
+            self.db.query(Notification).filter(Notification.user_id == user.user_id).delete()
+            self.db.query(Subscription).filter(Subscription.user_id == user.user_id).delete()
+            self.db.query(OTP).filter(OTP.user_id == user.user_id).delete()
+            
             self.db.delete(user)
             self.db.commit()
             return {"success": True, "type": "hard_delete"}
