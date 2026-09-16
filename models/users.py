@@ -56,6 +56,7 @@ class User(Base):
     allow_ai_training = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     last_active_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
     current_action = Column(String, nullable=True)
     
     preferences = Column(JSON, default=dict)

@@ -188,6 +188,22 @@ async def trigger_password_reset(
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Password reset initiated"}
 
+@router.delete("/users/treasurers/{identifier}", summary="Delete User (Soft/Hard)")
+async def delete_user(
+    identifier: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    if current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Only super admins can delete users")
+        
+    service = UserService(db)
+    result = service.delete_user(identifier, current_user.get("sub"))
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("reason", "User not found"))
+    
+    return {"message": f"User deleted successfully via {result.get('type')}"}
+
 @router.post("/auth/verify-pin", summary="Verify Admin PIN for Secure Wrapper")
 async def verify_admin_pin(
     payload: Dict[str, Any],

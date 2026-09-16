@@ -37,6 +37,8 @@ class UserService:
             Plan, Subscription.plan_id == Plan.plan_id
         ).outerjoin(
             payment_counts, User.user_id == payment_counts.c.user_id
+        ).filter(
+            User.deleted_at.is_(None)
         )
         
         # Role visibility enforcement
@@ -68,7 +70,7 @@ class UserService:
         now = datetime.datetime.utcnow()
         start_of_month = datetime.datetime(now.year, now.month, 1)
         
-        base_kpi_query = self.db.query(func.count(User.user_id))
+        base_kpi_query = self.db.query(func.count(User.user_id)).filter(User.deleted_at.is_(None))
         if viewer_role == "admin":
             base_kpi_query = base_kpi_query.filter(User.role.in_(["treasurer", "admin"]))
             
@@ -268,6 +270,52 @@ class UserService:
         self.db.add(log)
         self.db.commit()
         return True
+
+    def delete_user(self, identifier: str, actor_id: str):
+        """
+        Permanently deletes or soft-deletes a user depending on their financial footprint.
+        """
+        try:
+            uid = parse_uuid(identifier)
+            user = self.db.query(User).filter(User.user_id == uid).first()
+        except ValueError:
+            user = self.db.query(User).filter(User.slug == identifier).first()
+            
+        if not user:
+            return {"success": False, "reason": "User not found"}
+
+        # Orphan Check: Does the user own any groups or have successful payments?
+        group_count = self.db.query(Group).filter(Group.owner_id == user.user_id).count()
+        payment_count = self.db.query(SubscriptionPayment).filter(
+            SubscriptionPayment.user_id == user.user_id,
+            SubscriptionPayment.status == "success"
+        ).count()
+
+        if group_count == 0 and payment_count == 0:
+            # Hard Delete
+            self.db.delete(user)
+            self.db.commit()
+            return {"success": True, "type": "hard_delete"}
+        else:
+            # Soft Delete + Anonymize
+            user.is_active = False
+            user.deleted_at = datetime.datetime.utcnow()
+            user.email = f"deleted_{user.user_id}@kapuletu.local"
+            user.phone_number = f"deleted_{user.user_id}"
+            user.first_name = "Deleted"
+            user.last_name = "User"
+            user.slug = f"deleted-{user.user_id}"
+
+            log = AuditLog(
+                actor_id=actor_id,
+                action="User Soft Deleted",
+                entity_type="user",
+                entity_id=user.user_id,
+                details="User anonymized and soft-deleted to preserve financial history."
+            )
+            self.db.add(log)
+            self.db.commit()
+            return {"success": True, "type": "soft_delete"}
 
     def escalated_update(self, identifier: str, updates: dict, actor_id: str):
         """
