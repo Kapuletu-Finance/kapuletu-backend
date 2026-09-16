@@ -139,7 +139,9 @@ async def login(request: Request, payload: LoginIn, response: Response, db: Sess
         refresh_token=auth_result.get('RefreshToken'),
         id_token=auth_result.get('IdToken'),
         expires_in=auth_result.get('ExpiresIn', 3600),
-        requires_2fa=False
+        requires_2fa=False,
+        role=auth_result.get('Role'),
+        is_waitlisted=auth_result.get('IsWaitlisted')
     )
 
 @router.post("/token", response_model=TokenOut, include_in_schema=False)
@@ -151,7 +153,9 @@ async def login_for_swagger(form_data: OAuth2PasswordRequestForm = Depends(), db
         access_token=auth_result.get('AccessToken'),
         refresh_token=auth_result.get('RefreshToken'),
         id_token=auth_result.get('IdToken'),
-        expires_in=auth_result.get('ExpiresIn', 3600)
+        expires_in=auth_result.get('ExpiresIn', 3600),
+        role=auth_result.get('Role'),
+        is_waitlisted=auth_result.get('IsWaitlisted')
     )
 
 class Verify2FAIn(BaseModel):
@@ -190,7 +194,9 @@ async def verify_2fa(request: Request, payload: Verify2FAIn, response: Response,
         refresh_token=auth_result.get('RefreshToken'),
         id_token=auth_result.get('IdToken'),
         expires_in=auth_result.get('ExpiresIn', 3600),
-        requires_2fa=False
+        requires_2fa=False,
+        role=auth_result.get('Role'),
+        is_waitlisted=auth_result.get('IsWaitlisted')
     )
 
 @router.post("/resend-2fa", response_model=MessageOut, summary="Resend 2FA Code")

@@ -365,7 +365,9 @@ class AuthService:
             "AccessToken": access_token,
             "RefreshToken": refresh_token,
             "IdToken": access_token, # Simplified, using access token as id token
-            "ExpiresIn": session_timeout * 60
+            "ExpiresIn": session_timeout * 60,
+            "Role": user.role,
+            "IsWaitlisted": user.is_waitlisted
         }
 
     def resend_2fa(self, db: Session, two_fa_token: str) -> Dict[str, Any]:
@@ -441,7 +443,9 @@ class AuthService:
             "AccessToken": access_token,
             "RefreshToken": refresh_token,
             "IdToken": access_token,
-            "ExpiresIn": session_timeout * 60
+            "ExpiresIn": session_timeout * 60,
+            "Role": user.role,
+            "IsWaitlisted": user.is_waitlisted
         }
 
     def verify_account(self, db: Session, username: str, code: str):
