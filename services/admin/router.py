@@ -722,11 +722,25 @@ async def add_to_whitelist(
     current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     service = UserService(db)
-    if "identifier" not in payload or "identifier_type" not in payload:
-        raise HTTPException(status_code=400, detail="Missing identifier or identifier_type")
     
-    entry_id = service.add_whitelist_entry(payload["identifier"], payload["identifier_type"])
-    return {"message": "Added to whitelist", "id": entry_id}
+    phone_number = payload.get("phone_number")
+    email = payload.get("email")
+    name = payload.get("name")
+    description = payload.get("description")
+    
+    if not phone_number and not email:
+        raise HTTPException(status_code=400, detail="Missing phone_number or email")
+        
+    ids = []
+    if phone_number:
+        entry_id = service.add_whitelist_entry(phone_number, "phone", name, description)
+        ids.append(entry_id)
+        
+    if email:
+        entry_id = service.add_whitelist_entry(email, "email", name, description)
+        ids.append(entry_id)
+        
+    return {"message": "Added to whitelist", "ids": ids}
 
 @router.delete("/users/whitelist/{entry_id}", summary="Remove from Whitelist")
 async def remove_from_whitelist(

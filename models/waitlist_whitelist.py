@@ -20,4 +20,6 @@ class WaitlistWhitelist(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     identifier = Column(String, unique=True, index=True, nullable=False)
     identifier_type = Column(SAEnum(IdentifierType), nullable=False)
+    name = Column(String, nullable=True)
+    description = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

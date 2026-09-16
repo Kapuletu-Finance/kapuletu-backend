@@ -412,17 +412,22 @@ class UserService:
             "id": i.id,
             "identifier": i.identifier,
             "identifier_type": i.identifier_type.value,
+            "name": getattr(i, "name", None),
+            "description": getattr(i, "description", None),
             "created_at": i.created_at.isoformat() if i.created_at else None
         } for i in items]
 
-    def add_whitelist_entry(self, identifier: str, identifier_type: str):
+    def add_whitelist_entry(self, identifier: str, identifier_type: str, name: str = None, description: str = None):
         from models.waitlist_whitelist import WaitlistWhitelist, IdentifierType
         
         existing = self.db.query(WaitlistWhitelist).filter(WaitlistWhitelist.identifier == identifier).first()
         if existing:
+            existing.name = name
+            existing.description = description
+            self.db.commit()
             return str(existing.id)
             
-        new_entry = WaitlistWhitelist(identifier=identifier, identifier_type=IdentifierType(identifier_type))
+        new_entry = WaitlistWhitelist(identifier=identifier, identifier_type=IdentifierType(identifier_type), name=name, description=description)
         self.db.add(new_entry)
         self.db.commit()
         return str(new_entry.id)
