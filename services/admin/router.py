@@ -728,19 +728,38 @@ async def add_to_whitelist(
     name = payload.get("name")
     description = payload.get("description")
     
-    if not phone_number and not email:
-        raise HTTPException(status_code=400, detail="Missing phone_number or email")
+    if not phone_number or not email:
+        raise HTTPException(status_code=400, detail="Missing phone_number or email (both are required)")
         
-    ids = []
-    if phone_number:
-        entry_id = service.add_whitelist_entry(phone_number, "phone", name, description)
-        ids.append(entry_id)
+    entry_id = service.add_whitelist_entry(phone_number, email, name, description)
+    return {"message": "Added to whitelist", "id": entry_id}
+
+@router.post("/users/whitelist/{entry_id}/invite", summary="Send Invite to Whitelisted Person")
+async def invite_whitelist_user(
+    entry_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from models.waitlist_whitelist import WaitlistWhitelist
+    from services.admin.invites_service import InvitesService
+    
+    entry = db.query(WaitlistWhitelist).filter(WaitlistWhitelist.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Tester not found")
         
-    if email:
-        entry_id = service.add_whitelist_entry(email, "email", name, description)
-        ids.append(entry_id)
+    if not entry.email:
+        raise HTTPException(status_code=400, detail="Tester has no email address")
         
-    return {"message": "Added to whitelist", "ids": ids}
+    # Send invite
+    invite_service = InvitesService(db)
+    invite_service.generate_and_send_invite(email=entry.email)
+    
+    # Update record
+    service = UserService(db)
+    service.mark_whitelist_invite_sent(entry_id)
+    
+    return {"message": "Invite sent successfully"}
+
 
 @router.delete("/users/whitelist/{entry_id}", summary="Remove from Whitelist")
 async def remove_from_whitelist(

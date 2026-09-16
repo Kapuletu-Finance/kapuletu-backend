@@ -410,27 +410,36 @@ class UserService:
         items = self.db.query(WaitlistWhitelist).order_by(WaitlistWhitelist.created_at.desc()).all()
         return [{
             "id": i.id,
-            "identifier": i.identifier,
-            "identifier_type": i.identifier_type.value,
-            "name": getattr(i, "name", None),
-            "description": getattr(i, "description", None),
+            "phone_number": i.phone_number,
+            "email": i.email,
+            "name": i.name,
+            "description": i.description,
+            "invite_sent": i.invite_sent,
             "created_at": i.created_at.isoformat() if i.created_at else None
         } for i in items]
 
-    def add_whitelist_entry(self, identifier: str, identifier_type: str, name: str = None, description: str = None):
-        from models.waitlist_whitelist import WaitlistWhitelist, IdentifierType
-        
-        existing = self.db.query(WaitlistWhitelist).filter(WaitlistWhitelist.identifier == identifier).first()
-        if existing:
-            existing.name = name
-            existing.description = description
-            self.db.commit()
-            return str(existing.id)
-            
-        new_entry = WaitlistWhitelist(identifier=identifier, identifier_type=IdentifierType(identifier_type), name=name, description=description)
-        self.db.add(new_entry)
+    def add_whitelist_entry(self, phone_number: str, email: str, name: str = None, description: str = None):
+        from models.waitlist_whitelist import WaitlistWhitelist
+        from fastapi import HTTPException
+
+        # Check uniqueness on phone_number
+        if self.db.query(WaitlistWhitelist).filter(WaitlistWhitelist.phone_number == phone_number).first():
+            raise HTTPException(status_code=409, detail=f"Phone number {phone_number} is already on the whitelist.")
+
+        # Check uniqueness on email
+        if self.db.query(WaitlistWhitelist).filter(WaitlistWhitelist.email == email).first():
+            raise HTTPException(status_code=409, detail=f"Email {email} is already on the whitelist.")
+
+        entry = WaitlistWhitelist(
+            phone_number=phone_number,
+            email=email,
+            name=name,
+            description=description,
+            invite_sent=False
+        )
+        self.db.add(entry)
         self.db.commit()
-        return str(new_entry.id)
+        return str(entry.id)
 
     def remove_whitelist_entry(self, entry_id: str):
         from models.waitlist_whitelist import WaitlistWhitelist
@@ -440,6 +449,16 @@ class UserService:
             self.db.commit()
             return True
         return False
+
+    def mark_whitelist_invite_sent(self, entry_id: str):
+        from models.waitlist_whitelist import WaitlistWhitelist
+        entry = self.db.query(WaitlistWhitelist).filter(WaitlistWhitelist.id == entry_id).first()
+        if not entry:
+            return False
+        entry.invite_sent = True
+        self.db.commit()
+        return True
+
 
     def get_whatsapp_blocklist(self, page=1, limit=50, search=None):
         query = self.db.query(WhatsAppBlocklist)

@@ -245,9 +245,9 @@ class AuthService:
         is_waitlisted = False
         waitlist_mode = get_system_config(db, "WAITLIST_MODE_ENABLED", default=False)
         if str(waitlist_mode).lower() == "true":
-            # Check if email or phone is whitelisted
+            # Check if phone is whitelisted (phone is the primary identifier for signup/OTP)
             whitelisted = db.query(WaitlistWhitelist).filter(
-                or_(WaitlistWhitelist.identifier == email, WaitlistWhitelist.identifier == phone_number)
+                WaitlistWhitelist.phone_number == phone_number
             ).first()
             if not whitelisted:
                 is_waitlisted = True
