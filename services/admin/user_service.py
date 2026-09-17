@@ -305,12 +305,12 @@ class UserService:
             
             # Nullify references where the user acted as an admin (if they had admin privileges)
             self.db.query(SupportTicket).filter(SupportTicket.assigned_admin_id == user.user_id).update({SupportTicket.assigned_admin_id: None})
-            self.db.query(SupportSessionRating).filter(SupportSessionRating.assigned_admin_id == user.user_id).update({SupportSessionRating.assigned_admin_id: None})
             self.db.query(AppFeedback).filter(AppFeedback.reviewed_by == user.user_id).update({AppFeedback.reviewed_by: None})
             self.db.query(AIFeedback).filter(AIFeedback.reviewed_by == user.user_id).update({AIFeedback.reviewed_by: None})
 
             # Remove related child records to prevent ForeignKeyViolations
             self.db.query(TokenBlacklist).filter(TokenBlacklist.user_id == user.user_id).delete()
+            self.db.query(SupportSessionRating).filter(SupportSessionRating.user_id == user.user_id).delete()
             self.db.query(SupportTicketMessage).filter(SupportTicketMessage.sender_id == user.user_id).delete()
             self.db.query(SupportTicket).filter(SupportTicket.user_id == user.user_id).delete()
             self.db.query(AppFeedback).filter(AppFeedback.user_id == user.user_id).delete()
