@@ -409,8 +409,9 @@ class UserService:
         if not user:
             return False
             
-        # Implementation of custom auth token generation and email dispatch
-        # For now, simulate by logging the event.
+        from services.auth.auth_service import auth_service
+        # Call the forgot password logic to generate OTP and send via email/WhatsApp
+        auth_service.forgot_password(self.db, user.email or user.phone_number)
         
         log = AuditLog(
             actor_id=actor_id,
@@ -418,6 +419,33 @@ class UserService:
             entity_type="user",
             entity_id=user.user_id,
             details="Admin initiated a manual password reset."
+        )
+        self.db.add(log)
+        self.db.commit()
+        return True
+
+    def resend_verification_code(self, identifier: str, actor_id: str):
+        """
+        Resends the verification code for the user.
+        """
+        try:
+            uid = parse_uuid(identifier)
+            user = self.db.query(User).filter(User.user_id == uid).first()
+        except ValueError:
+            user = self.db.query(User).filter(User.slug == identifier).first()
+            
+        if not user:
+            return False
+            
+        from services.auth.auth_service import auth_service
+        auth_service.resend_confirmation_code(self.db, user.email or user.phone_number)
+        
+        log = AuditLog(
+            actor_id=actor_id,
+            action="Verification Code Resent",
+            entity_type="user",
+            entity_id=user.user_id,
+            details="Admin initiated resending the verification code."
         )
         self.db.add(log)
         self.db.commit()

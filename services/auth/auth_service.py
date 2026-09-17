@@ -70,8 +70,13 @@ class AuthService:
         return str(random.randint(100000, 999999))
         
     def _save_otp(self, db: Session, user_id, identifier: str, purpose: str) -> str:
+        # Check for rate-limiting (prevent multiple codes within 60 seconds)
+        last_otp = db.query(OTP).filter(OTP.user_id == parse_uuid(user_id), OTP.purpose == purpose).order_by(OTP.created_at.desc()).first()
+        if last_otp and last_otp.created_at and last_otp.created_at > datetime.datetime.utcnow() - datetime.timedelta(seconds=60):
+            raise HTTPException(status_code=429, detail="Please wait before requesting another code.")
+
         # Delete existing OTPs for this purpose and identifier
-        db.query(OTP).filter(OTP.user_id ==parse_uuid(parse_uuid(user_id)), OTP.purpose == purpose).delete()
+        db.query(OTP).filter(OTP.user_id == parse_uuid(user_id), OTP.purpose == purpose).delete()
         
         code = self._generate_otp()
         otp_entry = OTP(
@@ -320,7 +325,7 @@ class AuthService:
             
         from common.system_config_service import get_system_config
         force_2fa = get_system_config(db, "force_2fa", default="none")
-        session_timeout = int(get_system_config(db, "session_timeout_minutes", default=60))
+        session_timeout = int(get_system_config(db, "session_timeout_minutes", default=15))
         
         # Determine if 2FA is required based on global settings or user preference
         requires_2fa = getattr(user, 'two_factor_enabled', False)
@@ -425,7 +430,7 @@ class AuthService:
         db.commit()
         
         from common.system_config_service import get_system_config
-        session_timeout = int(get_system_config(db, "session_timeout_minutes", default=60))
+        session_timeout = int(get_system_config(db, "session_timeout_minutes", default=15))
         
         access_token = create_access_token({"sub": str(user.user_id), "role": user.role}, expires_delta=datetime.timedelta(minutes=session_timeout))
         refresh_token = create_refresh_token({"sub": str(user.user_id), "role": user.role})
@@ -539,7 +544,7 @@ class AuthService:
             <p>You have successfully created your account. We are currently in a controlled testing phase to ensure the best experience, so we have added you to our waitlist.</p>
             <p>We will notify you the moment your workspace is ready. In the meantime, feel free to check out our resources.</p>
             """
-            button_html = f'<a href="{dashboard_url}/waitlist" class="button">View Status</a>'
+            button_html = f'<a href="{dashboard_url}/sign-in" class="button">View Status</a>'
         else:
             email_subject = "Welcome to KapuLetu! Your account is ready."
             email_title = f"Welcome to KapuLetu, {user.first_name}."

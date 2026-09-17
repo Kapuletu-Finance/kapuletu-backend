@@ -188,6 +188,18 @@ async def trigger_password_reset(
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Password reset initiated"}
 
+@router.post("/users/treasurers/{identifier}/resend-code", summary="Resend Verification Code")
+async def resend_verification_code(
+    identifier: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    success = service.resend_verification_code(identifier, current_user.get("sub"))
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "Verification code resent"}
+
 @router.delete("/users/treasurers/{identifier}", summary="Delete User (Soft/Hard)")
 async def delete_user(
     identifier: str,
