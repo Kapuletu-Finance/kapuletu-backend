@@ -1,3 +1,4 @@
+from services.notifications.tasks import send_email_task
 import uuid
 import datetime
 import secrets
@@ -37,18 +38,46 @@ class InvitesService:
         self.db.commit()
 
         if email:
-            from services.notifications.templates.render import render_email_template
-            from services.notifications.tasks import send_email_task
+            import jinja2
             from models.communication_logs import CommunicationLog
-
-            subject = "You've been invited to KapuLetu!"
             from common.config import get_config
-            invite_url = get_config().FRONTEND_URL.rstrip('/') + f"/accept-invite?token={token}"
-
-            html_body = render_email_template(
-                "invite.html",
-                message=message.replace('\n', '<br>'),
-                invite_url=invite_url
+            import datetime
+            
+            subject = "You've been invited to KapuLetu!"
+            invite_url = get_config().FRONTEND_URL.rstrip('/') + f"/sign-up?invite_token={token}"
+            
+            # Attempt to fetch the explicitly provided name from the whitelist
+            from models.waitlist_whitelist import WaitlistWhitelist
+            tester = self.db.query(WaitlistWhitelist).filter(WaitlistWhitelist.email == email).first()
+            
+            if tester and tester.name:
+                # Use just their first name from the explicitly provided name
+                invitee_name = tester.name.split(' ')[0].title()
+            else:
+                # Fallback: Extract just the first name from the email prefix
+                invitee_name = email.split('@')[0].split('.')[0].split('+')[0].title() if email else ""
+            
+            env = jinja2.Environment(loader=jinja2.FileSystemLoader('templates'))
+            template = env.get_template('email_base.html')
+            
+            body_content = f"""
+            <h2>You're Invited to KapuLetu!</h2>
+            <p>Hello {invitee_name},</p>
+            <p>{message.replace(chr(10), '<br>')}</p>
+            
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{invite_url}" style="background-color: #097255; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; display: inline-block;">Accept Invitation & Register</a>
+            </div>
+            
+            <p style="font-size: 14px; color: #718096;">This invitation link is secure and single-use.</p>
+            <p style="font-size: 14px; color: #718096;">If you didn't expect this invitation, you can safely ignore this email.</p>
+            """
+            
+            html_body = template.render(
+                subject=subject,
+                frontend_url=get_config().FRONTEND_URL.rstrip('/'),
+                body=body_content,
+                current_year=datetime.datetime.utcnow().year
             )
             
             log = CommunicationLog(

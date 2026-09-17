@@ -29,3 +29,4 @@ from .broadcast import BroadcastCampaign
 from .communication_logs import CommunicationLog
 from .invite import Invite
 from .system_metric import SystemMetric
+from .waitlist_whitelist import WaitlistWhitelist
