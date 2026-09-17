@@ -296,8 +296,25 @@ class UserService:
             from models.notification import Notification
             from models.subscription import Subscription
             from models.otp import OTP
+            from models.token_blacklist import TokenBlacklist
+            from models.support_ticket import SupportTicket
+            from models.support_ticket_message import SupportTicketMessage
+            from models.app_feedback import AppFeedback
+            from models.ai_feedback import AIFeedback
+            from models.support_session_rating import SupportSessionRating
             
-            # Remove related child records to prevent NotNullViolations
+            # Nullify references where the user acted as an admin (if they had admin privileges)
+            self.db.query(SupportTicket).filter(SupportTicket.assigned_admin_id == user.user_id).update({SupportTicket.assigned_admin_id: None})
+            self.db.query(SupportSessionRating).filter(SupportSessionRating.assigned_admin_id == user.user_id).update({SupportSessionRating.assigned_admin_id: None})
+            self.db.query(AppFeedback).filter(AppFeedback.reviewed_by == user.user_id).update({AppFeedback.reviewed_by: None})
+            self.db.query(AIFeedback).filter(AIFeedback.reviewed_by == user.user_id).update({AIFeedback.reviewed_by: None})
+
+            # Remove related child records to prevent ForeignKeyViolations
+            self.db.query(TokenBlacklist).filter(TokenBlacklist.user_id == user.user_id).delete()
+            self.db.query(SupportTicketMessage).filter(SupportTicketMessage.sender_id == user.user_id).delete()
+            self.db.query(SupportTicket).filter(SupportTicket.user_id == user.user_id).delete()
+            self.db.query(AppFeedback).filter(AppFeedback.user_id == user.user_id).delete()
+            self.db.query(AIFeedback).filter(AIFeedback.user_id == user.user_id).delete()
             self.db.query(Notification).filter(Notification.user_id == user.user_id).delete()
             self.db.query(Subscription).filter(Subscription.user_id == user.user_id).delete()
             self.db.query(OTP).filter(OTP.user_id == user.user_id).delete()
