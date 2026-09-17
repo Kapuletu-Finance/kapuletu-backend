@@ -25,6 +25,24 @@ router = APIRouter(prefix="/auth", tags=["1. Authentication"])
 # PUBLIC ENDPOINTS
 # ==========================================
 
+@router.get("/public-config", summary="Get Public System Configuration")
+@limiter.limit("20/minute")
+async def get_public_config(request: Request, db: Session = Depends(get_db)):
+    from common.system_config_service import get_system_config
+    open_signups = get_system_config(db, "open_signups", default=True)
+    msg = get_system_config(db, "signup_restricted_message", default="Public registrations are currently closed. An invite token is required.")
+    
+    # Handle the string "false" case
+    if open_signups == "false":
+        open_signups = False
+    elif open_signups == "true":
+        open_signups = True
+        
+    return {
+        "open_signups": bool(open_signups),
+        "signup_restricted_message": msg
+    }
+
 @router.post("/register", response_model=RegisterOut, summary="Register Treasurer")
 @limiter.limit("5/minute")
 async def register(request: Request, payload: RegisterIn, db: Session = Depends(get_db)):
@@ -66,11 +84,41 @@ async def register(request: Request, payload: RegisterIn, db: Session = Depends(
     )
     return RegisterOut(message="User registered. Please check email/WhatsApp for verification code.", user_id=user_id)
 
-@router.post("/verify", response_model=MessageOut, summary="Verify Phone (Complete Registration) - Public")
+@router.post("/verify", response_model=TokenOut, summary="Verify Phone (Complete Registration) - Public")
 @limiter.limit("5/minute")
-async def verify(request: Request, payload: VerifyIn, db: Session = Depends(get_db)):
-    auth_service.verify_account(db=db, username=payload.identifier, code=payload.code)
-    return MessageOut(message="Account successfully verified. You can now log in.")
+async def verify(request: Request, payload: VerifyIn, response: Response, db: Session = Depends(get_db)):
+    from common.config import get_config
+    is_secure = not get_config().IS_LOCAL
+    
+    auth_result = auth_service.verify_account(db=db, username=payload.identifier, code=payload.code)
+    
+    # Set HTTP-Only Cookies
+    response.set_cookie(
+        key="kapuletu_access_token", 
+        value=auth_result.get('AccessToken'), 
+        httponly=True, 
+        secure=is_secure, 
+        samesite='lax', 
+        max_age=15 * 60 # 15 minutes
+    )
+    response.set_cookie(
+        key="kapuletu_refresh_token", 
+        value=auth_result.get('RefreshToken'), 
+        httponly=True, 
+        secure=is_secure, 
+        samesite='lax', 
+        max_age=1 * 24 * 60 * 60 # 1 day
+    )
+    
+    return TokenOut(
+        access_token=auth_result.get('AccessToken'),
+        refresh_token=auth_result.get('RefreshToken'),
+        id_token=auth_result.get('IdToken'),
+        expires_in=auth_result.get('ExpiresIn', 3600),
+        requires_2fa=False,
+        role=auth_result.get('Role'),
+        is_waitlisted=auth_result.get('IsWaitlisted')
+    )
 
 @router.post("/resend-code", response_model=MessageOut, summary="Resend Registration Code - Public")
 @limiter.limit("3/minute")
@@ -121,7 +169,9 @@ async def login(request: Request, payload: LoginIn, response: Response, db: Sess
         refresh_token=auth_result.get('RefreshToken'),
         id_token=auth_result.get('IdToken'),
         expires_in=auth_result.get('ExpiresIn', 3600),
-        requires_2fa=False
+        requires_2fa=False,
+        role=auth_result.get('Role'),
+        is_waitlisted=auth_result.get('IsWaitlisted')
     )
 
 @router.post("/token", response_model=TokenOut, include_in_schema=False)
@@ -133,7 +183,9 @@ async def login_for_swagger(form_data: OAuth2PasswordRequestForm = Depends(), db
         access_token=auth_result.get('AccessToken'),
         refresh_token=auth_result.get('RefreshToken'),
         id_token=auth_result.get('IdToken'),
-        expires_in=auth_result.get('ExpiresIn', 3600)
+        expires_in=auth_result.get('ExpiresIn', 3600),
+        role=auth_result.get('Role'),
+        is_waitlisted=auth_result.get('IsWaitlisted')
     )
 
 class Verify2FAIn(BaseModel):
@@ -172,7 +224,9 @@ async def verify_2fa(request: Request, payload: Verify2FAIn, response: Response,
         refresh_token=auth_result.get('RefreshToken'),
         id_token=auth_result.get('IdToken'),
         expires_in=auth_result.get('ExpiresIn', 3600),
-        requires_2fa=False
+        requires_2fa=False,
+        role=auth_result.get('Role'),
+        is_waitlisted=auth_result.get('IsWaitlisted')
     )
 
 @router.post("/resend-2fa", response_model=MessageOut, summary="Resend 2FA Code")
@@ -265,7 +319,8 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user), db: S
         phone_number_verified=current_user.get('phone_number_verified') == 'true',
         role=current_user.get('role', UserRole.TREASURER.value),
         two_factor_enabled=user.two_factor_enabled if user else False,
-        two_factor_channel=user.two_factor_channel if user else None
+        two_factor_channel=user.two_factor_channel if user else None,
+        is_waitlisted=bool(user.is_waitlisted) if user else False
     )
 
 @router.patch("/me", response_model=MessageOut, summary="Update Profile")
@@ -279,6 +334,23 @@ async def update_profile(payload: UpdateProfileIn, current_user: Dict[str, Any] 
         auth_service.update_profile(db=db, user_id=current_user['sub'], updates=updates)
     
     return MessageOut(message="Profile updated successfully.")
+    
+class HeartbeatIn(BaseModel):
+    current_action: str = Field(..., description="The user's current action or route")
+
+@router.put("/me/heartbeat", response_model=MessageOut, summary="Heartbeat Endpoint")
+async def heartbeat(payload: HeartbeatIn, current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Updates the user's last_active_at timestamp and current_action."""
+    from models.users import User
+    import datetime
+    
+    user = db.query(User).filter(User.user_id == parse_uuid(current_user.get('sub'))).first()
+    if user:
+        user.last_active_at = datetime.datetime.utcnow()
+        user.current_action = payload.current_action
+        db.commit()
+        
+    return MessageOut(message="Heartbeat received.")
 
 @router.post("/verify-email/request", response_model=MessageOut, summary="Request Email Verification Code")
 async def request_email_verification(current_user: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)):

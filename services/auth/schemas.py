@@ -106,6 +106,8 @@ class TokenOut(BaseModel):
     expires_in: int = Field(3600, json_schema_extra={"example": 3600})
     requires_2fa: Optional[bool] = Field(None, json_schema_extra={"example": True})
     two_fa_token: Optional[str] = Field(None, json_schema_extra={"example": "eyJhb..."})
+    role: Optional[str] = Field(None, json_schema_extra={"example": "treasurer"})
+    is_waitlisted: Optional[bool] = Field(None, json_schema_extra={"example": False})
 
 class RegisterOut(BaseModel):
     message: str = Field(..., json_schema_extra={"example": "User registered. Please verify email/phone."})
@@ -122,6 +124,7 @@ class UserOut(BaseModel):
     role: UserRole = Field(..., json_schema_extra={"example": UserRole.TREASURER})
     two_factor_enabled: bool = Field(False, json_schema_extra={"example": False})
     two_factor_channel: Optional[str] = Field(None, json_schema_extra={"example": "whatsapp"})
+    is_waitlisted: bool = Field(False, json_schema_extra={"example": False})
 
 class SettingsOut(BaseModel):
     allow_ai_training: bool = Field(..., json_schema_extra={"example": True})

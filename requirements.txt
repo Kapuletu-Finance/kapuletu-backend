@@ -88,3 +88,4 @@ orjson
 celery
 redis
 jinja2
+psutil
