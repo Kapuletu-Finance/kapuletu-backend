@@ -69,13 +69,13 @@ def get_base_template(content_html: str, title: str) -> str:
     <body>
         <div class="container">
             <div class="header">
-                <h1>Kapuletu Finance</h1>
+                <h1>KapuLetu Finance</h1>
             </div>
             <div class="content">
                 {content_html}
             </div>
             <div class="footer">
-                <p>&copy; {datetime.datetime.utcnow().year} Kapuletu Finance. All rights reserved.</p>
+                <p>&copy; {datetime.datetime.utcnow().year} KapuLetu Finance. All rights reserved.</p>
                 <p>This is an automated message, please do not reply directly to this email.</p>
             </div>
         </div>
@@ -92,7 +92,7 @@ def get_ticket_created_template(user_name: str, ticket_subject: str, ticket_id: 
     <p>Ticket ID: <span style="color: #6b7280; font-family: monospace;">{ticket_id}</span></p>
     <a href="https://app.kapuletu.com/treasurer/support" class="button">View Ticket</a>
     """
-    return get_base_template(content, "Ticket Received - Kapuletu Support")
+    return get_base_template(content, "Ticket Received - KapuLetu Support")
 
 def get_admin_new_ticket_alert(user_name: str, ticket_subject: str, priority: str) -> str:
     priority_color = "#ef4444" if priority in ["urgent", "high"] else "#3b82f6"

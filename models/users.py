@@ -50,11 +50,14 @@ class User(Base):
     
     # Account Status
     is_active = Column(Boolean, default=True)
+    is_waitlisted = Column(Boolean, default=False)
     has_used_trial = Column(Boolean, default=False)
     # allow_ai_training: If True, the user's corrections are used to retrain the parsing model.
     allow_ai_training = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     last_active_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
+    current_action = Column(String, nullable=True)
     
     preferences = Column(JSON, default=dict)
     

@@ -35,12 +35,27 @@ def _dispatch_broadcast_background(campaign_id: str, title: str, message: str, c
             for e in extra_emails:
                 users.append(MockUser(e))
         
+        import re
+        
+        def strip_html(text):
+            if not text: return ""
+            # Replace <p> and <br> with newlines first for better readability
+            text = text.replace("</p>", "\n").replace("<br>", "\n").replace("<br/>", "\n")
+            # Strip all other HTML tags
+            text = re.sub('<[^<]+?>', '', text)
+            # Clean up extra spaces/newlines
+            return text.strip()
+
         # Dispatch In-App (DB only, fast)
         if "in_app" in channels:
-            new_notifications = [
-                Notification(user_id=u.user_id, title=title, message=message, type="admin_broadcast", is_read=False)
-                for u in users if u.user_id is not None
-            ]
+            new_notifications = []
+            for u in users:
+                if u.user_id is not None:
+                    p_msg = strip_html(message)
+                    p_msg = p_msg.replace("{{first_name}}", getattr(u, 'first_name', "") or "").replace("{{last_name}}", getattr(u, 'last_name', "") or "").replace("{{email}}", getattr(u, 'email', "") or "")
+                    new_notifications.append(
+                        Notification(user_id=u.user_id, title=title, message=p_msg, type="admin_broadcast", is_read=False)
+                    )
             if new_notifications:
                 db.add_all(new_notifications)
                 db.commit()
@@ -49,7 +64,7 @@ def _dispatch_broadcast_background(campaign_id: str, title: str, message: str, c
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             if "email" in channels:
                 for user in users:
-                    if user.email:
+                    if getattr(user, 'email', None):
                         log = CommunicationLog(
                             user_id=user.user_id, channel="EMAIL", destination=user.email,
                             subject=title, status="QUEUED", campaign_id=campaign.campaign_id
@@ -57,12 +72,12 @@ def _dispatch_broadcast_background(campaign_id: str, title: str, message: str, c
                         db.add(log)
                         db.commit()
                         
-                        personalized_message = message.replace("{{first_name}}", user.first_name if user.first_name else "")
-                        executor.submit(send_email_task, str(log.log_id), user.email, title, f"<p>{personalized_message}</p>")
+                        p_msg = message.replace("{{first_name}}", getattr(user, 'first_name', "") or "").replace("{{last_name}}", getattr(user, 'last_name', "") or "").replace("{{email}}", getattr(user, 'email', "") or "")
+                        executor.submit(send_email_task, str(log.log_id), user.email, title, p_msg)
                         
             if "whatsapp" in channels:
                 for user in users:
-                    if user.phone_number:
+                    if getattr(user, 'phone_number', None):
                         log = CommunicationLog(
                             user_id=user.user_id, channel="WHATSAPP", destination=user.phone_number,
                             subject=title, status="QUEUED", campaign_id=campaign.campaign_id
@@ -70,8 +85,9 @@ def _dispatch_broadcast_background(campaign_id: str, title: str, message: str, c
                         db.add(log)
                         db.commit()
                         
-                        personalized_message = message.replace("{{first_name}}", user.first_name if user.first_name else "")
-                        executor.submit(send_whatsapp_task, str(log.log_id), user.phone_number, f"*{title}*\n\n{personalized_message}")
+                        p_msg = strip_html(message)
+                        p_msg = p_msg.replace("{{first_name}}", getattr(user, 'first_name', "") or "").replace("{{last_name}}", getattr(user, 'last_name', "") or "").replace("{{email}}", getattr(user, 'email', "") or "")
+                        executor.submit(send_whatsapp_task, str(log.log_id), user.phone_number, f"*{title}*\n\n{p_msg}")
                         
         campaign.status = "sent"
         db.commit()
