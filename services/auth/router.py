@@ -84,11 +84,41 @@ async def register(request: Request, payload: RegisterIn, db: Session = Depends(
     )
     return RegisterOut(message="User registered. Please check email/WhatsApp for verification code.", user_id=user_id)
 
-@router.post("/verify", response_model=MessageOut, summary="Verify Phone (Complete Registration) - Public")
+@router.post("/verify", response_model=TokenOut, summary="Verify Phone (Complete Registration) - Public")
 @limiter.limit("5/minute")
-async def verify(request: Request, payload: VerifyIn, db: Session = Depends(get_db)):
-    auth_service.verify_account(db=db, username=payload.identifier, code=payload.code)
-    return MessageOut(message="Account successfully verified. You can now log in.")
+async def verify(request: Request, payload: VerifyIn, response: Response, db: Session = Depends(get_db)):
+    from common.config import get_config
+    is_secure = not get_config().IS_LOCAL
+    
+    auth_result = auth_service.verify_account(db=db, username=payload.identifier, code=payload.code)
+    
+    # Set HTTP-Only Cookies
+    response.set_cookie(
+        key="kapuletu_access_token", 
+        value=auth_result.get('AccessToken'), 
+        httponly=True, 
+        secure=is_secure, 
+        samesite='lax', 
+        max_age=15 * 60 # 15 minutes
+    )
+    response.set_cookie(
+        key="kapuletu_refresh_token", 
+        value=auth_result.get('RefreshToken'), 
+        httponly=True, 
+        secure=is_secure, 
+        samesite='lax', 
+        max_age=1 * 24 * 60 * 60 # 1 day
+    )
+    
+    return TokenOut(
+        access_token=auth_result.get('AccessToken'),
+        refresh_token=auth_result.get('RefreshToken'),
+        id_token=auth_result.get('IdToken'),
+        expires_in=auth_result.get('ExpiresIn', 3600),
+        requires_2fa=False,
+        role=auth_result.get('Role'),
+        is_waitlisted=auth_result.get('IsWaitlisted')
+    )
 
 @router.post("/resend-code", response_model=MessageOut, summary="Resend Registration Code - Public")
 @limiter.limit("3/minute")

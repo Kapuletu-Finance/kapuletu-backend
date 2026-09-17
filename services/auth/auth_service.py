@@ -453,7 +453,7 @@ class AuthService:
             "IsWaitlisted": user.is_waitlisted
         }
 
-    def verify_account(self, db: Session, username: str, code: str):
+    def verify_account(self, db: Session, username: str, code: str) -> Dict[str, Any]:
         user = db.query(User).filter(or_(User.email == username, User.phone_number == username)).first()
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -491,6 +491,22 @@ class AuthService:
         
         # Fire the post-confirmation welcome messages!
         self._send_welcome_messages(user)
+
+        from common.system_config_service import get_system_config
+        session_timeout = int(get_system_config(db, "session_timeout_minutes", default=15))
+        
+        access_token = create_access_token({"sub": str(user.user_id), "role": user.role}, expires_delta=datetime.timedelta(minutes=session_timeout))
+        refresh_token = create_refresh_token({"sub": str(user.user_id), "role": user.role})
+        
+        return {
+            "Requires2FA": False,
+            "AccessToken": access_token,
+            "RefreshToken": refresh_token,
+            "IdToken": access_token,
+            "ExpiresIn": session_timeout * 60,
+            "Role": user.role,
+            "IsWaitlisted": user.is_waitlisted
+        }
 
     def _send_welcome_messages(self, user: User):
         """Replaces the old Cognito post_confirmation hook logic."""
