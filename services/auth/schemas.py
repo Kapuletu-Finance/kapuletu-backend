@@ -124,6 +124,7 @@ class UserOut(BaseModel):
     role: UserRole = Field(..., json_schema_extra={"example": UserRole.TREASURER})
     two_factor_enabled: bool = Field(False, json_schema_extra={"example": False})
     two_factor_channel: Optional[str] = Field(None, json_schema_extra={"example": "whatsapp"})
+    is_waitlisted: bool = Field(False, json_schema_extra={"example": False})
 
 class SettingsOut(BaseModel):
     allow_ai_training: bool = Field(..., json_schema_extra={"example": True})
