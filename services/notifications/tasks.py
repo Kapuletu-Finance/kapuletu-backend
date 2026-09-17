@@ -10,7 +10,26 @@ logger = logging.getLogger(__name__)
 
 import time
 
+import os
+import datetime
+from jinja2 import Environment, FileSystemLoader
+
 def send_email_task(log_id: str, to_email: str, subject: str, html_body: str):
+    # Setup Jinja2 Environment
+    template_dir = os.path.join(os.path.dirname(__file__), '../../templates')
+    env = Environment(loader=FileSystemLoader(template_dir))
+    template = env.get_template('email_base.html')
+    
+    frontend_url = os.environ.get("FRONTEND_URL", "https://kapuletu.co.ke")
+    
+    # Wrap the provided html_body in the branded template
+    final_html_body = template.render(
+        subject=subject,
+        body=html_body,
+        frontend_url=frontend_url,
+        current_year=datetime.datetime.utcnow().year
+    )
+
     for attempt in range(3):
         db: Session = SessionLocal()
         try:
@@ -23,7 +42,7 @@ def send_email_task(log_id: str, to_email: str, subject: str, html_body: str):
             success = resend_client.send_email(
                 to_email=to_email,
                 subject=subject,
-                html_body=html_body
+                html_body=final_html_body
             )
             
             if success:

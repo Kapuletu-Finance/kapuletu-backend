@@ -93,11 +93,12 @@ from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.middleware import SlowAPIMiddleware
 from services.auth.router import limiter
-from common.middleware import MaintenanceModeMiddleware
+from common.middleware import MaintenanceModeMiddleware, PerformanceTrackingMiddleware
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(MaintenanceModeMiddleware)
+app.add_middleware(PerformanceTrackingMiddleware)
 app.add_middleware(SlowAPIMiddleware)
 
 from fastapi.middleware.cors import CORSMiddleware

@@ -1,3 +1,4 @@
+from models import User
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -132,6 +133,29 @@ async def escalated_update(
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Profile updated"}
 
+@router.get("/users/whatsapp-blocklist", summary="Get WhatsApp Blocklist")
+async def get_whatsapp_blocklist(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    return service.get_whatsapp_blocklist(page, limit, search)
+
+@router.post("/users/whatsapp-blocklist/{phone_number}/unblock", summary="Unblock WhatsApp Number")
+async def unblock_whatsapp_number(
+    phone_number: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    try:
+        return service.unblock_whatsapp_number(phone_number)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 @router.patch("/users/treasurers/{identifier}/role", summary="Upgrade User Role")
 async def upgrade_user_role(
     identifier: str,
@@ -163,6 +187,34 @@ async def trigger_password_reset(
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Password reset initiated"}
+
+@router.post("/users/treasurers/{identifier}/resend-code", summary="Resend Verification Code")
+async def resend_verification_code(
+    identifier: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    success = service.resend_verification_code(identifier, current_user.get("sub"))
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "Verification code resent"}
+
+@router.delete("/users/treasurers/{identifier}", summary="Delete User (Soft/Hard)")
+async def delete_user(
+    identifier: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    if current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Only super admins can delete users")
+        
+    service = UserService(db)
+    result = service.delete_user(identifier, current_user.get("sub"))
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("reason", "User not found"))
+    
+    return {"message": f"User deleted successfully via {result.get('type')}"}
 
 @router.post("/auth/verify-pin", summary="Verify Admin PIN for Secure Wrapper")
 async def verify_admin_pin(
@@ -516,6 +568,38 @@ async def get_broadcast_recipients(
         } for log in logs
     ]
 
+@router.get("/crm/communication-logs", summary="List All Communication Logs")
+async def list_communication_logs(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from models.communication_logs import CommunicationLog
+    
+    total = db.query(CommunicationLog).count()
+    logs = db.query(CommunicationLog, User).outerjoin(
+        User, CommunicationLog.user_id == User.user_id
+    ).order_by(CommunicationLog.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+    
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "logs": [
+            {
+                "log_id": str(log.CommunicationLog.log_id),
+                "user_name": f"{log.User.first_name} {log.User.last_name}" if log.User else "System / Non-User",
+                "channel": log.CommunicationLog.channel,
+                "destination": log.CommunicationLog.destination,
+                "subject": log.CommunicationLog.subject,
+                "status": log.CommunicationLog.status,
+                "error_message": log.CommunicationLog.error_message,
+                "created_at": log.CommunicationLog.created_at.isoformat()
+            } for log in logs
+        ]
+    }
+
 # --- Module F: System & Audit Logs ---
 @router.get("/audit/logs", summary="List System & Audit Logs")
 async def list_audit_logs(
@@ -628,5 +712,243 @@ async def list_invites(
     service = InvitesService(db)
     return service.list_invites()
 
+# --- Module G: Waitlist Management ---
+@router.get("/users/waitlist", summary="List Waitlisted Users")
+async def get_waitlisted_users(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    return service.list_waitlisted_users(page, limit)
 
+@router.get("/users/waitlist/history", summary="Get Waitlist and Whitelist History")
+async def get_waitlist_history(
+    limit: int = Query(50),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from models.audit_log import AuditLog
+    from models.users import User
+    
+    # We want actions related to Waitlist and Whitelist
+    actions = [
+        "Whitelist Added",
+        "Whitelist Removed",
+        "Whitelist Invite Sent",
+        "Waitlist Approved"
+    ]
+    
+    logs = db.query(AuditLog, User).outerjoin(
+        User, AuditLog.actor_id == User.user_id
+    ).filter(
+        AuditLog.action.in_(actions)
+    ).order_by(
+        AuditLog.created_at.desc()
+    ).limit(limit).all()
+    
+    result = []
+    for log, actor in logs:
+        result.append({
+            "id": str(log.log_id),
+            "actor": f"{actor.first_name} {actor.last_name}" if actor else "System",
+            "action": log.action,
+            "entity_id": log.entity_id,
+            "details": log.details,
+            "created_at": log.created_at.isoformat() if log.created_at else None
+        })
+        
+    return {"history": result}
+
+@router.post("/users/waitlist/{identifier}/approve", summary="Approve Waitlisted User")
+async def approve_waitlisted_user(
+    identifier: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    success = service.approve_waitlisted_user(identifier, current_user.get("sub"))
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found or not on waitlist")
+    return {"message": "User approved successfully"}
+
+@router.get("/users/whitelist", summary="List Waitlist Whitelist")
+async def get_waitlist_whitelist(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    return service.list_whitelist()
+
+@router.post("/users/whitelist", summary="Add to Whitelist")
+async def add_to_whitelist(
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    
+    phone_number = payload.get("phone_number")
+    email = payload.get("email")
+    name = payload.get("name")
+    description = payload.get("description")
+    
+    if not phone_number or not email:
+        raise HTTPException(status_code=400, detail="Missing phone_number or email (both are required)")
+        
+    entry_id = service.add_whitelist_entry(phone_number, email, name, description)
+    
+    from models.audit_log import AuditLog
+    from common.utils import parse_uuid
+    log = AuditLog(
+        actor_id=parse_uuid(current_user["sub"]),
+        action="Whitelist Added",
+        entity_type="waitlist_whitelist",
+        entity_id=entry_id,
+        details={"email": email, "phone_number": phone_number, "name": name}
+    )
+    db.add(log)
+    db.commit()
+    
+    return {"message": "Added to whitelist", "id": entry_id}
+
+@router.post("/users/whitelist/{entry_id}/invite", summary="Send Invite to Whitelisted Person")
+async def invite_whitelist_user(
+    entry_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from models.waitlist_whitelist import WaitlistWhitelist
+    from services.admin.invites_service import InvitesService
+    
+    entry = db.query(WaitlistWhitelist).filter(WaitlistWhitelist.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Tester not found")
+        
+    if not entry.email:
+        raise HTTPException(status_code=400, detail="Tester has no email address")
+        
+    # Send invite
+    invite_service = InvitesService(db)
+    invite_service.generate_and_send_invite(email=entry.email)
+    
+    # Update record
+    service = UserService(db)
+    service.mark_whitelist_invite_sent(entry_id)
+    
+    # Audit log
+    from models.audit_log import AuditLog
+    from common.utils import parse_uuid
+    log = AuditLog(
+        actor_id=parse_uuid(current_user["sub"]),
+        action="Whitelist Invite Sent",
+        entity_type="waitlist_whitelist",
+        entity_id=entry_id,
+        details={"email": entry.email, "resend": entry.invite_sent}
+    )
+    db.add(log)
+    db.commit()
+    
+    return {"message": "Invite sent successfully"}
+
+
+@router.delete("/users/whitelist/{entry_id}", summary="Remove from Whitelist")
+async def remove_from_whitelist(
+    entry_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    service = UserService(db)
+    success = service.remove_whitelist_entry(entry_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Entry not found")
+        
+    from models.audit_log import AuditLog
+    from common.utils import parse_uuid
+    log = AuditLog(
+        actor_id=parse_uuid(current_user["sub"]),
+        action="Whitelist Removed",
+        entity_type="waitlist_whitelist",
+        entity_id=entry_id,
+        details={"removed": True}
+    )
+    db.add(log)
+    db.commit()
+    
+    return {"message": "Removed from whitelist"}
+
+# --- Module: Email Templates Preview ---
+from fastapi.responses import HTMLResponse
+
+@router.get("/templates/preview/{name}", summary="Preview Email Template")
+async def preview_template(
+    name: str,
+    message: str = "This is a live preview of the message you just typed. It shows how it will appear within the KapuLetu email branding.",
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from services.notifications.templates.render import render_email_template
+    
+    # Inject safe dummy variables
+    invite_url = "https://kapuletu.co.ke/sign-up?invite_token=preview-token-12345"
+    
+    try:
+        html_body = render_email_template(
+            name,
+            message=message.replace('\n', '<br>'),
+            invite_url=invite_url
+        )
+        return HTMLResponse(content=html_body)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Template error: {str(e)}")
+
+import os
+
+@router.get("/templates", summary="List Email Templates")
+async def list_templates(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from services.notifications.templates.render import TEMPLATE_DIR
+    try:
+        files = [f for f in os.listdir(TEMPLATE_DIR) if f.endswith(".html")]
+        return {"templates": [{"id": f, "name": f.replace(".html", "").replace("_", " ").title()} for f in files]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not read templates: {str(e)}")
+
+@router.get("/templates/raw/{name}", summary="Get Raw Email Template")
+async def get_raw_template(
+    name: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from services.notifications.templates.render import TEMPLATE_DIR
+    path = os.path.join(TEMPLATE_DIR, name)
+    if not os.path.exists(path) or not name.endswith(".html"):
+        raise HTTPException(status_code=404, detail="Template not found")
+        
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return {"name": name, "content": content}
+
+@router.put("/templates/raw/{name}", summary="Save Raw Email Template")
+async def save_raw_template(
+    name: str,
+    payload: Dict[str, str],
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from services.notifications.templates.render import TEMPLATE_DIR
+    path = os.path.join(TEMPLATE_DIR, name)
+    if not os.path.exists(path) or not name.endswith(".html"):
+        raise HTTPException(status_code=404, detail="Template not found")
+        
+    content = payload.get("content")
+    if content is None:
+        raise HTTPException(status_code=400, detail="Missing content")
+        
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return {"message": "Template saved successfully"}
 

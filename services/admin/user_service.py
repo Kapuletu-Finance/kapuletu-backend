@@ -8,6 +8,7 @@ from models.campaign import Campaign
 import uuid
 import datetime
 from sqlalchemy import func, or_
+from models.whatsapp_blocklist import WhatsAppBlocklist
 
 class UserService:
     """
@@ -36,6 +37,8 @@ class UserService:
             Plan, Subscription.plan_id == Plan.plan_id
         ).outerjoin(
             payment_counts, User.user_id == payment_counts.c.user_id
+        ).filter(
+            User.deleted_at.is_(None)
         )
         
         # Role visibility enforcement
@@ -67,7 +70,7 @@ class UserService:
         now = datetime.datetime.utcnow()
         start_of_month = datetime.datetime(now.year, now.month, 1)
         
-        base_kpi_query = self.db.query(func.count(User.user_id))
+        base_kpi_query = self.db.query(func.count(User.user_id)).filter(User.deleted_at.is_(None))
         if viewer_role == "admin":
             base_kpi_query = base_kpi_query.filter(User.role.in_(["treasurer", "admin"]))
             
@@ -268,6 +271,78 @@ class UserService:
         self.db.commit()
         return True
 
+    def delete_user(self, identifier: str, actor_id: str):
+        """
+        Permanently deletes or soft-deletes a user depending on their financial footprint.
+        """
+        try:
+            uid = parse_uuid(identifier)
+            user = self.db.query(User).filter(User.user_id == uid).first()
+        except ValueError:
+            user = self.db.query(User).filter(User.slug == identifier).first()
+            
+        if not user:
+            return {"success": False, "reason": "User not found"}
+
+        # Orphan Check: Does the user own any groups or have successful payments?
+        group_count = self.db.query(Group).filter(Group.owner_id == user.user_id).count()
+        payment_count = self.db.query(SubscriptionPayment).filter(
+            SubscriptionPayment.user_id == user.user_id,
+            SubscriptionPayment.status == "success"
+        ).count()
+
+        if group_count == 0 and payment_count == 0:
+            # Hard Delete
+            from models.notification import Notification
+            from models.subscription import Subscription
+            from models.otp import OTP
+            from models.token_blacklist import TokenBlacklist
+            from models.support_ticket import SupportTicket
+            from models.support_ticket_message import SupportTicketMessage
+            from models.app_feedback import AppFeedback
+            from models.ai_feedback import AIFeedback
+            from models.support_session_rating import SupportSessionRating
+            
+            # Nullify references where the user acted as an admin (if they had admin privileges)
+            self.db.query(SupportTicket).filter(SupportTicket.assigned_admin_id == user.user_id).update({SupportTicket.assigned_admin_id: None})
+            self.db.query(AppFeedback).filter(AppFeedback.reviewed_by == user.user_id).update({AppFeedback.reviewed_by: None})
+            self.db.query(AIFeedback).filter(AIFeedback.reviewed_by == user.user_id).update({AIFeedback.reviewed_by: None})
+
+            # Remove related child records to prevent ForeignKeyViolations
+            self.db.query(TokenBlacklist).filter(TokenBlacklist.user_id == user.user_id).delete()
+            self.db.query(SupportSessionRating).filter(SupportSessionRating.user_id == user.user_id).delete()
+            self.db.query(SupportTicketMessage).filter(SupportTicketMessage.sender_id == user.user_id).delete()
+            self.db.query(SupportTicket).filter(SupportTicket.user_id == user.user_id).delete()
+            self.db.query(AppFeedback).filter(AppFeedback.user_id == user.user_id).delete()
+            self.db.query(AIFeedback).filter(AIFeedback.user_id == user.user_id).delete()
+            self.db.query(Notification).filter(Notification.user_id == user.user_id).delete()
+            self.db.query(Subscription).filter(Subscription.user_id == user.user_id).delete()
+            self.db.query(OTP).filter(OTP.user_id == user.user_id).delete()
+            
+            self.db.delete(user)
+            self.db.commit()
+            return {"success": True, "type": "hard_delete"}
+        else:
+            # Soft Delete + Anonymize
+            user.is_active = False
+            user.deleted_at = datetime.datetime.utcnow()
+            user.email = f"deleted_{user.user_id}@kapuletu.local"
+            user.phone_number = f"deleted_{user.user_id}"
+            user.first_name = "Deleted"
+            user.last_name = "User"
+            user.slug = f"deleted-{user.user_id}"
+
+            log = AuditLog(
+                actor_id=actor_id,
+                action="User Soft Deleted",
+                entity_type="user",
+                entity_id=user.user_id,
+                details="User anonymized and soft-deleted to preserve financial history."
+            )
+            self.db.add(log)
+            self.db.commit()
+            return {"success": True, "type": "soft_delete"}
+
     def escalated_update(self, identifier: str, updates: dict, actor_id: str):
         """
         Allows an admin to manually correct user profile data.
@@ -351,8 +426,9 @@ class UserService:
         if not user:
             return False
             
-        # Implementation of custom auth token generation and email dispatch
-        # For now, simulate by logging the event.
+        from services.auth.auth_service import auth_service
+        # Call the forgot password logic to generate OTP and send via email/WhatsApp
+        auth_service.forgot_password(self.db, user.email or user.phone_number)
         
         log = AuditLog(
             actor_id=actor_id,
@@ -364,3 +440,159 @@ class UserService:
         self.db.add(log)
         self.db.commit()
         return True
+
+    def resend_verification_code(self, identifier: str, actor_id: str):
+        """
+        Resends the verification code for the user.
+        """
+        try:
+            uid = parse_uuid(identifier)
+            user = self.db.query(User).filter(User.user_id == uid).first()
+        except ValueError:
+            user = self.db.query(User).filter(User.slug == identifier).first()
+            
+        if not user:
+            return False
+            
+        from services.auth.auth_service import auth_service
+        auth_service.resend_confirmation_code(self.db, user.email or user.phone_number)
+        
+        log = AuditLog(
+            actor_id=actor_id,
+            action="Verification Code Resent",
+            entity_type="user",
+            entity_id=user.user_id,
+            details="Admin initiated resending the verification code."
+        )
+        self.db.add(log)
+        self.db.commit()
+        return True
+
+    def list_waitlisted_users(self, page=1, limit=50):
+        from models.users import User
+        query = self.db.query(User).filter(User.is_waitlisted == True)
+        total = query.count()
+        users = query.order_by(User.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+        return {
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "users": [{
+                "user_id": str(u.user_id),
+                "full_name": f"{u.first_name} {u.last_name}",
+                "email": u.email,
+                "phone": u.phone_number,
+                "created_at": u.created_at.isoformat() if u.created_at else None
+            } for u in users]
+        }
+
+    def approve_waitlisted_user(self, identifier: str, actor_id: str):
+        try:
+            uid = parse_uuid(identifier)
+            user = self.db.query(User).filter(User.user_id == uid).first()
+        except ValueError:
+            user = self.db.query(User).filter(User.email == identifier).first()
+            
+        if not user or not getattr(user, 'is_waitlisted', False):
+            return False
+            
+        user.is_waitlisted = False
+        log = AuditLog(actor_id=actor_id, action="Waitlist Approved", entity_type="user", entity_id=user.user_id, details="Approved from waitlist")
+        self.db.add(log)
+        self.db.commit()
+        
+        # Send approval emails
+        from services.auth.auth_service import auth_service
+        auth_service._send_welcome_messages(user)
+        
+        return True
+
+    def list_whitelist(self):
+        from models.waitlist_whitelist import WaitlistWhitelist
+        items = self.db.query(WaitlistWhitelist).order_by(WaitlistWhitelist.created_at.desc()).all()
+        return [{
+            "id": i.id,
+            "phone_number": i.phone_number,
+            "email": i.email,
+            "name": i.name,
+            "description": i.description,
+            "invite_sent": i.invite_sent,
+            "created_at": i.created_at.isoformat() if i.created_at else None
+        } for i in items]
+
+    def add_whitelist_entry(self, phone_number: str, email: str, name: str = None, description: str = None):
+        from models.waitlist_whitelist import WaitlistWhitelist
+        from fastapi import HTTPException
+
+        # Check uniqueness on phone_number
+        if self.db.query(WaitlistWhitelist).filter(WaitlistWhitelist.phone_number == phone_number).first():
+            raise HTTPException(status_code=409, detail=f"Phone number {phone_number} is already on the whitelist.")
+
+        # Check uniqueness on email
+        if self.db.query(WaitlistWhitelist).filter(WaitlistWhitelist.email == email).first():
+            raise HTTPException(status_code=409, detail=f"Email {email} is already on the whitelist.")
+
+        entry = WaitlistWhitelist(
+            phone_number=phone_number,
+            email=email,
+            name=name,
+            description=description,
+            invite_sent=False
+        )
+        self.db.add(entry)
+        self.db.commit()
+        return str(entry.id)
+
+    def remove_whitelist_entry(self, entry_id: str):
+        from models.waitlist_whitelist import WaitlistWhitelist
+        entry = self.db.query(WaitlistWhitelist).filter(WaitlistWhitelist.id == entry_id).first()
+        if entry:
+            self.db.delete(entry)
+            self.db.commit()
+            return True
+        return False
+
+    def mark_whitelist_invite_sent(self, entry_id: str):
+        from models.waitlist_whitelist import WaitlistWhitelist
+        entry = self.db.query(WaitlistWhitelist).filter(WaitlistWhitelist.id == entry_id).first()
+        if not entry:
+            return False
+        entry.invite_sent = True
+        self.db.commit()
+        return True
+
+
+    def get_whatsapp_blocklist(self, page=1, limit=50, search=None):
+        query = self.db.query(WhatsAppBlocklist)
+        if search:
+            query = query.filter(WhatsAppBlocklist.phone_number.ilike(f"%{search}%"))
+            
+        total = query.count()
+        offset = (page - 1) * limit
+        records = query.order_by(WhatsAppBlocklist.last_attempt_at.desc()).offset(offset).limit(limit).all()
+        
+        return {
+            "items": [
+                {
+                    "phone_number": r.phone_number,
+                    "attempt_count": r.attempt_count,
+                    "is_blocked": r.is_blocked,
+                    "last_attempt_at": r.last_attempt_at.isoformat() if r.last_attempt_at else None,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                } for r in records
+            ],
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "pages": (total + limit - 1) // limit
+        }
+
+    def unblock_whatsapp_number(self, phone_number: str):
+        record = self.db.query(WhatsAppBlocklist).filter(WhatsAppBlocklist.phone_number == phone_number).first()
+        if not record:
+            raise ValueError(f"Phone number {phone_number} not found in blocklist.")
+            
+        record.is_blocked = False
+        record.attempt_count = 0
+        self.db.commit()
+        return {"status": "success", "message": f"Number {phone_number} unblocked successfully."}
