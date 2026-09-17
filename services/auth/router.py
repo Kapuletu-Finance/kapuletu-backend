@@ -320,7 +320,7 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user), db: S
         role=current_user.get('role', UserRole.TREASURER.value),
         two_factor_enabled=user.two_factor_enabled if user else False,
         two_factor_channel=user.two_factor_channel if user else None,
-        is_waitlisted=user.is_waitlisted if user else False
+        is_waitlisted=bool(user.is_waitlisted) if user else False
     )
 
 @router.patch("/me", response_model=MessageOut, summary="Update Profile")

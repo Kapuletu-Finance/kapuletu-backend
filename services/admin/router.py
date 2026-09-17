@@ -802,7 +802,7 @@ async def add_to_whitelist(
     from models.audit_log import AuditLog
     from common.utils import parse_uuid
     log = AuditLog(
-        actor_id=parse_uuid(current_user["user_id"]),
+        actor_id=parse_uuid(current_user["sub"]),
         action="Whitelist Added",
         entity_type="waitlist_whitelist",
         entity_id=entry_id,
@@ -841,7 +841,7 @@ async def invite_whitelist_user(
     from models.audit_log import AuditLog
     from common.utils import parse_uuid
     log = AuditLog(
-        actor_id=parse_uuid(current_user["user_id"]),
+        actor_id=parse_uuid(current_user["sub"]),
         action="Whitelist Invite Sent",
         entity_type="waitlist_whitelist",
         entity_id=entry_id,
@@ -867,7 +867,7 @@ async def remove_from_whitelist(
     from models.audit_log import AuditLog
     from common.utils import parse_uuid
     log = AuditLog(
-        actor_id=parse_uuid(current_user["user_id"]),
+        actor_id=parse_uuid(current_user["sub"]),
         action="Whitelist Removed",
         entity_type="waitlist_whitelist",
         entity_id=entry_id,
