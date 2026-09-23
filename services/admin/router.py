@@ -1,5 +1,6 @@
 from models import User
 from typing import Dict, Any, Optional
+from common.utils import parse_uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 
@@ -549,11 +550,16 @@ async def get_broadcast_recipients(
 ):
     from models.communication_logs import CommunicationLog
     from models.users import User
+
+    try:
+        broadcast_campaign_id = parse_uuid(campaign_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Broadcast campaign not found")
     
     logs = db.query(CommunicationLog, User).outerjoin(
         User, CommunicationLog.user_id == User.user_id
     ).filter(
-        CommunicationLog.campaign_id == campaign_id
+        CommunicationLog.campaign_id == broadcast_campaign_id
     ).order_by(CommunicationLog.created_at.desc()).all()
     
     return [
