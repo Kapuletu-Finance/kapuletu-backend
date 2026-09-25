@@ -221,6 +221,15 @@ async def upload_cover_photo(
     if not isinstance(current_settings, dict):
         current_settings = {}
         
+    old_cover_photo = current_settings.get("cover_photo")
+    if old_cover_photo and old_cover_photo.startswith("/uploads/"):
+        old_file_path = old_cover_photo.lstrip("/")
+        if os.path.exists(old_file_path):
+            try:
+                os.remove(old_file_path)
+            except Exception:
+                pass
+        
     current_settings["cover_photo"] = cover_photo_url
     
     # We must explicitly update the JSON column
