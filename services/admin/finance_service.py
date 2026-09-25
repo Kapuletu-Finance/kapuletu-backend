@@ -183,4 +183,31 @@ class FinanceService:
             self.db.add(payment)
             
         self.db.commit()
+
+        # --- ADMIN NOTIFICATION HOOK ---
+        try:
+            from services.notifications.admin_dispatcher import notify_admins_async
+            from common.config import get_config
+            config = get_config()
+            admin_url = config.FRONTEND_URL.replace("app.", "admin.").rstrip('/') if "app." in config.FRONTEND_URL else "https://admin.kapuletu.co.ke"
+
+            user = self.db.query(User).filter(User.user_id == parse_uuid(user_id)).first()
+            plan = self.db.query(Plan).filter(Plan.plan_id == parse_uuid(plan_id)).first()
+            
+            if user and plan:
+                subject = f"Plan Upgrade Alert: {user.first_name} {user.last_name}"
+                body = f"""
+                <h3>Plan Upgrade Alert</h3>
+                <p><strong>User:</strong> {user.first_name} {user.last_name} ({user.email})</p>
+                <p><strong>New Plan:</strong> {plan.name}</p>
+                <p><strong>Duration:</strong> {duration_days} days (Trial: {is_trial})</p>
+                <br>
+                <a href="{admin_url}/admin/finance" style="padding: 10px 15px; background-color: #000; color: #fff; text-decoration: none; border-radius: 5px;">View Subscription Details</a>
+                """
+                notify_admins_async(subject, body)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to dispatch admin notification for upgrade: {e}")
+        # -------------------------------
+
         return True
