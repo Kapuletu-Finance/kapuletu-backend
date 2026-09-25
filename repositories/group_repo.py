@@ -104,3 +104,16 @@ def archive_group(db: Session, group_id: str):
     })
     db.commit()
     return get_group(db, group_id)
+
+def has_approved_transactions(db: Session, group_id: str):
+    """Checks if a group has any approved transactions."""
+    return db.query(Transaction).filter(Transaction.group_id == parse_uuid(group_id), Transaction.status == "approved").first() is not None
+
+def delete_group(db: Session, group_id: str):
+    """Hard deletes a group."""
+    group = db.query(Group).filter(Group.group_id == parse_uuid(group_id)).first()
+    if group:
+        db.delete(group)
+        db.commit()
+        return True
+    return False

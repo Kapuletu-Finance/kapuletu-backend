@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -99,7 +99,7 @@ async def update_group(
     db: Session = Depends(get_db), 
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    """Updates group properties (Name, Description). Currency is immutable."""
+    """Updates group properties (Name, Description, Settings). Currency is mutable only if no contributions."""
     group = group_repo.get_group(db=db, identifier=str(group_id))
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
@@ -113,6 +113,15 @@ async def update_group(
     updates = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
     if not updates:
         return group
+        
+    if "currency" in updates:
+        if updates["currency"] != group.currency:
+            if group_repo.has_approved_transactions(db, str(group.group_id)):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot change currency after contributions have been made.")
+            # If changing to same currency, it's fine. Else we checked transactions.
+            updates["currency"] = updates["currency"].value
+        else:
+            updates.pop("currency", None)
         
     updated_group = group_repo.update_group(db=db, group_id=str(group.group_id), updates=updates)
     
@@ -171,3 +180,87 @@ async def archive_group(
     )
     
     return archived_group
+
+import os
+import shutil
+import uuid
+
+@router.post("/{group_id}/cover-photo", response_model=GroupOut, summary="Upload Group Cover Photo")
+async def upload_cover_photo(
+    group_id: str, 
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db), 
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Uploads a cover photo for the group and saves it to local storage."""
+    group = group_repo.get_group(db=db, identifier=str(group_id))
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+        
+    if str(group.owner_id) != str(current_user.get('sub')):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to modify this group.")
+        
+    # Validate file type
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File must be an image.")
+
+    # Save file locally
+    os.makedirs("uploads", exist_ok=True)
+    file_ext = os.path.splitext(file.filename)[1]
+    unique_filename = f"group_{group_id}_{uuid.uuid4().hex[:8]}{file_ext}"
+    file_path = os.path.join("uploads", unique_filename)
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    cover_photo_url = f"/uploads/{unique_filename}"
+    
+    # Update group settings_override
+    current_settings = group.settings_override or {}
+    # Ensure it's a dict (in case it was somehow stored as string)
+    if not isinstance(current_settings, dict):
+        current_settings = {}
+        
+    current_settings["cover_photo"] = cover_photo_url
+    
+    # We must explicitly update the JSON column
+    updated_group = group_repo.update_group(db=db, group_id=str(group.group_id), updates={"settings_override": current_settings})
+    
+    AuditService(db).log_action(
+        actor_id=current_user.get('sub'),
+        action="GROUP_UPDATED",
+        entity_type="group",
+        entity_id=str(group_id),
+        details={"message": f"Cover photo uploaded for group \"{updated_group.group_name}\""}
+    )
+    
+    return updated_group
+
+
+@router.delete("/{group_id}/permanent", status_code=status.HTTP_204_NO_CONTENT, summary="Permanently Delete Group")
+async def delete_group_permanent(
+    group_id: str, 
+    db: Session = Depends(get_db), 
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Permanently deletes a group if there are no approved transactions."""
+    group = group_repo.get_group(db=db, identifier=str(group_id))
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+        
+    if str(group.owner_id) != str(current_user.get('sub')):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to delete this group.")
+        
+    if group_repo.has_approved_transactions(db, str(group.group_id)):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete a group that has processed transactions.")
+        
+    group_repo.delete_group(db=db, group_id=str(group.group_id))
+    
+    AuditService(db).log_action(
+        actor_id=current_user.get('sub'),
+        action="GROUP_DELETED",
+        entity_type="group",
+        entity_id=str(group_id),
+        details={"message": f"Group \"{group.group_name}\" permanently deleted"}
+    )
+    return None

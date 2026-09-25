@@ -23,7 +23,8 @@ class GroupCreate(BaseModel):
 class GroupUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100, json_schema_extra={"example": "St. Peters Welfare Updated"})
     description: Optional[str] = Field(None, max_length=500, json_schema_extra={"example": "Updated community fund"})
-    # Currency is intentionally removed from GroupUpdate to enforce immutability
+    currency: Optional[CurrencyEnum] = Field(None, json_schema_extra={"example": "USD"})
+    settings_override: Optional[dict] = Field(None, json_schema_extra={"example": {"primary_color": "#ff0000"}})
 
 class GroupOut(BaseModel):
     id: UUID = Field(alias="group_id", serialization_alias="id", json_schema_extra={"example": "123e4567-e89b-12d3-a456-426614174000"})
@@ -35,6 +36,7 @@ class GroupOut(BaseModel):
     created_at: datetime
     slug: Optional[str] = Field(None, json_schema_extra={"example": "st-peters-welfare"})
     is_favorite: Optional[bool] = Field(False, json_schema_extra={"example": True})
+    settings_override: Optional[dict] = Field(default_factory=dict, json_schema_extra={"example": {}})
     
     # New Operational Metrics
     total_campaigns_count: int = Field(0, json_schema_extra={"example": 5})
