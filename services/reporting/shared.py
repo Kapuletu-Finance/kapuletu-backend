@@ -8,10 +8,12 @@ from common.config import get_config
 def process_template(template: str, campaign: Campaign, raised: float) -> str:
     if not template:
         return ""
+    
+    raised = float(raised)
     def fmt_ksh(val: float) -> str:
         return f"{val:,.0f}" if float(val).is_integer() else f"{val:,.2f}"
     
-    target = float(campaign.target_amount) if campaign.target_amount else 0.0
+    target = float(campaign.target_amount or 0.0)
     remaining = max(0.0, target - raised)
 
     res = template
