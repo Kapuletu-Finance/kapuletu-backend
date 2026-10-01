@@ -5,11 +5,29 @@ from models.transaction import Transaction
 from common.utils import parse_uuid
 from common.config import get_config
 
+def process_template(template: str, campaign: Campaign, raised: float) -> str:
+    if not template:
+        return ""
+    def fmt_ksh(val: float) -> str:
+        return f"{val:,.0f}" if float(val).is_integer() else f"{val:,.2f}"
+    
+    target = float(campaign.target_amount) if campaign.target_amount else 0.0
+    remaining = max(0.0, target - raised)
+
+    res = template
+    res = res.replace("[Campaign Name]", campaign.title or "")
+    res = res.replace("[Campaign Description]", campaign.description or "")
+    res = res.replace("[Total Raised]", fmt_ksh(raised))
+    res = res.replace("[Target Amount]", fmt_ksh(target))
+    res = res.replace("[Amount Remaining]", fmt_ksh(remaining))
+    res = res.replace("[Payment Instructions]", campaign.payment_instructions or "")
+    return res
+
 def build_campaign_report_data(db: Session, campaign: Campaign, is_preview: bool = False) -> Dict[str, Any]:
     settings = campaign.settings_override or {}
     title = settings.get("report_title")
     if not title or title == "Campaign Update":
-        title = f"{campaign.title} Update"
+        title = f"*[Campaign Name]*\n\n[Campaign Description]"
         
     footer = settings.get("report_footer", "")
     indicator = settings.get("paid_indicator", "\u2713")
@@ -38,46 +56,13 @@ def build_campaign_report_data(db: Session, campaign: Campaign, is_preview: bool
             pm_map["pledge"] += float(t.amount)
     
     lines = []
-    lines.append(f"*{title}*")
-    lines.append("")
-    if campaign.description:
-        lines.append(campaign.description)
+    
+    processed_title = process_template(title, campaign, raised)
+    if processed_title:
+        lines.append(processed_title)
         lines.append("")
         
-    remaining = max(0, float(campaign.target_amount) - float(raised))
-    
-    is_goal_met = float(campaign.target_amount) > 0 and float(raised) >= float(campaign.target_amount)
-    
-    if is_goal_met:
-        lines.append("*Goal Achieved Update! 🌟*")
-    else:
-        lines.append("*Progress Update:*")
-    
-    if float(raised) >= float(campaign.target_amount):
-        lines.append(f"So far, we have raised Ksh {fmt_ksh(raised)}, successfully surpassing our initial goal of Ksh {fmt_ksh(float(campaign.target_amount))}! Thank you to everyone who made this possible. The campaign remains open, and any further contributions are still greatly appreciated.")
-    else:
-        lines.append(f"So far, we have raised Ksh {fmt_ksh(raised)} against our goal of Ksh {fmt_ksh(float(campaign.target_amount))}. We have an amount remaining of Ksh {fmt_ksh(remaining)} to meet our goal. Every contribution counts.")
-    
-    lines.append("")
-    
-    if pm_map["mpesa"] > 0:
-        lines.append(f"*Amount Received (M-Pesa):* Ksh {fmt_ksh(pm_map['mpesa'])}")
-    if pm_map["cash"] > 0:
-        lines.append(f"*Amount Received (Cash):* Ksh {fmt_ksh(pm_map['cash'])}")
-    if pm_map["bank"] > 0:
-        lines.append(f"*Amount Received (Bank):* Ksh {fmt_ksh(pm_map['bank'])}")
-    if pm_map["pledge"] > 0:
-        lines.append(f"*Amount Received (Pledge):* Ksh {fmt_ksh(pm_map['pledge'])}")
-        
-    if pm_map["mpesa"] > 0 or pm_map["cash"] > 0 or pm_map["bank"] > 0 or pm_map["pledge"] > 0:
-        lines.append("")
-        
-    lines.append("To send your contributions, the payment instructions are as follows:")
-    if campaign.payment_instructions:
-        lines.append(f"{campaign.payment_instructions}")
-    lines.append("")
-    
-    lines.append("*Contributions Received:*")
+    lines.append("The following are the contributions received so far:")
     
     contributors_list = []
     if not transactions and is_preview:
@@ -114,26 +99,14 @@ def build_campaign_report_data(db: Session, campaign: Campaign, is_preview: bool
         lines.append(f"{start_idx + i}.")
         
     lines.append("")
-    if is_goal_met:
-        lines.append("Thank you to everyone who has contributed so far. Your overwhelming support has helped us successfully reach our goal! The campaign is still ongoing, and we encourage you to continue supporting the cause.")
-    else:
-        lines.append("Thank you to everyone who has contributed so far. Your continued support is greatly appreciated as we work towards our goal.")
-    lines.append("")
     
-    if footer:
-        lines.append(footer)
-        lines.append("")
+    processed_footer = process_template(footer, campaign, raised)
+    if processed_footer:
+        lines.append(processed_footer)
         
     frontend_url = get_config().FRONTEND_URL.rstrip('/')
     short_code = campaign.short_code or campaign.campaign_id
     public_url = f"{frontend_url}/r/{short_code}"
-    
-    lines.append("To view a more comprehensive report, click the link below:")
-    lines.append(f"{public_url}")
-    if settings.get("require_pin", True) and settings.get("access_pin"):
-        lines.append(f"Access PIN: {settings.get('access_pin')}")
-    if not settings.get("remove_watermark", False):
-        lines.append("\n*Generated via KapuLetu*")
         
     return {
         "preview_text": "\n".join(lines),

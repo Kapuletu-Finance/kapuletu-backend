@@ -478,7 +478,8 @@ async def export_campaign_excel(
         target_amount=float(campaign.target_amount),
         entries=transactions,
         settings=settings,
-        tz=tz
+        tz=tz,
+        campaign=campaign
     )
     
     excel_bytes = base64.b64decode(b64_excel)
@@ -520,7 +521,8 @@ async def export_campaign_pdf(
         target_amount=float(campaign.target_amount),
         entries=transactions,
         settings=settings,
-        tz=tz
+        tz=tz,
+        campaign=campaign
     )
     
     pdf_bytes = base64.b64decode(b64_pdf)

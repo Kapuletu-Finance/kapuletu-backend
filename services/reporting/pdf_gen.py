@@ -11,7 +11,7 @@ try:
 except ImportError:
     pass
 
-def generate_pdf_report(title: str, total_raised: float, target_amount: float, entries: list, settings: dict = None, tz: str = None) -> str:
+def generate_pdf_report(title: str, total_raised: float, target_amount: float, entries: list, settings: dict = None, tz: str = None, campaign=None) -> str:
     """
     Generates an Enterprise-Grade PDF using ReportLab and returns it as a Base64 string.
     """
@@ -39,24 +39,12 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
         'MainTitle',
         parent=styles['Title'],
         fontName='Helvetica-Bold',
-        fontSize=18,
-        textColor=colors.HexColor("#1A5D1A"),
-        spaceAfter=6
-    )
-    subtitle_style = ParagraphStyle(
-        'Subtitle',
-        parent=styles['Normal'],
-        fontName='Helvetica',
         fontSize=12,
-        textColor=colors.dimgrey,
-        alignment=TA_CENTER,
-        spaceAfter=12
+        textColor=colors.HexColor("#1A5D1A"),
+        spaceAfter=12,
+        alignment=TA_CENTER
     )
     
-    display_title = settings.get("report_title")
-    if not display_title or display_title in ["Campaign Update", "OFFICIAL CAMPAIGN REPORT"]:
-        display_title = title
-        
     import os
     logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "logos", "primary logo.png")
     if os.path.exists(logo_path):
@@ -66,28 +54,18 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
         elements.append(logo)
         elements.append(Spacer(1, 12))
     
-    # 1. Letterhead
-    elements.append(Paragraph(f"<b>{display_title}</b>", title_style))
-    elements.append(Paragraph("OFFICIAL CAMPAIGN REPORT", subtitle_style))
-    elements.append(Paragraph(f"Generated on {time_str}", subtitle_style))
-    elements.append(Spacer(1, 12))
+    from services.reporting.shared import process_template
     
-    # 2. Summary Block
-    progress = min((float(total_raised) / float(target_amount) * 100), 100.0) if target_amount and float(target_amount) > 0 else 0.0
-    summary_data = [
-        [Paragraph("<b>Campaign:</b>", styles['Normal']), title],
-        [Paragraph("<b>Total Raised:</b>", styles['Normal']), f"KES {float(total_raised):,.2f}"],
-        [Paragraph("<b>Target Amount:</b>", styles['Normal']), f"KES {float(target_amount):,.2f}"],
-        [Paragraph("<b>Progress:</b>", styles['Normal']), f"{progress:.1f}%"]
-    ]
-    summary_table = Table(summary_data, colWidths=[120, 300])
-    summary_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8F9FA")),
-        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#DDDDDD")),
-        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#EEEEEE")),
-        ('PADDING', (0, 0), (-1, -1), 6),
-    ]))
-    elements.append(summary_table)
+    raw_title = settings.get("report_title", "")
+    if campaign:
+        display_title = process_template(raw_title, campaign, total_raised)
+    else:
+        display_title = title
+        
+    if display_title:
+        display_title_html = display_title.replace('\n', '<br/>')
+        elements.append(Paragraph(f"<b>{display_title_html}</b>", title_style))
+    
     elements.append(Spacer(1, 24))
     
     # 3. Financial Table
@@ -140,10 +118,17 @@ def generate_pdf_report(title: str, total_raised: float, target_amount: float, e
             
     elements.append(t)
     
-    report_footer = settings.get("report_footer")
-    if report_footer:
-        elements.append(Spacer(1, 24))
-        elements.append(Paragraph(report_footer, styles['Normal']))
+    raw_footer = settings.get("report_footer")
+    if raw_footer:
+        if campaign:
+            processed_footer = process_template(raw_footer, campaign, total_raised)
+        else:
+            processed_footer = raw_footer
+        
+        if processed_footer:
+            elements.append(Spacer(1, 24))
+            processed_footer_html = processed_footer.replace('\n', '<br/>')
+            elements.append(Paragraph(processed_footer_html, styles['Normal']))
     
     # 4. Footer Branding
     if not settings.get("remove_watermark", False):
