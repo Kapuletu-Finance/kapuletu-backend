@@ -120,7 +120,7 @@ def build_campaign_report_data(db: Session, campaign: Campaign, is_preview: bool
         "title": title,
         "description": campaign.description,
         "raised": float(raised),
-        "target": float(campaign.target_amount),
+        "target": float(campaign.target_amount or 0.0),
         "total_mpesa": pm_map["mpesa"],
         "total_cash": pm_map["cash"],
         "total_bank": pm_map["bank"],
