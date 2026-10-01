@@ -30,6 +30,9 @@ def build_campaign_report_data(db: Session, campaign: Campaign, is_preview: bool
         title = f"*[Campaign Name]*\n\n[Campaign Description]"
         
     footer = settings.get("report_footer", "")
+    if not footer or footer == "Thank you for your support.":
+        footer = "Thank you for your continued support!\n\nTotal Raised: Ksh [Total Raised]\nTarget: Ksh [Target Amount]\nAmount Remaining: Ksh [Amount Remaining]\n\nTo send your contribution:\n[Payment Instructions]"
+        
     indicator = settings.get("paid_indicator", "\u2713")
     
     def fmt_ksh(val: float) -> str:
@@ -107,6 +110,10 @@ def build_campaign_report_data(db: Session, campaign: Campaign, is_preview: bool
     frontend_url = get_config().FRONTEND_URL.rstrip('/')
     short_code = campaign.short_code or campaign.campaign_id
     public_url = f"{frontend_url}/r/{short_code}"
+    
+    if not settings.get("remove_watermark", False):
+        lines.append("")
+        lines.append("*Generated via KapuLetu*")
         
     return {
         "preview_text": "\n".join(lines),
