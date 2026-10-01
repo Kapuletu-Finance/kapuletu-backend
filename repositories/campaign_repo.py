@@ -19,8 +19,8 @@ def create_campaign(db: Session, group_id: str, title: str, description: str = N
         slug = f"{base_slug}-{random.randint(1000, 9999)}"
 
     default_settings = {
-        "report_title": "Campaign Update",
-        "report_footer": "Thank you for your support.",
+        "report_title": "*[Campaign Name]*\n\n[Campaign Description]",
+        "report_footer": "Thank you for your continued support!\n\nTotal Raised: Ksh [Total Raised]\nTarget: Ksh [Target Amount]\nAmount Remaining: Ksh [Amount Remaining]\n\nTo send your contribution:\n[Payment Instructions]",
         "blank_slots": 3,
         "paid_indicator": "✔",
         "require_pin": True,

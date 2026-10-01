@@ -1,5 +1,6 @@
 from models import User
 from typing import Dict, Any, Optional
+from common.utils import parse_uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 
@@ -549,11 +550,16 @@ async def get_broadcast_recipients(
 ):
     from models.communication_logs import CommunicationLog
     from models.users import User
+
+    try:
+        broadcast_campaign_id = parse_uuid(campaign_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Broadcast campaign not found")
     
     logs = db.query(CommunicationLog, User).outerjoin(
         User, CommunicationLog.user_id == User.user_id
     ).filter(
-        CommunicationLog.campaign_id == campaign_id
+        CommunicationLog.campaign_id == broadcast_campaign_id
     ).order_by(CommunicationLog.created_at.desc()).all()
     
     return [
@@ -622,6 +628,45 @@ async def list_audit_logs(
         "limit": limit
     }
     return service.search_logs(filters)
+
+# --- Module H: System Configurations ---
+@router.get("/config/notifications", summary="Get Admin Notification Emails")
+async def get_admin_notifications_config(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    if current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Only super admins can access global configuration")
+        
+    from models.system_config import SystemConfig
+    config = db.query(SystemConfig).filter(SystemConfig.config_key == "admin_notification_emails").first()
+    
+    return config.config_value if config and config.config_value else {"emails": []}
+
+@router.post("/config/notifications", summary="Set Admin Notification Emails")
+async def set_admin_notifications_config(
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    if current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Only super admins can modify global configuration")
+        
+    from models.system_config import SystemConfig
+    config = db.query(SystemConfig).filter(SystemConfig.config_key == "admin_notification_emails").first()
+    
+    new_emails = payload.get("emails", [])
+    if not isinstance(new_emails, list):
+        raise HTTPException(status_code=400, detail="Emails must be a list")
+        
+    if config:
+        config.config_value = {"emails": new_emails}
+    else:
+        config = SystemConfig(config_key="admin_notification_emails", config_value={"emails": new_emails})
+        db.add(config)
+        
+    db.commit()
+    return {"message": "Admin notification emails updated"}
 
 
 @router.get("/crm/tickets", summary="List Support Tickets")
