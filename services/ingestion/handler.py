@@ -768,7 +768,7 @@ def send_meta_reply(to_phone: str, message_text: str, config):
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
-        "to": to_phone,
+        "to": to_phone.replace("+", ""),
         "type": "text",
         "text": {
             "preview_url": False,
@@ -831,7 +831,7 @@ def send_meta_interactive_list(to_phone: str, body_text: str, button_text: str, 
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
-        "to": to_phone,
+        "to": to_phone.replace("+", ""),
         "type": "interactive",
         "interactive": {
             "type": "list",

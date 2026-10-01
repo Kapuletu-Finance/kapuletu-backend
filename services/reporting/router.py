@@ -258,8 +258,9 @@ async def export_excel(
         target = ledger.summary.target_amount if ledger.summary else 0.0
         total = ledger.summary.total_raised if ledger.summary else 0.0
 
+        campaign = db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
         # Simulate upload
-        b64_excel = generate_excel_report(title=title, total_raised=total, target_amount=target, entries=flattened_entries, settings={}, tz=tz)
+        b64_excel = generate_excel_report(title=title, total_raised=total, target_amount=target, entries=flattened_entries, settings={}, tz=tz, campaign=campaign)
         import logging
         logging.getLogger(__name__).info(f"Excel Export Background Task Complete for Campaign {campaign_id}")
 
@@ -298,7 +299,8 @@ async def export_pdf(
         target = ledger.summary.target_amount if ledger.summary else 0.0
         total = ledger.summary.total_raised if ledger.summary else 0.0
         
-        b64_pdf = generate_pdf_report(title=title, total_raised=total, target_amount=target, entries=flattened_entries, settings={}, tz=tz)
+        campaign = db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
+        b64_pdf = generate_pdf_report(title=title, total_raised=total, target_amount=target, entries=flattened_entries, settings={}, tz=tz, campaign=campaign)
         import logging
         logging.getLogger(__name__).info(f"PDF Export Background Task Complete for Campaign {campaign_id}")
 
