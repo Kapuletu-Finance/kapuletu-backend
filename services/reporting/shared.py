@@ -29,7 +29,7 @@ def build_campaign_report_data(db: Session, campaign: Campaign, is_preview: bool
     settings = campaign.settings_override or {}
     title = settings.get("report_title")
     if not title or title == "Campaign Update":
-        title = f"*[Campaign Name]*\n\n[Campaign Description]"
+        title = f"*{campaign.title or ''}*\n\n{campaign.description or ''}"
         
     footer = settings.get("report_footer", "")
     if not footer or footer == "Thank you for your support.":
