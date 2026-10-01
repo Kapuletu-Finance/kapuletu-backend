@@ -543,6 +543,9 @@ from fastapi.staticfiles import StaticFiles
 if os.path.exists("assets"):
     app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def root():
     return """

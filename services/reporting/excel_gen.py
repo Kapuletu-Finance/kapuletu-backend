@@ -8,7 +8,7 @@ try:
 except ImportError:
     pass
 
-def generate_excel_report(title: str, total_raised: float, target_amount: float, entries: list, settings: dict = None, tz: str = None) -> str:
+def generate_excel_report(title: str, total_raised: float, target_amount: float, entries: list, settings: dict = None, tz: str = None, campaign=None) -> str:
     """
     Generates an Enterprise-Grade Excel file using openpyxl and returns it as a Base64 string.
     """
@@ -37,14 +37,22 @@ def generate_excel_report(title: str, total_raised: float, target_amount: float,
     ws = wb.active
     ws.title = "Contributions Report"
     
-    display_title = settings.get("report_title")
-    if not display_title or display_title in ["Campaign Update", "OFFICIAL CAMPAIGN REPORT"]:
+    from services.reporting.shared import process_template
+    
+    raw_title = settings.get("report_title", "")
+    if campaign:
+        display_title = process_template(raw_title, campaign, total_raised)
+    else:
         display_title = title
     
-    # Letterhead
-    ws.append([display_title, "OFFICIAL CAMPAIGN REPORT"])
-    ws.cell(row=1, column=1).font = Font(bold=True, color="1A5D1A", size=16)
-    ws.cell(row=1, column=2).font = Font(bold=True, size=12, color="555555")
+    if display_title:
+        # We put the display_title in the first cell, and enable text wrapping
+        header_cell = ws.cell(row=1, column=1, value=display_title)
+        header_cell.font = Font(bold=True, color="1A5D1A", size=14)
+        header_cell.alignment = Alignment(wrap_text=True)
+        # We can increase the row height to accommodate multi-line text
+        lines_count = display_title.count('\n') + 1
+        ws.row_dimensions[1].height = 20 * lines_count
     
     # Add Logo
     import os
@@ -61,31 +69,9 @@ def generate_excel_report(title: str, total_raised: float, target_amount: float,
     except Exception:
         pass
         
-    ws.append([f"Generated on {time_str}"])
-    ws.append([])
-    
-    # Summary Data
-    progress = min((float(total_raised) / float(target_amount) * 100), 100.0) if target_amount and float(target_amount) > 0 else 0.0
-    
-    summary_data = [
-        ["Campaign Title", title],
-        ["Total Raised (KES)", float(total_raised)],
-        ["Target Amount (KES)", float(target_amount)],
-        ["Progress (%)", progress]
-    ]
-    
-    for row_idx, row_data in enumerate(summary_data, start=5):
-        ws.append(row_data)
-        ws.cell(row=row_idx, column=1).font = Font(bold=True)
-        # Format Currency
-        if "KES" in row_data[0]:
-            ws.cell(row=row_idx, column=2).style = currency_style
-        # Format Percentage
-        if "(%)" in row_data[0]:
-            ws.cell(row=row_idx, column=2).number_format = '0.00'
-            
     ws.append([])
     ws.append([])
+
     
     # Transactions Table Header
     headers = ["#", "Transaction Date", "Contributor Name", "Phone Number", "Amount (KES)", "Payment Method"]
@@ -138,11 +124,21 @@ def generate_excel_report(title: str, total_raised: float, target_amount: float,
     for col, width in column_widths.items():
         ws.column_dimensions[col].width = width
         
-    report_footer = settings.get("report_footer")
-    if report_footer:
-        ws.append([])
-        ws.append([report_footer])
-        ws.cell(row=ws.max_row, column=1).font = Font(italic=True, color="555555")
+    raw_footer = settings.get("report_footer")
+    if raw_footer:
+        if campaign:
+            processed_footer = process_template(raw_footer, campaign, total_raised)
+        else:
+            processed_footer = raw_footer
+            
+        if processed_footer:
+            ws.append([])
+            ws.append([processed_footer])
+            footer_cell = ws.cell(row=ws.max_row, column=1)
+            footer_cell.font = Font(italic=True, color="555555")
+            footer_cell.alignment = Alignment(wrap_text=True)
+            lines_count = processed_footer.count('\n') + 1
+            ws.row_dimensions[ws.max_row].height = 15 * lines_count
         
     # ---------------------------------------------------------
     # Finalize
