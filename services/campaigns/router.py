@@ -478,7 +478,8 @@ async def export_campaign_excel(
         target_amount=float(campaign.target_amount),
         entries=transactions,
         settings=settings,
-        tz=tz
+        tz=tz,
+        campaign=campaign
     )
     
     excel_bytes = base64.b64decode(b64_excel)
@@ -520,7 +521,8 @@ async def export_campaign_pdf(
         target_amount=float(campaign.target_amount),
         entries=transactions,
         settings=settings,
-        tz=tz
+        tz=tz,
+        campaign=campaign
     )
     
     pdf_bytes = base64.b64decode(b64_pdf)
@@ -588,7 +590,7 @@ async def public_verify_campaign(
     
     transactions = transactions_query.offset(offset).limit(limit).all()
     
-    target_amount = float(campaign.target_amount)
+    target_amount = float(campaign.target_amount or 0.0)
     progress = (float(raised) / target_amount * 100) if target_amount > 0 else 0.0
     surplus_amount = max(0.0, float(raised) - target_amount)
     

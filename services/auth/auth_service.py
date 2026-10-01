@@ -492,6 +492,39 @@ class AuthService:
         # Fire the post-confirmation welcome messages!
         self._send_welcome_messages(user)
 
+        # --- ADMIN NOTIFICATION HOOK ---
+        try:
+            from services.notifications.admin_dispatcher import notify_admins_async
+            admin_url = config.FRONTEND_URL.replace("app.", "admin.").rstrip('/') if "app." in config.FRONTEND_URL else "https://admin.kapuletu.co.ke"
+            
+            if user.is_waitlisted:
+                subject = f"New Waitlist Registration: {user.first_name} {user.last_name}"
+                body = f"""
+                <h3>New Waitlist Registration</h3>
+                <p><strong>Name:</strong> {user.first_name} {user.last_name}</p>
+                <p><strong>Email:</strong> {user.email}</p>
+                <p><strong>Phone:</strong> {user.phone_number}</p>
+                <p>This user has just registered and is currently on the waitlist.</p>
+                <br>
+                <a href="{admin_url}/admin/users?tab=waitlist" style="padding: 10px 15px; background-color: #000; color: #fff; text-decoration: none; border-radius: 5px;">Review in Waitlist Dashboard</a>
+                """
+                notify_admins_async(subject, body)
+            else:
+                subject = f"New User Signup: {user.first_name} {user.last_name}"
+                body = f"""
+                <h3>New Platform User</h3>
+                <p><strong>Name:</strong> {user.first_name} {user.last_name}</p>
+                <p><strong>Email:</strong> {user.email}</p>
+                <p><strong>Phone:</strong> {user.phone_number}</p>
+                <p>This user has successfully verified their account and joined the platform.</p>
+                <br>
+                <a href="{admin_url}/admin/users/{user.user_id}" style="padding: 10px 15px; background-color: #000; color: #fff; text-decoration: none; border-radius: 5px;">View User Profile</a>
+                """
+                notify_admins_async(subject, body)
+        except Exception as e:
+            logger.error(f"Failed to dispatch admin notification: {e}")
+        # -------------------------------
+
         from common.system_config_service import get_system_config
         session_timeout = int(get_system_config(db, "session_timeout_minutes", default=15))
         
