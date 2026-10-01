@@ -32,8 +32,14 @@ def build_campaign_report_data(db: Session, campaign: Campaign, is_preview: bool
         title = f"*{campaign.title or ''}*\n\n{campaign.description or ''}"
         
     footer = settings.get("report_footer", "")
-    if not footer or footer == "Thank you for your support.":
-        footer = "Thank you for your continued support!\n\nTotal Raised: Ksh [Total Raised]\nTarget: Ksh [Target Amount]\nAmount Remaining: Ksh [Amount Remaining]\n\nTo send your contribution:\n[Payment Instructions]"
+    if not footer or footer == "Thank you for your support." or "Total Raised: Ksh [Total Raised]" in footer:
+        footer_parts = ["Thank you for your continued support!\n\nTotal Raised: Ksh [Total Raised]"]
+        if campaign.target_amount and float(campaign.target_amount) > 0:
+            footer_parts.append("Target: Ksh [Target Amount]")
+            footer_parts.append("Amount Remaining: Ksh [Amount Remaining]")
+        if campaign.payment_instructions:
+            footer_parts.append("\nTo send your contribution:\n[Payment Instructions]")
+        footer = "\n".join(footer_parts)
         
     indicator = settings.get("paid_indicator", "\u2713")
     
