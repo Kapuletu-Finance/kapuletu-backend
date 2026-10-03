@@ -5,8 +5,8 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from models.blog import BlogPost
-from services.blog.schemas import BlogPostCreate, BlogPostUpdate
+from models.blog import BlogPost, BlogComment
+from services.blog.schemas import BlogPostCreate, BlogPostUpdate, BlogCommentCreate
 
 
 class BlogRepository:
@@ -61,3 +61,46 @@ class BlogRepository:
     def delete(self, post: BlogPost) -> None:
         self.db.delete(post)
         self.db.commit()
+
+    def increment_metric(self, post: BlogPost, metric: str) -> BlogPost:
+        if metric == "view":
+            post.views_count += 1
+        elif metric == "like":
+            post.likes_count += 1
+        elif metric == "dislike":
+            post.dislikes_count += 1
+            
+        self.db.commit()
+        self.db.refresh(post)
+        return post
+
+    def create_comment(self, data: BlogCommentCreate, user_id: Optional[UUID] = None) -> BlogComment:
+        comment = BlogComment(
+            **data.dict(),
+            user_id=user_id
+        )
+        self.db.add(comment)
+        self.db.commit()
+        self.db.refresh(comment)
+        return comment
+
+    def get_comments_by_post(self, post_id: UUID, status: str = "approved") -> List[BlogComment]:
+        query = self.db.query(BlogComment).filter(BlogComment.post_id == post_id)
+        if status:
+            query = query.filter(BlogComment.status == status)
+        return query.order_by(BlogComment.created_at).all()
+
+    def get_all_comments(self, status: Optional[str] = None) -> List[BlogComment]:
+        query = self.db.query(BlogComment)
+        if status:
+            query = query.filter(BlogComment.status == status)
+        return query.order_by(desc(BlogComment.created_at)).all()
+
+    def get_comment_by_id(self, comment_id: UUID) -> Optional[BlogComment]:
+        return self.db.query(BlogComment).filter(BlogComment.id == comment_id).first()
+
+    def update_comment_status(self, comment: BlogComment, status: str) -> BlogComment:
+        comment.status = status
+        self.db.commit()
+        self.db.refresh(comment)
+        return comment
