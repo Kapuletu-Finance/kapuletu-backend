@@ -181,6 +181,35 @@ async def archive_group(
     
     return archived_group
 
+@router.post("/{group_id}/unarchive", response_model=GroupOut, summary="Unarchive Group")
+async def unarchive_group_endpoint(
+    group_id: str, 
+    db: Session = Depends(get_db), 
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Restores an archived group."""
+    group = group_repo.get_group(db=db, identifier=str(group_id))
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+        
+    if str(group.owner_id) != str(current_user.get('sub')):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to unarchive this group.")
+        
+    if group.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group is already active.")
+        
+    unarchived_group = group_repo.unarchive_group(db=db, group_id=str(group.group_id))
+    
+    AuditService(db).log_action(
+        actor_id=current_user.get('sub'),
+        action="GROUP_UNARCHIVED",
+        entity_type="group",
+        entity_id=str(group_id),
+        details={"message": f"Group \"{unarchived_group.group_name}\" unarchived"}
+    )
+    
+    return unarchived_group
+
 import os
 import shutil
 import uuid
@@ -252,16 +281,13 @@ async def delete_group_permanent(
     db: Session = Depends(get_db), 
     current_user: Dict[str, Any] = Depends(get_verified_user)
 ):
-    """Permanently deletes a group if there are no approved transactions."""
+    """Permanently deletes a group regardless of transactions."""
     group = group_repo.get_group(db=db, identifier=str(group_id))
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
         
     if str(group.owner_id) != str(current_user.get('sub')):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to delete this group.")
-        
-    if group_repo.has_approved_transactions(db, str(group.group_id)):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete a group that has processed transactions.")
         
     group_repo.delete_group(db=db, group_id=str(group.group_id))
     

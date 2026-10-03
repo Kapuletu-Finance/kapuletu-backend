@@ -997,3 +997,45 @@ async def save_raw_template(
         f.write(content)
     return {"message": "Template saved successfully"}
 
+
+# --- Contact Messages ---
+@router.get("/contact-messages", summary="List Contact Messages")
+async def list_contact_messages(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from models.contact_message import ContactMessage
+    messages = db.query(ContactMessage).order_by(ContactMessage.created_at.desc()).all()
+    
+    # Format them for output
+    return [{
+        "id": str(msg.id),
+        "first_name": msg.first_name,
+        "last_name": msg.last_name,
+        "email": msg.email,
+        "topic": msg.topic,
+        "message": msg.message,
+        "status": msg.status,
+        "created_at": msg.created_at.isoformat() + "Z",
+        "updated_at": msg.updated_at.isoformat() + "Z"
+    } for msg in messages]
+
+@router.patch("/contact-messages/{message_id}/status", summary="Update Contact Message Status")
+async def update_contact_message_status(
+    message_id: str,
+    status: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    from models.contact_message import ContactMessage
+    from common.utils import parse_uuid
+    
+    message = db.query(ContactMessage).filter(ContactMessage.id == parse_uuid(message_id)).first()
+    if not message:
+        raise HTTPException(status_code=404, detail="Contact message not found")
+        
+    message.status = status
+    db.commit()
+    db.refresh(message)
+    
+    return {"message": "Status updated successfully", "status": message.status}

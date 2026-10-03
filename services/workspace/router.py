@@ -1,7 +1,7 @@
 from typing import Dict, Any
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_, text
 from datetime import datetime
 
 from common.utils import parse_uuid
@@ -13,7 +13,7 @@ from models.transaction import Transaction
 from models.pending_transaction import PendingTransaction
 from models.subscription import Subscription, Plan
 from models.audit_log import AuditLog
-from services.workspace.schemas import WorkspaceOverviewOut, GroupOverview, SubscriptionOverview, WorkspaceActivity, CampaignOverview, GlobalSearchOut
+from services.workspace.schemas import WorkspaceOverviewOut, GroupOverview, SubscriptionOverview, WorkspaceActivity, CampaignOverview, GlobalSearchOut, ContributorOverview, SettingOverview
 
 router = APIRouter(prefix="/workspace", tags=["2. Workspace Overview"])
 
@@ -166,7 +166,13 @@ async def global_search(
     owner_uuid = parse_uuid(current_user.get("sub"))
     
     if not q or len(q) < 2:
-        return GlobalSearchOut(groups=[], campaigns=[])
+        return GlobalSearchOut(groups=[], campaigns=[], contributors=[], settings=[])
+
+    try:
+        db.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm;"))
+        db.commit()
+    except Exception:
+        db.rollback()
 
     search_term = f"%{q}%"
 
@@ -174,7 +180,11 @@ async def global_search(
     groups = db.execute(
         select(Group).where(
             Group.owner_id == owner_uuid,
-            Group.group_name.ilike(search_term)
+            or_(
+                func.to_tsvector('english', Group.group_name).match(q),
+                func.similarity(Group.group_name, q) > 0.2,
+                Group.group_name.ilike(search_term)
+            )
         )
     ).scalars().all()
 
@@ -202,7 +212,11 @@ async def global_search(
                         .join(Group) \
                         .filter(
                             Group.owner_id == owner_uuid,
-                            Campaign.title.ilike(search_term)
+                            or_(
+                                func.to_tsvector('english', Campaign.title).match(q),
+                                func.similarity(Campaign.title, q) > 0.2,
+                                Campaign.title.ilike(search_term)
+                            )
                         ).all()
                         
     campaign_results = []
@@ -226,7 +240,46 @@ async def global_search(
             updated_at=camp.created_at
         ))
 
+    # Search Contributors (Transactions)
+    contributors_query = db.query(
+        Transaction.sender_name,
+        Transaction.sender_phone,
+        Transaction.group_id,
+        func.sum(Transaction.amount).label("total_contributed"),
+        func.max(Transaction.created_at).label("last_contribution_at")
+    ).filter(
+        Transaction.owner_id == owner_uuid,
+        Transaction.status == 'approved',
+        or_(
+            func.to_tsvector('english', func.coalesce(Transaction.sender_name, '')).match(q),
+            func.similarity(func.coalesce(Transaction.sender_name, ''), q) > 0.2,
+            Transaction.sender_phone.ilike(search_term)
+        )
+    ).group_by(Transaction.sender_name, Transaction.sender_phone, Transaction.group_id).limit(10).all()
+
+    contributor_results = [
+        ContributorOverview(
+            name=c.sender_name or "Unknown",
+            phone=c.sender_phone or "Unknown",
+            total_contributed=float(c.total_contributed or 0),
+            last_contribution_at=c.last_contribution_at or datetime.utcnow(),
+            group_id=str(c.group_id)
+        ) for c in contributors_query
+    ]
+
+    # Search Settings
+    settings_results = []
+    lower_q = q.lower()
+    if any(kw in lower_q for kw in ["setting", "bill", "profile", "password", "2fa", "notification", "security"]):
+        settings_results.append(SettingOverview(
+            title="Workspace Settings",
+            description="Manage your billing, profile, and security preferences",
+            href="/treasurer/settings"
+        ))
+
     return GlobalSearchOut(
         groups=group_results,
-        campaigns=campaign_results
+        campaigns=campaign_results,
+        contributors=contributor_results,
+        settings=settings_results
     )

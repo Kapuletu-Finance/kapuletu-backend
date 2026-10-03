@@ -309,6 +309,12 @@ class AuthService:
             type="account_created"
         )
         
+        from services.notifications.admin_dispatcher import notify_admins_async
+        notify_admins_async(
+            subject=f"New User Registration: {first_name} {last_name}",
+            html_content=f"A new user just registered.<br><br><b>Name:</b> {first_name} {last_name}<br><b>Email:</b> {email}<br><b>Phone:</b> {phone_number}<br><b>Waitlisted:</b> {'Yes' if is_waitlisted else 'No'}"
+        )
+        
         return str(new_user.user_id)
 
     def _get_user_by_identifier(self, db: Session, identifier: str) -> User:

@@ -147,3 +147,21 @@ def archive_campaign(db: Session, campaign_id: str):
     })
     db.commit()
     return get_campaign(db, campaign_id)
+
+def unarchive_campaign(db: Session, campaign_id: str):
+    """Restores a soft-deleted campaign."""
+    db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).update({
+        "status": "active",
+        "is_active": True
+    })
+    db.commit()
+    return get_campaign(db, campaign_id)
+
+def delete_campaign(db: Session, campaign_id: str):
+    """Hard deletes a campaign."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == parse_uuid(campaign_id)).first()
+    if campaign:
+        db.delete(campaign)
+        db.commit()
+        return True
+    return False

@@ -240,6 +240,57 @@ async def archive_campaign(
     
     return archived_campaign
 
+@router.post("/campaigns/{campaign_id}/unarchive", response_model=CampaignOut, summary="Unarchive Campaign")
+async def unarchive_campaign_endpoint(
+    campaign_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Restores an archived campaign."""
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
+    if not campaign:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
+        
+    _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
+    
+    if campaign.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign is already active.")
+        
+    unarchived_campaign = campaign_repo.unarchive_campaign(db=db, campaign_id=str(campaign.campaign_id))
+    
+    AuditService(db).log_action(
+        actor_id=current_user.get('sub'),
+        action="CAMPAIGN_UNARCHIVED",
+        entity_type="campaign",
+        entity_id=str(campaign_id),
+        details={"message": f"Campaign \"{unarchived_campaign.title}\" unarchived", "campaign_id": str(campaign_id)}
+    )
+    
+    return unarchived_campaign
+
+@router.delete("/campaigns/{campaign_id}/permanent", status_code=status.HTTP_204_NO_CONTENT, summary="Permanently Delete Campaign")
+async def delete_campaign_permanent(
+    campaign_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Permanently deletes a campaign regardless of transactions."""
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
+    if not campaign:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
+        
+    _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
+        
+    campaign_repo.delete_campaign(db=db, campaign_id=str(campaign.campaign_id))
+    
+    AuditService(db).log_action(
+        actor_id=current_user.get('sub'),
+        action="CAMPAIGN_DELETED",
+        entity_type="campaign",
+        entity_id=str(campaign_id),
+        details={"message": f"Campaign \"{campaign.title}\" permanently deleted"}
+    )
+    return None
 @router.post("/campaigns/{campaign_id}/regenerate-pin", response_model=PinResponse, summary="Regenerate Access PIN")
 async def regenerate_campaign_pin(
     campaign_id: str,
