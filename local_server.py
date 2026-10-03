@@ -523,6 +523,8 @@ app.include_router(health)
 from services.admin.router import router as admin_router
 app.include_router(admin_router)
 app.include_router(admin_config_router)
+from services.blog.router import router as blog_router
+app.include_router(blog_router)
 
 from services.feedback.router import router as feedback_router
 app.include_router(feedback_router)  # 16. User Feedback
