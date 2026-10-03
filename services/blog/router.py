@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 
 from common.database import get_db
 from common.auth_dependencies import get_admin_user
-from models.users import User
 from repositories.blog_repo import BlogRepository
 from services.blog.schemas import BlogPostCreate, BlogPostResponse, BlogPostUpdate
 
