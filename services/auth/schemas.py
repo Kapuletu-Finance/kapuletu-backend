@@ -119,6 +119,7 @@ class UserOut(BaseModel):
     first_name: str = Field(..., json_schema_extra={"example": "Joseph"})
     last_name: str = Field(..., json_schema_extra={"example": "Amuyunzu"})
     phone_number: str = Field(..., json_schema_extra={"example": "+254700123456"})
+    profile_picture_url: Optional[str] = Field(None, json_schema_extra={"example": "/uploads/avatar.jpg"})
     email_verified: bool = Field(..., json_schema_extra={"example": True})
     phone_number_verified: bool = Field(..., json_schema_extra={"example": False})
     role: UserRole = Field(..., json_schema_extra={"example": UserRole.TREASURER})

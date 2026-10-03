@@ -25,6 +25,7 @@ class User(Base):
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False)
+    profile_picture_url = Column(String, nullable=True)
     
     # URL-friendly slug for routing (e.g. dorothy-kahenya)
     slug = Column(String, unique=True, index=True, nullable=True)

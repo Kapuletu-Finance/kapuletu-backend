@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, UploadFile, File
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+import os
+import uuid
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -18,8 +20,51 @@ from services.auth.schemas import (
 from services.auth.auth_service import auth_service
 from common.auth_dependencies import get_current_user
 from common.enums import UserRole
+from models.users import User
 
 router = APIRouter(prefix="/auth", tags=["1. Authentication"])
+
+@router.post("/profile-photo", response_model=UserOut, summary="Upload Profile Photo")
+async def upload_profile_photo(
+    file: UploadFile = File(...),
+    current_user_data: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Uploads a profile photo for the current user and saves it to local storage."""
+    
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image.")
+        
+    os.makedirs("uploads", exist_ok=True)
+    ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+    unique_filename = f"profile_{current_user_data.get('sub')}_{uuid.uuid4().hex}.{ext}"
+    file_path = os.path.join("uploads", unique_filename)
+    
+    with open(file_path, "wb") as f:
+        f.write(await file.read())
+        
+    profile_photo_url = f"/uploads/{unique_filename}"
+    
+    user_id = parse_uuid(current_user_data.get("sub"))
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    # Delete old photo if it exists and is local
+    old_photo = user.profile_picture_url
+    if old_photo and old_photo.startswith("/uploads/"):
+        old_path = old_photo.lstrip("/")
+        if os.path.exists(old_path):
+            try:
+                os.remove(old_path)
+            except Exception:
+                pass
+                
+    user.profile_picture_url = profile_photo_url
+    db.commit()
+    db.refresh(user)
+    
+    return user
 
 # ==========================================
 # PUBLIC ENDPOINTS

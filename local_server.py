@@ -537,6 +537,9 @@ app.include_router(workspace_router, dependencies=[Depends(get_verified_user)])
 from services.settings.router import router as settings_router
 app.include_router(settings_router, tags=["13. Enterprise Settings"], prefix="/settings", dependencies=[Depends(get_verified_user)])
 
+from services.upload.router import router as upload_router
+app.include_router(upload_router, dependencies=[Depends(get_verified_user)])
+
 # Serve static assets (Logo, Favicons, etc.)
 import os
 
