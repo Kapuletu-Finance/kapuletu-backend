@@ -61,6 +61,7 @@ class User(Base):
     current_action = Column(String, nullable=True)
     
     preferences = Column(JSON, default=dict)
+    permissions = Column(JSON, default=list)
     
     # Marketing & Promos
     marketing_consent = Column(Boolean, default=False)

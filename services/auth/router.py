@@ -162,6 +162,7 @@ async def employee_setup(request: Request, payload: EmployeeSetupIn, db: Session
         last_name=invite.last_name,
         hashed_password=get_password_hash(payload.password),
         role=invite.role,
+        permissions=invite.permissions,
         is_active=True,
         is_verified=True, # Employees don't need phone verification for this flow
         marketing_consent=False
@@ -409,6 +410,7 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user), db: S
         email_verified=current_user.get('email_verified') == 'true',
         phone_number_verified=current_user.get('phone_number_verified') == 'true',
         role=current_user.get('role', UserRole.TREASURER.value),
+        permissions=user.permissions if user and user.permissions else [],
         two_factor_enabled=user.two_factor_enabled if user else False,
         two_factor_channel=user.two_factor_channel if user else None,
         is_waitlisted=bool(user.is_waitlisted) if user else False

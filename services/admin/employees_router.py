@@ -37,6 +37,7 @@ class EmployeeInviteCreate(BaseModel):
     first_name: str
     last_name: str
     role: UserRole
+    permissions: List[str] = []
 
 class EmployeeResponse(BaseModel):
     user_id: str
@@ -44,6 +45,7 @@ class EmployeeResponse(BaseModel):
     first_name: str
     last_name: str
     role: str
+    permissions: List[str] = []
     is_active: bool
     last_active_at: Optional[datetime]
     
@@ -56,6 +58,7 @@ class InviteResponse(BaseModel):
     first_name: str
     last_name: str
     role: str
+    permissions: List[str] = []
     expires_at: datetime
     created_at: datetime
     is_used: bool
@@ -96,6 +99,7 @@ def invite_employee(
         first_name=payload.first_name,
         last_name=payload.last_name,
         role=payload.role.value,
+        permissions=payload.permissions,
         token=token,
         expires_at=datetime.utcnow() + timedelta(hours=24),
         created_by=current_user.user_id
@@ -196,3 +200,20 @@ def get_audit_logs(
     ]
 
 
+
+class UpdatePermissionsIn(BaseModel):
+    permissions: List[str]
+
+@router.put('/{user_id}/permissions')
+def update_employee_permissions(
+    user_id: str,
+    payload: UpdatePermissionsIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
+):
+    employee = db.query(User).filter(User.user_id == user_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail='Employee not found')
+    employee.permissions = payload.permissions
+    db.commit()
+    return {'message': 'Permissions updated'}

@@ -18,6 +18,7 @@ class EmployeeInvite(Base):
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
     role = Column(String, nullable=False)
+    permissions = Column(JSON, default=list)
     
     # Hashed token or random UUID sent via email
     token = Column(String, unique=True, nullable=False, index=True)
