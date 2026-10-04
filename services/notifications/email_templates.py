@@ -121,3 +121,17 @@ def get_ticket_reply_template(ticket_subject: str, message_body: str, sender_nam
     <a href="https://app.kapuletu.com/support" class="button">View Thread</a>
     """
     return get_base_template(content, title)
+
+def get_employee_invite_template(first_name: str, role: str, setup_url: str) -> str:
+    role_display = role.replace("_", " ").title()
+    content = f"""
+    <h2>Welcome to KapuLetu, {first_name}!</h2>
+    <p>You have been invited by the Super Admin to join the KapuLetu internal team.</p>
+    <p>Your designated role is: <strong>{role_display}</strong></p>
+    <p>To access your specialized workspace, you need to configure your password and activate your account. Please click the button below to complete your setup.</p>
+    <br>
+    <a href="{setup_url}" class="button">Setup My Account</a>
+    <br><br>
+    <p><em>Note: This link will expire in 24 hours. If it expires, please ask your administrator to resend the invitation.</em></p>
+    """
+    return get_base_template(content, "You're Invited to KapuLetu!")

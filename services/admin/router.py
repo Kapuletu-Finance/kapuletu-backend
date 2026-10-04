@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Background
 from sqlalchemy.orm import Session
 
 from common.database import get_db
-from common.auth_dependencies import get_verified_user, get_admin_user
+from common.auth_dependencies import get_verified_user, get_admin_user, require_role
+from common.enums import UserRole
 from services.admin.analytics_service import AnalyticsService
 from services.admin.user_service import UserService
 from services.admin.ai_governance_service import AIGovernanceService
@@ -1002,7 +1003,7 @@ async def save_raw_template(
 @router.get("/contact-messages", summary="List Contact Messages")
 async def list_contact_messages(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
+    current_user: Dict[str, Any] = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUPPORT_AGENT]))
 ):
     from models.contact_message import ContactMessage
     messages = db.query(ContactMessage).order_by(ContactMessage.created_at.desc()).all()
@@ -1025,7 +1026,7 @@ async def update_contact_message_status(
     message_id: str,
     status: str,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
+    current_user: Dict[str, Any] = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUPPORT_AGENT]))
 ):
     from models.contact_message import ContactMessage
     from common.utils import parse_uuid

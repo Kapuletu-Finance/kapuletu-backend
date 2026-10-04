@@ -523,6 +523,9 @@ app.include_router(health)
 from services.admin.router import router as admin_router
 app.include_router(admin_router)
 app.include_router(admin_config_router)
+
+from services.admin.employees_router import router as employees_router
+app.include_router(employees_router, prefix="/admin")
 from services.blog.router import router as blog_router
 app.include_router(blog_router)
 
@@ -567,14 +570,14 @@ async def root():
 
         <!-- Open Graph / Facebook -->
         <meta property="og:type" content="website">
-        <meta property="og:url" content="https://dev-api.kapuletu.co.ke/">
+        <meta property="og:url" content="https://kapuletu.co.ke/">
         <meta property="og:title" content="KapuLetu Developer Portal">
         <meta property="og:description" content="Official API gateway for KapuLetu. Access the Treasury API core, documentation, and developer environment.">
-        <meta property="og:image" content="https://dev-api.kapuletu.co.ke/assets/logo.jpg">
+        <meta property="og:image" content="https://kapuletu.co.ke/assets/logo.jpg">
 
         <!-- Twitter -->
         <meta property="twitter:card" content="summary_large_image">
-        <meta property="twitter:url" content="https://dev-api.kapuletu.co.ke/">
+        <meta property="twitter:url" content="https://kapuletu.co.ke/">
         <meta property="twitter:title" content="KapuLetu Developer Portal">
         <meta property="twitter:description" content="Official API gateway for KapuLetu. Access the Treasury API core, documentation, and developer environment.">
         <meta property="twitter:image" content="https://dev-api.kapuletu.co.ke/assets/logo.jpg">

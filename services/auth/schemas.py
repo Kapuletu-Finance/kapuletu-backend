@@ -93,6 +93,10 @@ class SettingsIn(BaseModel):
     two_factor_enabled: Optional[bool] = Field(None, json_schema_extra={"example": False})
     two_factor_channel: Optional[str] = Field(None, json_schema_extra={"example": "whatsapp"})
 
+class EmployeeSetupIn(BaseModel):
+    token: str = Field(..., json_schema_extra={"example": "abc123xyz..."})
+    password: str = Field(..., min_length=8, json_schema_extra={"example": "SecurePass123!"})
+
 # --- OUTPUT SCHEMAS ---
 
 class MessageOut(BaseModel):

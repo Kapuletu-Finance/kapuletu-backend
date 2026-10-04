@@ -133,7 +133,15 @@ def get_super_admin_user(current_user: Dict[str, Any] = Depends(get_verified_use
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient privileges. Super Admin access required."
         )
-    return current_user
-
-
-
+def require_role(roles: list):
+    def role_checker(current_user: Dict[str, Any] = Depends(get_verified_user)) -> Dict[str, Any]:
+        user_role = current_user.get('role')
+        # Allow passing enum values or string values
+        allowed_roles = [r.value if hasattr(r, 'value') else r for r in roles]
+        if user_role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient privileges. Allowed roles: {', '.join(allowed_roles)}."
+            )
+        return current_user
+    return role_checker
