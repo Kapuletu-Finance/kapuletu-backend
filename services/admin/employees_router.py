@@ -30,7 +30,8 @@ def record_audit_log(db: Session, employee_id: str, action_type: str, details: d
     db.commit()
 
 # --- Schemas (inline for now) ---
-from pydantic import BaseModel, EmailStr
+from uuid import UUID
+from pydantic import BaseModel, EmailStr, field_validator
 
 class EmployeeInviteCreate(BaseModel):
     email: EmailStr
@@ -40,7 +41,7 @@ class EmployeeInviteCreate(BaseModel):
     permissions: List[str] = []
 
 class EmployeeResponse(BaseModel):
-    user_id: str
+    user_id: UUID
     email: str
     first_name: str
     last_name: str
@@ -48,6 +49,10 @@ class EmployeeResponse(BaseModel):
     permissions: List[str] = []
     is_active: bool
     last_active_at: Optional[datetime]
+    
+    @field_validator("permissions", mode="before")
+    def default_permissions(cls, v):
+        return v or []
     
     class Config:
         from_attributes = True
