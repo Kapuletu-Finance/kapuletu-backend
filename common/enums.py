@@ -7,6 +7,7 @@ class UserRole(str, enum.Enum):
     CONTENT_MANAGER = "content_manager"
     SUPPORT_AGENT = "support_agent"
     FINANCE_MANAGER = "finance_manager"
+    CEO = "ceo"
 
 class ApprovalStatus(str, enum.Enum):
     PENDING = "pending"

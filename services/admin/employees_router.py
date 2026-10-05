@@ -137,7 +137,7 @@ def get_employees(
 ):
     """List all active employees"""
     employees = db.execute(select(User).where(
-        User.role.in_([UserRole.SUPER_ADMIN.value, UserRole.CONTENT_MANAGER.value, UserRole.SUPPORT_AGENT.value, UserRole.FINANCE_MANAGER.value, UserRole.ADMIN.value])
+        User.role.in_([UserRole.SUPER_ADMIN.value, UserRole.CONTENT_MANAGER.value, UserRole.SUPPORT_AGENT.value, UserRole.FINANCE_MANAGER.value, UserRole.ADMIN.value, UserRole.CEO.value])
     )).scalars().all()
     
     return employees
