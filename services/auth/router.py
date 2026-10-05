@@ -24,7 +24,7 @@ from models.users import User
 
 router = APIRouter(prefix="/auth", tags=["1. Authentication"])
 
-@router.post("/profile-photo", response_model=UserOut, summary="Upload Profile Photo")
+@router.post("/profile-photo", response_model=MessageOut, summary="Upload Profile Photo")
 async def upload_profile_photo(
     file: UploadFile = File(...),
     current_user_data: Dict[str, Any] = Depends(get_current_user),
@@ -62,9 +62,8 @@ async def upload_profile_photo(
                 
     user.profile_picture_url = profile_photo_url
     db.commit()
-    db.refresh(user)
     
-    return user
+    return MessageOut(message="Profile photo uploaded successfully.")
 
 # ==========================================
 # PUBLIC ENDPOINTS
