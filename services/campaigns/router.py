@@ -1,9 +1,12 @@
 from models import Campaign
 from typing import List, Dict, Any, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from common.utils import parse_uuid
+from services.auth.schemas import MessageOut
+import os
+import uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, cast, String
 import random
@@ -211,6 +214,51 @@ async def toggle_favorite_campaign(
     
     updated_campaign = campaign_repo.update_campaign(db=db, campaign_id=str(campaign.campaign_id), updates={"is_favorite": not campaign.is_favorite})
     return updated_campaign
+
+@router.post("/campaigns/{campaign_id}/cover-photo", response_model=MessageOut, summary="Upload Campaign Cover Photo")
+@limiter.limit("20/minute")
+async def upload_campaign_cover_photo(
+    request: Request,
+    campaign_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_verified_user)
+):
+    """Uploads a cover photo for a campaign."""
+    campaign = campaign_repo.get_campaign(db=db, identifier=str(campaign_id))
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    _verify_group_ownership(db, str(campaign.group_id), current_user.get('sub'))
+
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image.")
+        
+    os.makedirs("uploads/campaigns", exist_ok=True)
+    ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+    unique_filename = f"campaign_{campaign_id}_{uuid.uuid4().hex}.{ext}"
+    file_path = os.path.join("uploads", "campaigns", unique_filename)
+    
+    with open(file_path, "wb") as f:
+        f.write(await file.read())
+        
+    cover_photo_url = f"/uploads/campaigns/{unique_filename}"
+    
+    settings = dict(campaign.settings_override or {})
+    old_photo = settings.get("cover_photo")
+    if old_photo and old_photo.startswith("/uploads/campaigns/"):
+        old_path = old_photo.lstrip("/")
+        if os.path.exists(old_path):
+            try:
+                os.remove(old_path)
+            except Exception:
+                pass
+
+    settings["cover_photo"] = cover_photo_url
+    campaign.settings_override = settings
+    db.commit()
+    
+    return MessageOut(message="Cover photo uploaded successfully")
 
 @router.delete("/campaigns/{campaign_id}", response_model=CampaignOut, summary="Archive Campaign")
 async def archive_campaign(
@@ -686,5 +734,6 @@ async def public_verify_campaign(
         "payment_methods": pm_map,
         "footer_message": footer_message,
         "watermark": watermark,
+        "cover_photo": settings.get("cover_photo", None),
         "public_url": public_url
     }
