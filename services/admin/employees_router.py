@@ -159,6 +159,47 @@ def get_pending_invites(
     
     return invites
 
+@router.post("/invites/{invite_id}/resend")
+def resend_invite(
+    invite_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
+):
+    """Resend a pending invite, refreshing the token and extending the expiry."""
+    invite = db.query(EmployeeInvite).filter(EmployeeInvite.id == invite_id, EmployeeInvite.is_used == False).first()
+    
+    if not invite:
+        raise HTTPException(status_code=404, detail="Active invite not found")
+        
+    # Refresh token and expiry
+    new_token = secrets.token_urlsafe(32)
+    invite.token = new_token
+    invite.expires_at = datetime.utcnow() + timedelta(hours=24)
+    db.commit()
+    db.refresh(invite)
+    
+    # Audit log
+    record_audit_log(db, current_user["user_id"], "RESENT_EMPLOYEE_INVITE", {"email": invite.email})
+    
+    # Send Email
+    setup_url = f"{os.environ.get('FRONTEND_URL', 'http://localhost:3000')}/employee-setup?token={new_token}"
+    html_body = get_employee_invite_template(invite.first_name, invite.role, setup_url)
+    
+    log = CommunicationLog(
+        user_id=current_user["user_id"],
+        channel="EMAIL",
+        destination=invite.email,
+        subject="Reminder: You're Invited to KapuLetu!",
+        status="QUEUED"
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    
+    send_email_task(str(log.log_id), invite.email, "Reminder: You're Invited to KapuLetu!", html_body)
+    
+    return {"message": "Invitation resent successfully"}
+
 @router.delete("/{user_id}")
 def revoke_employee_access(
     user_id: str,
