@@ -312,7 +312,8 @@ class AuthService:
         from services.notifications.admin_dispatcher import notify_admins_async
         notify_admins_async(
             subject=f"New User Registration: {first_name} {last_name}",
-            html_content=f"A new user just registered.<br><br><b>Name:</b> {first_name} {last_name}<br><b>Email:</b> {email}<br><b>Phone:</b> {phone_number}<br><b>Waitlisted:</b> {'Yes' if is_waitlisted else 'No'}"
+            html_content=f"A new user just registered.<br><br><b>Name:</b> {first_name} {last_name}<br><b>Email:</b> {email}<br><b>Phone:</b> {phone_number}<br><b>Waitlisted:</b> {'Yes' if is_waitlisted else 'No'}",
+            category="signups"
         )
         
         return str(new_user.user_id)
@@ -520,7 +521,7 @@ class AuthService:
                 <br>
                 <a href="{admin_url}/admin/users?tab=waitlist" style="padding: 10px 15px; background-color: #000; color: #fff; text-decoration: none; border-radius: 5px;">Review in Waitlist Dashboard</a>
                 """
-                notify_admins_async(subject, body)
+                notify_admins_async(subject, body, category="signups")
             else:
                 subject = f"New User Signup: {user.first_name} {user.last_name}"
                 body = f"""
@@ -532,7 +533,7 @@ class AuthService:
                 <br>
                 <a href="{admin_url}/admin/users/{user.user_id}" style="padding: 10px 15px; background-color: #000; color: #fff; text-decoration: none; border-radius: 5px;">View User Profile</a>
                 """
-                notify_admins_async(subject, body)
+                notify_admins_async(subject, body, category="signups")
         except Exception as e:
             logger.error(f"Failed to dispatch admin notification: {e}")
         # -------------------------------

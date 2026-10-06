@@ -136,7 +136,8 @@ def schedule_meeting(payload: MeetingCreate, current_user: dict = Depends(requir
     
     notify_admins_async(
         subject="New Meeting Scheduled",
-        html_content=f"<p>A new {payload.meeting_type} meeting '<strong>{payload.title}</strong>' has been scheduled by admin/HR.</p>"
+        html_content=f"<p>A new {payload.meeting_type} meeting '<strong>{payload.title}</strong>' has been scheduled by admin/HR.</p>",
+        category="hr"
     )
     
     return meeting

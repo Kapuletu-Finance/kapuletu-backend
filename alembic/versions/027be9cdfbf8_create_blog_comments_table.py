@@ -20,10 +20,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.add_column('blog_posts', sa.Column('tags', sa.JSON(), server_default='[]', nullable=False))
-    op.add_column('blog_posts', sa.Column('views_count', sa.Integer(), server_default='0', nullable=False))
-    op.add_column('blog_posts', sa.Column('likes_count', sa.Integer(), server_default='0', nullable=False))
-    op.add_column('blog_posts', sa.Column('dislikes_count', sa.Integer(), server_default='0', nullable=False))
+    # op.add_column('blog_posts', sa.Column('tags', sa.JSON(), server_default='[]', nullable=False))
+    # op.add_column('blog_posts', sa.Column('views_count', sa.Integer(), server_default='0', nullable=False))
+    # op.add_column('blog_posts', sa.Column('likes_count', sa.Integer(), server_default='0', nullable=False))
+    # op.add_column('blog_posts', sa.Column('dislikes_count', sa.Integer(), server_default='0', nullable=False))
 
     op.create_table('blog_comments',
         sa.Column('id', sa.UUID(), nullable=False),

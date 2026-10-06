@@ -640,9 +640,28 @@ async def get_admin_notifications_config(
         raise HTTPException(status_code=403, detail="Only super admins can access global configuration")
         
     from models.system_config import SystemConfig
-    config = db.query(SystemConfig).filter(SystemConfig.config_key == "admin_notification_emails").first()
     
-    return config.config_value if config and config.config_value else {"emails": []}
+    keys = ["admin_notification_emails", "admin_notification_emails_hr", "admin_notification_emails_signups", "admin_notification_emails_warnings"]
+    configs = db.query(SystemConfig).filter(SystemConfig.config_key.in_(keys)).all()
+    
+    response = {
+        "emails": [],
+        "emails_hr": [],
+        "emails_signups": [],
+        "emails_warnings": []
+    }
+    
+    for config in configs:
+        if config.config_key == "admin_notification_emails":
+            response["emails"] = config.config_value.get("emails", []) if config.config_value else []
+        elif config.config_key == "admin_notification_emails_hr":
+            response["emails_hr"] = config.config_value.get("emails", []) if config.config_value else []
+        elif config.config_key == "admin_notification_emails_signups":
+            response["emails_signups"] = config.config_value.get("emails", []) if config.config_value else []
+        elif config.config_key == "admin_notification_emails_warnings":
+            response["emails_warnings"] = config.config_value.get("emails", []) if config.config_value else []
+            
+    return response
 
 @router.post("/config/notifications", summary="Set Admin Notification Emails")
 async def set_admin_notifications_config(
@@ -654,18 +673,27 @@ async def set_admin_notifications_config(
         raise HTTPException(status_code=403, detail="Only super admins can modify global configuration")
         
     from models.system_config import SystemConfig
-    config = db.query(SystemConfig).filter(SystemConfig.config_key == "admin_notification_emails").first()
     
-    new_emails = payload.get("emails", [])
-    if not isinstance(new_emails, list):
-        raise HTTPException(status_code=400, detail="Emails must be a list")
-        
-    if config:
-        config.config_value = {"emails": new_emails}
-    else:
-        config = SystemConfig(config_key="admin_notification_emails", config_value={"emails": new_emails})
-        db.add(config)
-        
+    mapping = {
+        "emails": "admin_notification_emails",
+        "emails_hr": "admin_notification_emails_hr",
+        "emails_signups": "admin_notification_emails_signups",
+        "emails_warnings": "admin_notification_emails_warnings",
+    }
+    
+    for key, config_key in mapping.items():
+        if key in payload:
+            new_emails = payload.get(key, [])
+            if not isinstance(new_emails, list):
+                raise HTTPException(status_code=400, detail=f"'{key}' must be a list of strings")
+                
+            config = db.query(SystemConfig).filter(SystemConfig.config_key == config_key).first()
+            if config:
+                config.config_value = {"emails": new_emails}
+            else:
+                config = SystemConfig(config_key=config_key, config_value={"emails": new_emails})
+                db.add(config)
+                
     db.commit()
     return {"message": "Admin notification emails updated"}
 
