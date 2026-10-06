@@ -331,7 +331,11 @@ class AuthService:
             
         from common.system_config_service import get_system_config
         force_2fa = get_system_config(db, "force_2fa", default="none")
-        session_timeout = int(get_system_config(db, "session_timeout_minutes", default=15))
+        
+        try:
+            session_timeout = int(get_system_config(db, "session_timeout_minutes", default=15))
+        except (ValueError, TypeError):
+            session_timeout = 15
         
         # Determine if 2FA is required based on global settings or user preference
         requires_2fa = getattr(user, 'two_factor_enabled', False)
@@ -360,8 +364,10 @@ class AuthService:
                 "SessionTimeoutMinutes": session_timeout # pass down to caller if needed
             }
             
-        access_token = create_access_token({"sub": str(user.user_id), "role": user.role}, expires_delta=datetime.timedelta(minutes=session_timeout))
-        refresh_token = create_refresh_token({"sub": str(user.user_id), "role": user.role})
+        role_str = user.role.value if hasattr(user.role, 'value') else str(user.role)
+        
+        access_token = create_access_token({"sub": str(user.user_id), "role": role_str}, expires_delta=datetime.timedelta(minutes=session_timeout))
+        refresh_token = create_refresh_token({"sub": str(user.user_id), "role": role_str})
         
         AuditService(db).log_action(
             actor_id=str(user.user_id),
@@ -377,7 +383,7 @@ class AuthService:
             "RefreshToken": refresh_token,
             "IdToken": access_token, # Simplified, using access token as id token
             "ExpiresIn": session_timeout * 60,
-            "Role": user.role,
+            "Role": role_str,
             "IsWaitlisted": user.is_waitlisted
         }
 
