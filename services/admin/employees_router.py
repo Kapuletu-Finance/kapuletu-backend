@@ -107,21 +107,21 @@ def invite_employee(
         permissions=payload.permissions,
         token=token,
         expires_at=datetime.utcnow() + timedelta(hours=24),
-        created_by=current_user["user_id"]
+        created_by=current_user["sub"]
     )
     db.add(new_invite)
     db.commit()
     db.refresh(new_invite)
     
     # Audit log
-    record_audit_log(db, current_user["user_id"], "INVITED_EMPLOYEE", {"email": payload.email, "role": payload.role.value})
+    record_audit_log(db, current_user["sub"], "INVITED_EMPLOYEE", {"email": payload.email, "role": payload.role.value})
     
     # Send Email
     setup_url = f"{os.environ.get('FRONTEND_URL', 'http://localhost:3000')}/employee-setup?token={token}"
     html_body = get_employee_invite_template(payload.first_name, payload.role.value, setup_url)
     
     log = CommunicationLog(
-        user_id=current_user["user_id"],  # Associate with super admin sending it for now
+        user_id=current_user["sub"],  # Associate with super admin sending it for now
         channel="EMAIL",
         destination=payload.email,
         subject="You're Invited to KapuLetu!",
@@ -179,14 +179,14 @@ def resend_invite(
     db.refresh(invite)
     
     # Audit log
-    record_audit_log(db, current_user["user_id"], "RESENT_EMPLOYEE_INVITE", {"email": invite.email})
+    record_audit_log(db, current_user["sub"], "RESENT_EMPLOYEE_INVITE", {"email": invite.email})
     
     # Send Email
     setup_url = f"{os.environ.get('FRONTEND_URL', 'http://localhost:3000')}/employee-setup?token={new_token}"
     html_body = get_employee_invite_template(invite.first_name, invite.role, setup_url)
     
     log = CommunicationLog(
-        user_id=current_user["user_id"],
+        user_id=current_user["sub"],
         channel="EMAIL",
         destination=invite.email,
         subject="Reminder: You're Invited to KapuLetu!",
@@ -207,7 +207,7 @@ def revoke_employee_access(
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
 ):
     """Revoke an employee's access by suspending their account"""
-    if str(current_user.user_id) == user_id:
+    if str(current_user["sub"]) == user_id:
         raise HTTPException(status_code=400, detail="Cannot revoke your own access.")
         
     employee = db.query(User).get(user_id)
@@ -218,7 +218,7 @@ def revoke_employee_access(
     employee.deleted_at = datetime.utcnow()
     db.commit()
     
-    record_audit_log(db, current_user.user_id, "REVOKED_EMPLOYEE", {}, resource_id=str(employee.user_id))
+    record_audit_log(db, current_user["sub"], "REVOKED_EMPLOYEE", {}, resource_id=str(employee.user_id))
     return {"message": "Employee access revoked."}
 
 @router.get("/audit-logs")
