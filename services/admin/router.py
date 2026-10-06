@@ -641,14 +641,15 @@ async def get_admin_notifications_config(
         
     from models.system_config import SystemConfig
     
-    keys = ["admin_notification_emails", "admin_notification_emails_hr", "admin_notification_emails_signups", "admin_notification_emails_warnings"]
+    keys = ["admin_notification_emails", "admin_notification_emails_hr", "admin_notification_emails_signups", "admin_notification_emails_warnings", "admin_notification_emails_finance"]
     configs = db.query(SystemConfig).filter(SystemConfig.config_key.in_(keys)).all()
     
     response = {
         "emails": [],
         "emails_hr": [],
         "emails_signups": [],
-        "emails_warnings": []
+        "emails_warnings": [],
+        "emails_finance": []
     }
     
     for config in configs:
@@ -660,6 +661,8 @@ async def get_admin_notifications_config(
             response["emails_signups"] = config.config_value.get("emails", []) if config.config_value else []
         elif config.config_key == "admin_notification_emails_warnings":
             response["emails_warnings"] = config.config_value.get("emails", []) if config.config_value else []
+        elif config.config_key == "admin_notification_emails_finance":
+            response["emails_finance"] = config.config_value.get("emails", []) if config.config_value else []
             
     return response
 
@@ -679,6 +682,7 @@ async def set_admin_notifications_config(
         "emails_hr": "admin_notification_emails_hr",
         "emails_signups": "admin_notification_emails_signups",
         "emails_warnings": "admin_notification_emails_warnings",
+        "emails_finance": "admin_notification_emails_finance",
     }
     
     for key, config_key in mapping.items():

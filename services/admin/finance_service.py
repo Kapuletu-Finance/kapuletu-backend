@@ -204,7 +204,7 @@ class FinanceService:
                 <br>
                 <a href="{admin_url}/admin/finance" style="padding: 10px 15px; background-color: #000; color: #fff; text-decoration: none; border-radius: 5px;">View Subscription Details</a>
                 """
-                notify_admins_async(subject, body)
+                notify_admins_async(subject, body, category="finance")
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Failed to dispatch admin notification for upgrade: {e}")
