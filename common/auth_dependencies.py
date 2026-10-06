@@ -68,7 +68,6 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: 
     
     import datetime
     
-    # Replicate the dictionary structure that Cognito used, so routers remain compatible
     now = datetime.datetime.utcnow()
     # Throttle DB updates to once every 5 minutes per user
     if not user.last_active_at or (now - user.last_active_at).total_seconds() > 300:
@@ -76,7 +75,8 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: 
         db.commit()
     
     user_data = {
-        'sub': str(user.user_id),
+        'sub': str(user.user_id), # Legacy support for some endpoints
+        'user_id': str(user.user_id),
         'email': user.email,
         'given_name': user.first_name,
         'family_name': user.last_name,
