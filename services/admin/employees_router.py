@@ -58,7 +58,7 @@ class EmployeeResponse(BaseModel):
         from_attributes = True
 
 class InviteResponse(BaseModel):
-    id: str
+    id: UUID
     email: str
     first_name: str
     last_name: str
