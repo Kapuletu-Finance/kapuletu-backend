@@ -94,15 +94,14 @@ class AIGovernanceService:
     def trigger_training(self, epochs: int = 10):
         """
         Invokes the AI training script. 
-        In production, this would trigger an asynchronous job (e.g. SageMaker).
         """
         # 1. Fetch all approved feedback to build a training set (simulation)
         approved_count = self.db.query(AIFeedback).filter(AIFeedback.is_approved_for_training == True).count()
-        
-        # 2. Trigger asynchronous job (SageMaker / AWS Batch simulation)
+
+        # 2. Trigger asynchronous job
         import logging
         logger = logging.getLogger(__name__)
-        logger.info(f"SAGEMAKER_TRIGGER_SIMULATED: Initiating AI retraining with {approved_count} samples for {epochs} epochs.")
+        logger.info(f"AI_TRAINING_TRIGGERED: Initiating AI retraining with {approved_count} samples for {epochs} epochs.")
         
         try:
             return {

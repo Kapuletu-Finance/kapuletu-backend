@@ -52,20 +52,7 @@ def handler(event, context):
             logger.error(f"Failed to decode base64 body: {e}")
             return {"statusCode": 400, "body": json.dumps({"error": "invalid_encoding"})}
             
-    # 3. SQS Decoupling (If configured)
-    sqs_queue_url = os.environ.get("SQS_QUEUE_URL")
-    if sqs_queue_url:
-        import boto3
-        sqs = boto3.client("sqs", region_name=os.environ.get("AWS_REGION", "eu-west-1"))
-        try:
-            sqs.send_message(QueueUrl=sqs_queue_url, MessageBody=body_str)
-            logger.info("Successfully queued webhook payload to SQS.")
-            return {"statusCode": 200, "body": "OK"}
-        except Exception as e:
-            logger.error(f"Failed to queue to SQS: {e}")
-            # Fall back to synchronous processing if SQS fails
-    
-    # 4. Asynchronous Thread Fallback (Local Dev or SQS Bypassed)
+    # 3. Asynchronous Thread Execution
     import threading
     
     def background_task(body, conf):

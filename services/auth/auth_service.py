@@ -555,7 +555,7 @@ class AuthService:
         }
 
     def _send_welcome_messages(self, user: User):
-        """Replaces the old Cognito post_confirmation hook logic."""
+        """Internal post confirmation hook logic."""
         dashboard_url = config.FRONTEND_URL.rstrip('/')
         
         # 1. WhatsApp Welcome Template

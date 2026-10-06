@@ -31,7 +31,7 @@ class User(Base):
     slug = Column(String, unique=True, index=True, nullable=True)
     
     # Primary identifier for incoming webhook messages (Twilio/WhatsApp)
-    # Must be a verified WhatsApp number via Cognito Custom Sender
+    # Must be a verified WhatsApp number
     phone_number = Column(String, unique=True, nullable=False)
     
     # Security

@@ -1,4 +1,4 @@
-import boto3
+
 import json
 import os
 import datetime
@@ -100,8 +100,6 @@ class CRMService:
     """
     def __init__(self, db: Session):
         self.db = db
-        self.sqs = boto3.client('sqs', region_name=os.environ.get('AWS_REGION', 'eu-west-1'))
-        self.broadcast_queue_url = os.environ.get('BROADCAST_QUEUE_URL')
 
     def send_broadcast(self, title: str, message: str, target_audience: str, channels: list, target_emails: list = None, background_tasks = None):
         """
