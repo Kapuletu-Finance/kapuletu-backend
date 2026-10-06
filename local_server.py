@@ -28,6 +28,7 @@ from services.groups.router import router as groups
 from services.finance.ledger_router import router as ledger
 from services.finance.checkout_router import router as checkout_router
 from services.reporting.router import router as reporting
+from services.hr.router import router as hr_router
 
 # Import Handlers
 from services.ingestion.handler import handler as ingestion_handler
@@ -526,6 +527,7 @@ app.include_router(admin_config_router)
 
 from services.admin.employees_router import router as employees_router
 app.include_router(employees_router, prefix="/admin")
+app.include_router(hr_router)
 from services.blog.router import router as blog_router
 app.include_router(blog_router)
 
