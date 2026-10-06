@@ -50,6 +50,8 @@ def get_owner_groups(db: Session, owner_id: str, skip: int = 0, limit: int = 100
         
     if status == "archived":
         query = query.filter(Group.is_active == False)
+    elif status == "favorites":
+        query = query.filter(Group.is_active == True, Group.is_favorite == True)
     elif status == "all":
         pass
     else:
@@ -101,6 +103,15 @@ def archive_group(db: Session, group_id: str):
     db.query(Group).filter(Group.group_id == parse_uuid(group_id)).update({
         "status": "archived",
         "is_active": False
+    })
+    db.commit()
+    return get_group(db, group_id)
+
+def unarchive_group(db: Session, group_id: str):
+    """Restores a soft-deleted group."""
+    db.query(Group).filter(Group.group_id == parse_uuid(group_id)).update({
+        "status": "active",
+        "is_active": True
     })
     db.commit()
     return get_group(db, group_id)

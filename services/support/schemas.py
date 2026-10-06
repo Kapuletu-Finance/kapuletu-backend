@@ -47,3 +47,24 @@ class TicketOut(BaseModel):
 
 class TicketDetailOut(TicketOut):
     messages: List[TicketMessageOut] = []
+
+class ContactMessageCreate(BaseModel):
+    first_name: str
+    last_name: str
+    email: str
+    topic: str
+    message: str
+
+class ContactMessageOut(BaseModel):
+    id: UUID
+    first_name: str
+    last_name: str
+    email: str
+    topic: str
+    message: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True

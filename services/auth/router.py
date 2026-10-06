@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, UploadFile, File
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+import os
+import uuid
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -13,13 +15,55 @@ from common.utils import parse_uuid
 from services.auth.schemas import (
     RegisterIn, RegisterOut, LoginIn, VerifyIn, VerifyEmailIn, ResendCodeIn, Resend2FAIn, RefreshIn,
     ForgotPasswordIn, ResetPasswordIn, ChangePasswordIn, UpdateProfileIn,
-    TokenOut, UserOut, MessageOut, SettingsIn, SettingsOut, format_phone
+    TokenOut, UserOut, MessageOut, SettingsIn, SettingsOut, format_phone, EmployeeSetupIn
 )
 from services.auth.auth_service import auth_service
 from common.auth_dependencies import get_current_user
 from common.enums import UserRole
+from models.users import User
 
 router = APIRouter(prefix="/auth", tags=["1. Authentication"])
+
+@router.post("/profile-photo", response_model=MessageOut, summary="Upload Profile Photo")
+async def upload_profile_photo(
+    file: UploadFile = File(...),
+    current_user_data: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Uploads a profile photo for the current user and saves it to local storage."""
+    
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image.")
+        
+    os.makedirs("uploads", exist_ok=True)
+    ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+    unique_filename = f"profile_{current_user_data.get('sub')}_{uuid.uuid4().hex}.{ext}"
+    file_path = os.path.join("uploads", unique_filename)
+    
+    with open(file_path, "wb") as f:
+        f.write(await file.read())
+        
+    profile_photo_url = f"/uploads/{unique_filename}"
+    
+    user_id = parse_uuid(current_user_data.get("sub"))
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    # Delete old photo if it exists and is local
+    old_photo = user.profile_picture_url
+    if old_photo and old_photo.startswith("/uploads/"):
+        old_path = old_photo.lstrip("/")
+        if os.path.exists(old_path):
+            try:
+                os.remove(old_path)
+            except Exception:
+                pass
+                
+    user.profile_picture_url = profile_photo_url
+    db.commit()
+    
+    return MessageOut(message="Profile photo uploaded successfully.")
 
 # ==========================================
 # PUBLIC ENDPOINTS
@@ -83,6 +127,53 @@ async def register(request: Request, payload: RegisterIn, db: Session = Depends(
         marketing_consent=payload.marketing_consent
     )
     return RegisterOut(message="User registered. Please check email/WhatsApp for verification code.", user_id=user_id)
+
+@router.post("/employee-setup", response_model=MessageOut, summary="Complete Employee Setup")
+@limiter.limit("5/minute")
+async def employee_setup(request: Request, payload: EmployeeSetupIn, db: Session = Depends(get_db)):
+    """Complete employee onboarding using the token sent via email."""
+    from models.employees import EmployeeInvite
+    from common.auth import get_password_hash
+    import datetime
+    
+    # 1. Validate Token
+    invite = db.query(EmployeeInvite).filter(
+        EmployeeInvite.token == payload.token,
+        EmployeeInvite.is_used == False,
+        EmployeeInvite.expires_at > datetime.datetime.utcnow()
+    ).first()
+    
+    if not invite:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Invalid or expired invite token."
+        )
+        
+    # 2. Check if user exists (shouldn't if validation holds, but safe)
+    existing = db.query(User).filter(User.email == invite.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="User already registered.")
+        
+    # 3. Create User Account
+    new_user = User(
+        email=invite.email,
+        first_name=invite.first_name,
+        last_name=invite.last_name,
+        hashed_password=get_password_hash(payload.password),
+        role=invite.role,
+        permissions=invite.permissions,
+        is_active=True,
+        is_verified=True, # Employees don't need phone verification for this flow
+        marketing_consent=False
+    )
+    db.add(new_user)
+    
+    # 4. Mark invite as used
+    invite.is_used = True
+    db.commit()
+    
+    return MessageOut(message="Account setup complete. You may now login.")
+
 
 @router.post("/verify", response_model=TokenOut, summary="Verify Phone (Complete Registration) - Public")
 @limiter.limit("5/minute")
@@ -318,6 +409,7 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user), db: S
         email_verified=current_user.get('email_verified') == 'true',
         phone_number_verified=current_user.get('phone_number_verified') == 'true',
         role=current_user.get('role', UserRole.TREASURER.value),
+        permissions=user.permissions if user and user.permissions else [],
         two_factor_enabled=user.two_factor_enabled if user else False,
         two_factor_channel=user.two_factor_channel if user else None,
         is_waitlisted=bool(user.is_waitlisted) if user else False

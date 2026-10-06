@@ -93,6 +93,10 @@ class SettingsIn(BaseModel):
     two_factor_enabled: Optional[bool] = Field(None, json_schema_extra={"example": False})
     two_factor_channel: Optional[str] = Field(None, json_schema_extra={"example": "whatsapp"})
 
+class EmployeeSetupIn(BaseModel):
+    token: str = Field(..., json_schema_extra={"example": "abc123xyz..."})
+    password: str = Field(..., min_length=8, json_schema_extra={"example": "SecurePass123!"})
+
 # --- OUTPUT SCHEMAS ---
 
 class MessageOut(BaseModel):
@@ -119,9 +123,11 @@ class UserOut(BaseModel):
     first_name: str = Field(..., json_schema_extra={"example": "Joseph"})
     last_name: str = Field(..., json_schema_extra={"example": "Amuyunzu"})
     phone_number: str = Field(..., json_schema_extra={"example": "+254700123456"})
+    profile_picture_url: Optional[str] = Field(None, json_schema_extra={"example": "/uploads/avatar.jpg"})
     email_verified: bool = Field(..., json_schema_extra={"example": True})
     phone_number_verified: bool = Field(..., json_schema_extra={"example": False})
     role: UserRole = Field(..., json_schema_extra={"example": UserRole.TREASURER})
+    permissions: list[str] = Field(default_factory=list, json_schema_extra={"example": ["manage_blogs"]})
     two_factor_enabled: bool = Field(False, json_schema_extra={"example": False})
     two_factor_channel: Optional[str] = Field(None, json_schema_extra={"example": "whatsapp"})
     is_waitlisted: bool = Field(False, json_schema_extra={"example": False})

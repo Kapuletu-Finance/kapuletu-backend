@@ -309,6 +309,13 @@ class AuthService:
             type="account_created"
         )
         
+        from services.notifications.admin_dispatcher import notify_admins_async
+        notify_admins_async(
+            subject=f"New User Registration: {first_name} {last_name}",
+            html_content=f"A new user just registered.<br><br><b>Name:</b> {first_name} {last_name}<br><b>Email:</b> {email}<br><b>Phone:</b> {phone_number}<br><b>Waitlisted:</b> {'Yes' if is_waitlisted else 'No'}",
+            category="signups"
+        )
+        
         return str(new_user.user_id)
 
     def _get_user_by_identifier(self, db: Session, identifier: str) -> User:
@@ -325,7 +332,11 @@ class AuthService:
             
         from common.system_config_service import get_system_config
         force_2fa = get_system_config(db, "force_2fa", default="none")
-        session_timeout = int(get_system_config(db, "session_timeout_minutes", default=15))
+        
+        try:
+            session_timeout = int(get_system_config(db, "session_timeout_minutes", default=15))
+        except (ValueError, TypeError):
+            session_timeout = 15
         
         # Determine if 2FA is required based on global settings or user preference
         requires_2fa = getattr(user, 'two_factor_enabled', False)
@@ -354,8 +365,10 @@ class AuthService:
                 "SessionTimeoutMinutes": session_timeout # pass down to caller if needed
             }
             
-        access_token = create_access_token({"sub": str(user.user_id), "role": user.role}, expires_delta=datetime.timedelta(minutes=session_timeout))
-        refresh_token = create_refresh_token({"sub": str(user.user_id), "role": user.role})
+        role_str = user.role.value if hasattr(user.role, 'value') else str(user.role)
+        
+        access_token = create_access_token({"sub": str(user.user_id), "role": role_str}, expires_delta=datetime.timedelta(minutes=session_timeout))
+        refresh_token = create_refresh_token({"sub": str(user.user_id), "role": role_str})
         
         AuditService(db).log_action(
             actor_id=str(user.user_id),
@@ -371,7 +384,7 @@ class AuthService:
             "RefreshToken": refresh_token,
             "IdToken": access_token, # Simplified, using access token as id token
             "ExpiresIn": session_timeout * 60,
-            "Role": user.role,
+            "Role": role_str,
             "IsWaitlisted": user.is_waitlisted
         }
 
@@ -508,7 +521,7 @@ class AuthService:
                 <br>
                 <a href="{admin_url}/admin/users?tab=waitlist" style="padding: 10px 15px; background-color: #000; color: #fff; text-decoration: none; border-radius: 5px;">Review in Waitlist Dashboard</a>
                 """
-                notify_admins_async(subject, body)
+                notify_admins_async(subject, body, category="signups")
             else:
                 subject = f"New User Signup: {user.first_name} {user.last_name}"
                 body = f"""
@@ -520,7 +533,7 @@ class AuthService:
                 <br>
                 <a href="{admin_url}/admin/users/{user.user_id}" style="padding: 10px 15px; background-color: #000; color: #fff; text-decoration: none; border-radius: 5px;">View User Profile</a>
                 """
-                notify_admins_async(subject, body)
+                notify_admins_async(subject, body, category="signups")
         except Exception as e:
             logger.error(f"Failed to dispatch admin notification: {e}")
         # -------------------------------
@@ -542,7 +555,7 @@ class AuthService:
         }
 
     def _send_welcome_messages(self, user: User):
-        """Replaces the old Cognito post_confirmation hook logic."""
+        """Internal post confirmation hook logic."""
         dashboard_url = config.FRONTEND_URL.rstrip('/')
         
         # 1. WhatsApp Welcome Template

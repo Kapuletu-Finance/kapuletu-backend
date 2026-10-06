@@ -17,6 +17,7 @@ class CampaignSettings(BaseModel):
     access_pin: Optional[str] = Field(None)
     remove_watermark: bool = Field(False)
     auto_send_reports: bool = Field(False)
+    cover_photo: Optional[str] = Field(None, description="URL or relative path to the campaign cover photo")
 
 class CampaignCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=100, json_schema_extra={"example": "Medical Fund - Jane Doe"})
@@ -200,4 +201,5 @@ class PublicWebReportOut(BaseModel):
     remaining_message: str
     footer_message: Optional[str] = None
     watermark: Optional[str] = None
+    cover_photo: Optional[str] = None
     public_url: str

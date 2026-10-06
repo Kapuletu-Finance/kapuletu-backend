@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Background
 from sqlalchemy.orm import Session
 
 from common.database import get_db
-from common.auth_dependencies import get_verified_user, get_admin_user
+from common.auth_dependencies import get_verified_user, get_admin_user, require_role
+from common.enums import UserRole
 from services.admin.analytics_service import AnalyticsService
 from services.admin.user_service import UserService
 from services.admin.ai_governance_service import AIGovernanceService
@@ -639,9 +640,31 @@ async def get_admin_notifications_config(
         raise HTTPException(status_code=403, detail="Only super admins can access global configuration")
         
     from models.system_config import SystemConfig
-    config = db.query(SystemConfig).filter(SystemConfig.config_key == "admin_notification_emails").first()
     
-    return config.config_value if config and config.config_value else {"emails": []}
+    keys = ["admin_notification_emails", "admin_notification_emails_hr", "admin_notification_emails_signups", "admin_notification_emails_warnings", "admin_notification_emails_finance"]
+    configs = db.query(SystemConfig).filter(SystemConfig.config_key.in_(keys)).all()
+    
+    response = {
+        "emails": [],
+        "emails_hr": [],
+        "emails_signups": [],
+        "emails_warnings": [],
+        "emails_finance": []
+    }
+    
+    for config in configs:
+        if config.config_key == "admin_notification_emails":
+            response["emails"] = config.config_value.get("emails", []) if config.config_value else []
+        elif config.config_key == "admin_notification_emails_hr":
+            response["emails_hr"] = config.config_value.get("emails", []) if config.config_value else []
+        elif config.config_key == "admin_notification_emails_signups":
+            response["emails_signups"] = config.config_value.get("emails", []) if config.config_value else []
+        elif config.config_key == "admin_notification_emails_warnings":
+            response["emails_warnings"] = config.config_value.get("emails", []) if config.config_value else []
+        elif config.config_key == "admin_notification_emails_finance":
+            response["emails_finance"] = config.config_value.get("emails", []) if config.config_value else []
+            
+    return response
 
 @router.post("/config/notifications", summary="Set Admin Notification Emails")
 async def set_admin_notifications_config(
@@ -653,18 +676,28 @@ async def set_admin_notifications_config(
         raise HTTPException(status_code=403, detail="Only super admins can modify global configuration")
         
     from models.system_config import SystemConfig
-    config = db.query(SystemConfig).filter(SystemConfig.config_key == "admin_notification_emails").first()
     
-    new_emails = payload.get("emails", [])
-    if not isinstance(new_emails, list):
-        raise HTTPException(status_code=400, detail="Emails must be a list")
-        
-    if config:
-        config.config_value = {"emails": new_emails}
-    else:
-        config = SystemConfig(config_key="admin_notification_emails", config_value={"emails": new_emails})
-        db.add(config)
-        
+    mapping = {
+        "emails": "admin_notification_emails",
+        "emails_hr": "admin_notification_emails_hr",
+        "emails_signups": "admin_notification_emails_signups",
+        "emails_warnings": "admin_notification_emails_warnings",
+        "emails_finance": "admin_notification_emails_finance",
+    }
+    
+    for key, config_key in mapping.items():
+        if key in payload:
+            new_emails = payload.get(key, [])
+            if not isinstance(new_emails, list):
+                raise HTTPException(status_code=400, detail=f"'{key}' must be a list of strings")
+                
+            config = db.query(SystemConfig).filter(SystemConfig.config_key == config_key).first()
+            if config:
+                config.config_value = {"emails": new_emails}
+            else:
+                config = SystemConfig(config_key=config_key, config_value={"emails": new_emails})
+                db.add(config)
+                
     db.commit()
     return {"message": "Admin notification emails updated"}
 
@@ -997,3 +1030,45 @@ async def save_raw_template(
         f.write(content)
     return {"message": "Template saved successfully"}
 
+
+# --- Contact Messages ---
+@router.get("/contact-messages", summary="List Contact Messages")
+async def list_contact_messages(
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUPPORT_AGENT]))
+):
+    from models.contact_message import ContactMessage
+    messages = db.query(ContactMessage).order_by(ContactMessage.created_at.desc()).all()
+    
+    # Format them for output
+    return [{
+        "id": str(msg.id),
+        "first_name": msg.first_name,
+        "last_name": msg.last_name,
+        "email": msg.email,
+        "topic": msg.topic,
+        "message": msg.message,
+        "status": msg.status,
+        "created_at": msg.created_at.isoformat() + "Z",
+        "updated_at": msg.updated_at.isoformat() + "Z"
+    } for msg in messages]
+
+@router.patch("/contact-messages/{message_id}/status", summary="Update Contact Message Status")
+async def update_contact_message_status(
+    message_id: str,
+    status: str,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUPPORT_AGENT]))
+):
+    from models.contact_message import ContactMessage
+    from common.utils import parse_uuid
+    
+    message = db.query(ContactMessage).filter(ContactMessage.id == parse_uuid(message_id)).first()
+    if not message:
+        raise HTTPException(status_code=404, detail="Contact message not found")
+        
+    message.status = status
+    db.commit()
+    db.refresh(message)
+    
+    return {"message": "Status updated successfully", "status": message.status}

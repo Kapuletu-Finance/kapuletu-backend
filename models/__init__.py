@@ -14,6 +14,7 @@ from .support_ticket import SupportTicket
 from .support_ticket_message import SupportTicketMessage
 from .transaction import Transaction
 from .users import User
+from .employees import EmployeeInvite, EmployeeAuditLog, ApprovalRequest
 from .system_config import SystemConfig
 from .otp import OTP
 from .report_settings import CampaignReportSettings
@@ -30,3 +31,6 @@ from .communication_logs import CommunicationLog
 from .invite import Invite
 from .system_metric import SystemMetric
 from .waitlist_whitelist import WaitlistWhitelist
+from .contact_message import ContactMessage
+from .blog import BlogPost
+from .hr import EmployeeReport, Meeting, MeetingAttendee

@@ -45,6 +45,20 @@ class WorkspaceOverviewOut(BaseModel):
     recent_campaigns: List[CampaignOverview]
     recent_activities: List[WorkspaceActivity]
 
+class ContributorOverview(BaseModel):
+    name: str
+    phone: str
+    total_contributed: float
+    last_contribution_at: datetime
+    group_id: str
+
+class SettingOverview(BaseModel):
+    title: str
+    description: str
+    href: str
+
 class GlobalSearchOut(BaseModel):
     groups: List[GroupOverview]
     campaigns: List[CampaignOverview]
+    contributors: List[ContributorOverview] = []
+    settings: List[SettingOverview] = []

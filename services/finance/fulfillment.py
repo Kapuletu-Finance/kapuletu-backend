@@ -141,5 +141,16 @@ class FulfillmentService:
         except Exception as e:
             logger.error(f"Failed to create in-app notification: {e}")
 
+        # 8. Notify Admins
+        try:
+            from services.notifications.admin_dispatcher import notify_admins_async
+            notify_admins_async(
+                subject=f"Subscription Upgraded: {plan.name}",
+                html_content=f"User <b>{name}</b> ({email}) just upgraded their workspace to the <b>{plan.name}</b> tier.<br><br>Amount: Ksh {amount:,.2f}<br>Reference: {provider_ref}",
+                category="finance"
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify admins of subscription upgrade: {e}")
+
         logger.info(f"Fulfillment Successful: User {user_id} upgraded to {plan.name}")
         return True

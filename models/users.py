@@ -25,12 +25,13 @@ class User(Base):
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False)
+    profile_picture_url = Column(String, nullable=True)
     
     # URL-friendly slug for routing (e.g. dorothy-kahenya)
     slug = Column(String, unique=True, index=True, nullable=True)
     
     # Primary identifier for incoming webhook messages (Twilio/WhatsApp)
-    # Must be a verified WhatsApp number via Cognito Custom Sender
+    # Must be a verified WhatsApp number
     phone_number = Column(String, unique=True, nullable=False)
     
     # Security
@@ -60,6 +61,7 @@ class User(Base):
     current_action = Column(String, nullable=True)
     
     preferences = Column(JSON, default=dict)
+    permissions = Column(JSON, default=list)
     
     # Marketing & Promos
     marketing_consent = Column(Boolean, default=False)

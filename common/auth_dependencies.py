@@ -68,7 +68,6 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: 
     
     import datetime
     
-    # Replicate the dictionary structure that Cognito used, so routers remain compatible
     now = datetime.datetime.utcnow()
     # Throttle DB updates to once every 5 minutes per user
     if not user.last_active_at or (now - user.last_active_at).total_seconds() > 300:
@@ -76,7 +75,8 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: 
         db.commit()
     
     user_data = {
-        'sub': str(user.user_id),
+        'sub': str(user.user_id), # Legacy support for some endpoints
+        'user_id': str(user.user_id),
         'email': user.email,
         'given_name': user.first_name,
         'family_name': user.last_name,
@@ -84,6 +84,7 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: 
         'email_verified': 'true' if user.email_verified else 'false',
         'phone_number_verified': 'true' if user.phone_number_verified else 'false',
         'role': user.role,
+        'permissions': user.permissions if getattr(user, 'permissions', None) else [],
         'access_token': token
     }
     return user_data
@@ -133,7 +134,30 @@ def get_super_admin_user(current_user: Dict[str, Any] = Depends(get_verified_use
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient privileges. Super Admin access required."
         )
-    return current_user
+def require_role(roles: list):
+    def role_checker(current_user: Dict[str, Any] = Depends(get_verified_user)) -> Dict[str, Any]:
+        user_role = current_user.get('role')
+        # Allow passing enum values or string values
+        allowed_roles = [r.value if hasattr(r, 'value') else r for r in roles]
+        if user_role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient privileges. Allowed roles: {', '.join(allowed_roles)}."
+            )
+        return current_user
+    return role_checker
 
-
-
+def require_permissions(required_permissions: list):
+    def permission_checker(current_user: Dict[str, Any] = Depends(get_verified_user)) -> Dict[str, Any]:
+        user_permissions = current_user.get('permissions', [])
+        from common.enums import UserRole
+        if current_user.get('role') == UserRole.SUPER_ADMIN.value:
+            return current_user
+        missing = [p for p in required_permissions if p not in user_permissions]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f'Insufficient privileges. Missing permissions: {missing}.'
+            )
+        return current_user
+    return permission_checker

@@ -6,10 +6,16 @@ from services.notifications.providers.resend_client import ResendClient
 
 logger = logging.getLogger(__name__)
 
-def _send_admin_emails_sync(subject: str, html_content: str):
+def _send_admin_emails_sync(subject: str, html_content: str, category: str = None):
     db = SessionLocal()
     try:
-        config = db.query(SystemConfig).filter(SystemConfig.config_key == "admin_notification_emails").first()
+        config_key = f"admin_notification_emails_{category}" if category else "admin_notification_emails"
+        config = db.query(SystemConfig).filter(SystemConfig.config_key == config_key).first()
+        
+        # Fallback to general admin emails if specific category not set
+        if not config or not config.config_value or not isinstance(config.config_value, dict) or not config.config_value.get("emails"):
+             config = db.query(SystemConfig).filter(SystemConfig.config_key == "admin_notification_emails").first()
+             
         if not config or not config.config_value or not isinstance(config.config_value, dict):
             logger.info("Admin notification emails not configured or invalid.")
             return
@@ -36,14 +42,14 @@ def _send_admin_emails_sync(subject: str, html_content: str):
         db.close()
 
 
-def notify_admins_async(subject: str, html_content: str):
+def notify_admins_async(subject: str, html_content: str, category: str = None):
     """
     Fire-and-forget background task to notify admins.
-    Does not block the calling thread.
+    Supports a 'category' (e.g., 'hr', 'signups') for targeted emails.
     """
     thread = threading.Thread(
         target=_send_admin_emails_sync, 
-        args=(subject, html_content)
+        args=(subject, html_content, category)
     )
     thread.daemon = True
     thread.start()

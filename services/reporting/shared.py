@@ -29,14 +29,14 @@ def build_campaign_report_data(db: Session, campaign: Campaign, is_preview: bool
     settings = campaign.settings_override or {}
     title = settings.get("report_title")
     if not title or title == "Campaign Update":
-        title = f"*{campaign.title or ''}*\n\n{campaign.description or ''}"
+        title = "*[Campaign Name]* [Campaign Description]"
         
     footer = settings.get("report_footer", "")
     if not footer or footer == "Thank you for your support." or "Total Raised: Ksh [Total Raised]" in footer:
-        footer_parts = ["Thank you for your continued support!\n\nTotal Raised: Ksh [Total Raised]"]
+        footer_parts = ["Total Raised: Ksh [Total Raised]"]
         if campaign.target_amount and float(campaign.target_amount) > 0:
-            footer_parts.append("Target: Ksh [Target Amount]")
             footer_parts.append("Amount Remaining: Ksh [Amount Remaining]")
+        footer_parts.append("\nThank you for your continued support!")
         if campaign.payment_instructions:
             footer_parts.append("\nTo send your contribution:\n[Payment Instructions]")
         footer = "\n".join(footer_parts)

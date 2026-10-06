@@ -16,8 +16,14 @@ class ResendClient:
 
     def send_email(self, to_email: str, subject: str, html_body: str) -> bool:
         if not self.api_key:
-            logger.error("RESEND_API_KEY is not set. Cannot send email.")
-            return False
+            logger.warning(f"\n{'='*50}\n[MOCK EMAIL SENT to {to_email}]\nSubject: {subject}\n{'='*50}")
+            # Extract and print link if it's an employee invite for easy local testing
+            import re
+            links = re.findall(r'href=[\'"]?([^\'" >]+)', html_body)
+            if links:
+                logger.warning(f"Found Links in Email: {links}")
+            logger.warning(f"{'='*50}\nRESEND_API_KEY is not set. Email mocked as sent.")
+            return True
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",

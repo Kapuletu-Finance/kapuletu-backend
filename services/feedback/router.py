@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from common.database import get_db
-from common.auth_dependencies import get_verified_user
+from common.auth_dependencies import get_verified_user, require_role
+from common.enums import UserRole
 from services.feedback.service import FeedbackService
 
 router = APIRouter(prefix="/feedback", tags=["16. User Feedback"])
@@ -58,7 +59,7 @@ async def list_feedback(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user),
+    current_user: Dict[str, Any] = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUPPORT_AGENT, UserRole.CONTENT_MANAGER])),
 ):
     service = FeedbackService(db)
     return service.list_feedback(
@@ -75,7 +76,7 @@ async def list_feedback(
 async def get_feedback_details(
     identifier: str,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user),
+    current_user: Dict[str, Any] = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUPPORT_AGENT, UserRole.CONTENT_MANAGER])),
 ):
     service = FeedbackService(db)
     details = service.get_feedback_details(identifier)
@@ -89,7 +90,7 @@ async def update_feedback(
     identifier: str,
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_verified_user),
+    current_user: Dict[str, Any] = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUPPORT_AGENT, UserRole.CONTENT_MANAGER])),
 ):
     if "status" in payload and payload["status"] not in VALID_STATUSES:
         raise HTTPException(status_code=422, detail="Invalid status value")
@@ -98,4 +99,6 @@ async def update_feedback(
     success = service.update_feedback(identifier, current_user["sub"], payload)
     if not success:
         raise HTTPException(status_code=404, detail="Feedback not found")
+    
+    return {"message": "Feedback updated"}
     return {"message": "Feedback updated"}

@@ -28,6 +28,7 @@ from services.groups.router import router as groups
 from services.finance.ledger_router import router as ledger
 from services.finance.checkout_router import router as checkout_router
 from services.reporting.router import router as reporting
+from services.hr.router import router as hr_router
 
 # Import Handlers
 from services.ingestion.handler import handler as ingestion_handler
@@ -524,6 +525,12 @@ from services.admin.router import router as admin_router
 app.include_router(admin_router)
 app.include_router(admin_config_router)
 
+from services.admin.employees_router import router as employees_router
+app.include_router(employees_router, prefix="/admin")
+app.include_router(hr_router)
+from services.blog.router import router as blog_router
+app.include_router(blog_router)
+
 from services.feedback.router import router as feedback_router
 app.include_router(feedback_router)  # 16. User Feedback
 
@@ -534,6 +541,9 @@ app.include_router(workspace_router, dependencies=[Depends(get_verified_user)])
 
 from services.settings.router import router as settings_router
 app.include_router(settings_router, tags=["13. Enterprise Settings"], prefix="/settings", dependencies=[Depends(get_verified_user)])
+
+from services.upload.router import router as upload_router
+app.include_router(upload_router, dependencies=[Depends(get_verified_user)])
 
 # Serve static assets (Logo, Favicons, etc.)
 import os
@@ -562,14 +572,14 @@ async def root():
 
         <!-- Open Graph / Facebook -->
         <meta property="og:type" content="website">
-        <meta property="og:url" content="https://dev-api.kapuletu.co.ke/">
+        <meta property="og:url" content="https://kapuletu.co.ke/">
         <meta property="og:title" content="KapuLetu Developer Portal">
         <meta property="og:description" content="Official API gateway for KapuLetu. Access the Treasury API core, documentation, and developer environment.">
-        <meta property="og:image" content="https://dev-api.kapuletu.co.ke/assets/logo.jpg">
+        <meta property="og:image" content="https://kapuletu.co.ke/assets/logo.jpg">
 
         <!-- Twitter -->
         <meta property="twitter:card" content="summary_large_image">
-        <meta property="twitter:url" content="https://dev-api.kapuletu.co.ke/">
+        <meta property="twitter:url" content="https://kapuletu.co.ke/">
         <meta property="twitter:title" content="KapuLetu Developer Portal">
         <meta property="twitter:description" content="Official API gateway for KapuLetu. Access the Treasury API core, documentation, and developer environment.">
         <meta property="twitter:image" content="https://dev-api.kapuletu.co.ke/assets/logo.jpg">

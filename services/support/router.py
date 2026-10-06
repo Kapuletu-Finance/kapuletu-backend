@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any
 from common.auth_dependencies import get_verified_user
 from common.database import get_db
-from .schemas import TicketCreate, TicketReply, TicketRatingCreate, TicketOut, TicketDetailOut, TicketMessageOut
+from .schemas import TicketCreate, TicketReply, TicketRatingCreate, TicketOut, TicketDetailOut, TicketMessageOut, ContactMessageCreate, ContactMessageOut
 from .service import SupportService
 
 def get_current_user_id(current_user: Dict[str, Any] = Depends(get_verified_user)) -> str:
@@ -70,3 +70,44 @@ def rate_ticket(ticket_id: str, payload: TicketRatingCreate, db: Session = Depen
     if err == "already_rated":
         raise HTTPException(status_code=409, detail="This session has already been rated")
     return {"message": "Thank you for your feedback! Your rating has been recorded.", "rating_id": str(rating.rating_id)}
+
+@router.post("/public/contact", response_model=dict, status_code=201)
+def submit_contact_form(payload: ContactMessageCreate, db: Session = Depends(get_db)):
+    from models.contact_message import ContactMessage
+    from services.notifications.providers.resend_client import ResendClient
+    from services.notifications.admin_dispatcher import notify_admins_async
+    import logging
+
+    # 1. Save to database
+    new_message = ContactMessage(
+        first_name=payload.first_name,
+        last_name=payload.last_name,
+        email=payload.email,
+        topic=payload.topic,
+        message=payload.message
+    )
+    db.add(new_message)
+    db.commit()
+    db.refresh(new_message)
+
+    # 2. Send emails
+    email_client = ResendClient()
+    try:
+        # Acknowledge user
+        email_client.send_email(
+            to_email=payload.email,
+            subject="KapuLetu Support: We received your message",
+            html_body=f"Hello {payload.first_name},<br><br>Thank you for reaching out to KapuLetu Support regarding '{payload.topic}'. We have received your message and our team will get back to you shortly.<br><br>Your message:<br>{payload.message}<br><br>Best,<br>KapuLetu Team"
+        )
+        
+        # Notify admins
+        notify_admins_async(
+            subject=f"New Contact Message: {payload.topic}",
+            html_content=f"New message from {payload.first_name} {payload.last_name} ({payload.email}).<br><br>Topic: {payload.topic}<br><br>Message:<br>{payload.message}"
+        )
+    except Exception as e:
+        logging.error(f"Failed to send contact emails: {e}")
+        # We don't fail the request if emails fail
+        pass
+
+    return {"message": "Your message has been sent successfully."}
