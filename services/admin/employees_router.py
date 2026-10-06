@@ -107,21 +107,21 @@ def invite_employee(
         permissions=payload.permissions,
         token=token,
         expires_at=datetime.utcnow() + timedelta(hours=24),
-        created_by=current_user.user_id
+        created_by=current_user["user_id"]
     )
     db.add(new_invite)
     db.commit()
     db.refresh(new_invite)
     
     # Audit log
-    record_audit_log(db, current_user.user_id, "INVITED_EMPLOYEE", {"email": payload.email, "role": payload.role.value})
+    record_audit_log(db, current_user["user_id"], "INVITED_EMPLOYEE", {"email": payload.email, "role": payload.role.value})
     
     # Send Email
     setup_url = f"{os.environ.get('FRONTEND_URL', 'http://localhost:3000')}/employee-setup?token={token}"
     html_body = get_employee_invite_template(payload.first_name, payload.role.value, setup_url)
     
     log = CommunicationLog(
-        user_id=current_user.user_id,  # Associate with super admin sending it for now
+        user_id=current_user["user_id"],  # Associate with super admin sending it for now
         channel="EMAIL",
         destination=payload.email,
         subject="You're Invited to KapuLetu!",
