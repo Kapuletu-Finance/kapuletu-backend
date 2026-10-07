@@ -149,24 +149,32 @@ async def employee_setup(request: Request, payload: EmployeeSetupIn, db: Session
             detail="Invalid or expired invite token."
         )
         
-    # 2. Check if user exists (shouldn't if validation holds, but safe)
+    # 2. Check if user exists
     existing = db.query(User).filter(User.email == invite.email).first()
     if existing:
-        raise HTTPException(status_code=400, detail="User already registered.")
+        if existing.role != UserRole.TREASURER.value:
+            raise HTTPException(status_code=400, detail="User already registered as an employee.")
         
-    # 3. Create User Account
-    new_user = User(
-        email=invite.email,
-        first_name=invite.first_name,
-        last_name=invite.last_name,
-        hashed_password=get_password_hash(payload.password),
-        role=invite.role,
-        permissions=invite.permissions,
-        is_active=True,
-        is_verified=True, # Employees don't need phone verification for this flow
-        marketing_consent=False
-    )
-    db.add(new_user)
+        # Upgrade existing normal user to employee
+        existing.role = invite.role
+        existing.permissions = invite.permissions
+        existing.hashed_password = get_password_hash(payload.password)
+        existing.email_verified = True
+    else:
+        # 3. Create User Account
+        new_user = User(
+            email=invite.email,
+            phone_number=f"NO_PHONE_{uuid.uuid4().hex[:15]}",
+            first_name=invite.first_name,
+            last_name=invite.last_name,
+            hashed_password=get_password_hash(payload.password),
+            role=invite.role,
+            permissions=invite.permissions,
+            is_active=True,
+            email_verified=True, # Employees don't need phone verification for this flow
+            marketing_consent=False
+        )
+        db.add(new_user)
     
     # 4. Mark invite as used
     invite.is_used = True
