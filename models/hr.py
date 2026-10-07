@@ -23,6 +23,11 @@ class EmployeeReport(Base):
     status = Column(String, default="pending_review", index=True) # pending_review, confirmed, rejected
     admin_notes = Column(Text, nullable=True)
     
+    # Location & Mode tracking
+    work_mode = Column(String, nullable=False, default="physical") # physical, remote
+    latitude = Column(String, nullable=True) # Store as string for precision
+    longitude = Column(String, nullable=True)
+    
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
     

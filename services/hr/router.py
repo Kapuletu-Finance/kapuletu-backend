@@ -6,17 +6,42 @@ import uuid
 from common.auth_dependencies import get_current_user, require_role, require_permissions
 from common.database import get_db
 from models.hr import EmployeeReport, Meeting, MeetingAttendee
-from .schemas import EmployeeReportCreate, EmployeeReportResponse, MeetingCreate, MeetingResponse
+from .schemas import EmployeeReportCreate, EmployeeReportResponse, MeetingCreate, MeetingResponse, EmployeeClockInCreate
 
 router = APIRouter(prefix="/hr", tags=["HR & Meetings"])
 
 # --- REPORTING ---
 
 @router.post("/reports/clock-in", response_model=EmployeeReportResponse)
-def clock_in(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+def clock_in(payload: EmployeeClockInCreate, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     """Clock in for the day."""
     # Check if a report for today already exists
-    today = datetime.now(timezone.utc).date()
+    now_utc = datetime.now(timezone.utc)
+    today = now_utc.date()
+    
+    # Strict Business Rule: Cannot clock in after a certain time (e.g., 11:00 AM EAT -> 8:00 AM UTC)
+    # Kapuletu is based in Kenya (UTC+3)
+    if now_utc.hour >= 8: # 8 AM UTC = 11 AM EAT
+        raise HTTPException(
+            status_code=403, 
+            detail="Shift entry closed. It is past the 11:00 AM cutoff time for today's shift. Please contact your supervisor."
+        )
+
+    # GPS Geolocation Validation for Physical Clock-ins
+    if payload.work_mode == "physical":
+        if not payload.latitude or not payload.longitude:
+            raise HTTPException(status_code=400, detail="GPS Coordinates are required for physical clocking.")
+        
+        # Kapuletu HQ Coordinates (Nairobi)
+        HQ_LAT = -1.2921
+        HQ_LON = 36.8219
+        
+        # Simple bounding box / distance validation (approx 1km)
+        lat_diff = abs(float(payload.latitude) - HQ_LAT)
+        lon_diff = abs(float(payload.longitude) - HQ_LON)
+        if lat_diff > 0.015 or lon_diff > 0.015:
+            raise HTTPException(status_code=403, detail="Location rejected. You are not within the permitted physical office radius.")
+
     existing = db.query(EmployeeReport).filter(
         EmployeeReport.user_id == current_user["user_id"],
         EmployeeReport.report_date == today
@@ -26,12 +51,18 @@ def clock_in(current_user: dict = Depends(get_current_user), db: Session = Depen
         if existing.clock_in_time:
             raise HTTPException(status_code=400, detail="Already clocked in today.")
         existing.clock_in_time = datetime.now(timezone.utc)
+        existing.work_mode = payload.work_mode
+        existing.latitude = payload.latitude
+        existing.longitude = payload.longitude
         report = existing
     else:
         report = EmployeeReport(
             user_id=current_user["user_id"],
             report_date=today,
-            clock_in_time=datetime.now(timezone.utc)
+            clock_in_time=datetime.now(timezone.utc),
+            work_mode=payload.work_mode,
+            latitude=payload.latitude,
+            longitude=payload.longitude
         )
         db.add(report)
         
