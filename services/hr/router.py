@@ -5,8 +5,8 @@ import uuid
 
 from common.auth_dependencies import get_current_user, require_role, require_permissions
 from common.database import get_db
-from models.hr import EmployeeReport, Meeting, MeetingAttendee
-from .schemas import EmployeeReportCreate, EmployeeReportResponse, MeetingCreate, MeetingResponse, EmployeeClockInCreate
+from models.hr import EmployeeReport, Meeting, MeetingAttendee, OfficeSetting
+from .schemas import EmployeeReportCreate, EmployeeReportResponse, MeetingCreate, MeetingResponse, EmployeeClockInCreate, OfficeSettingUpdate, OfficeSettingResponse
 
 router = APIRouter(prefix="/hr", tags=["HR & Meetings"])
 
@@ -30,17 +30,33 @@ def clock_in(payload: EmployeeClockInCreate, current_user: dict = Depends(get_cu
     # GPS Geolocation Validation for Physical Clock-ins
     if payload.work_mode == "physical":
         if not payload.latitude or not payload.longitude:
-            raise HTTPException(status_code=400, detail="GPS Coordinates are required for physical clocking.")
+            raise HTTPException(status_code=400, detail="GPS coordinates are required for physical clock-in.")
         
-        # Kapuletu HQ Coordinates (Nairobi)
-        HQ_LAT = -1.2921
-        HQ_LON = 36.8219
-        
-        # Simple bounding box / distance validation (approx 1km)
-        lat_diff = abs(float(payload.latitude) - HQ_LAT)
-        lon_diff = abs(float(payload.longitude) - HQ_LON)
-        if lat_diff > 0.015 or lon_diff > 0.015:
-            raise HTTPException(status_code=403, detail="Location rejected. You are not within the permitted physical office radius.")
+        # Load admin-configured office location from DB
+        office = db.query(OfficeSetting).first()
+        if not office:
+            raise HTTPException(status_code=503, detail="Office location has not been configured by the administrator yet. Please contact your admin.")
+
+        # Haversine distance calculation (accurate for small distances)
+        import math
+        def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+            R = 6371000  # Earth radius in meters
+            phi1, phi2 = math.radians(lat1), math.radians(lat2)
+            dphi = math.radians(lat2 - lat1)
+            dlambda = math.radians(lon2 - lon1)
+            a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+            return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+        distance_m = haversine_distance(
+            float(payload.latitude), float(payload.longitude),
+            float(office.latitude), float(office.longitude)
+        )
+        allowed_radius = float(office.radius_meters)
+        if distance_m > allowed_radius:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Location rejected. You are {int(distance_m)}m from the office. Allowed radius is {int(allowed_radius)}m."
+            )
 
     existing = db.query(EmployeeReport).filter(
         EmployeeReport.user_id == current_user["user_id"],
@@ -215,3 +231,40 @@ def mark_attendance(meeting_id: str, user_id: str, attendance: str, current_user
     att.attendance = attendance
     db.commit()
     return {"message": "Attendance marked successfully"}
+
+
+# --- OFFICE LOCATION SETTINGS ---
+
+@router.get("/office-location", response_model=OfficeSettingResponse)
+def get_office_location(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get the current office GPS location configured by the admin."""
+    office = db.query(OfficeSetting).first()
+    if not office:
+        raise HTTPException(status_code=404, detail="Office location not configured yet.")
+    return office
+
+
+@router.put("/office-location", response_model=OfficeSettingResponse)
+def update_office_location(
+    payload: OfficeSettingUpdate,
+    current_user: dict = Depends(require_role(["super_admin", "admin", "ceo"])),
+    db: Session = Depends(get_db)
+):
+    """Admin sets or updates the physical office GPS location."""
+    office = db.query(OfficeSetting).first()
+    if office:
+        office.location_name = payload.location_name
+        office.latitude = payload.latitude
+        office.longitude = payload.longitude
+        office.radius_meters = payload.radius_meters
+    else:
+        office = OfficeSetting(
+            location_name=payload.location_name,
+            latitude=payload.latitude,
+            longitude=payload.longitude,
+            radius_meters=payload.radius_meters,
+        )
+        db.add(office)
+    db.commit()
+    db.refresh(office)
+    return office

@@ -72,3 +72,19 @@ class MeetingAttendee(Base):
     
     meeting = relationship("Meeting", back_populates="attendees")
     user = relationship("User", foreign_keys=[user_id])
+
+
+class OfficeSetting(Base):
+    """
+    Singleton table storing the admin-configured physical office location.
+    Used to validate GPS coordinates during physical clock-ins.
+    """
+    __tablename__ = "office_settings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    location_name = Column(String, nullable=False, default="Main Office")  # Human-readable label
+    latitude = Column(String, nullable=False)
+    longitude = Column(String, nullable=False)
+    radius_meters = Column(String, nullable=False, default="200")  # Allowed check-in radius
+
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
