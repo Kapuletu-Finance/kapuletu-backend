@@ -160,6 +160,7 @@ async def employee_setup(request: Request, payload: EmployeeSetupIn, db: Session
         existing.permissions = invite.permissions
         existing.hashed_password = get_password_hash(payload.password)
         existing.email_verified = True
+        existing.phone_number_verified = True
     else:
         # 3. Create User Account
         new_user = User(
@@ -172,6 +173,7 @@ async def employee_setup(request: Request, payload: EmployeeSetupIn, db: Session
             permissions=invite.permissions,
             is_active=True,
             email_verified=True, # Employees don't need phone verification for this flow
+            phone_number_verified=True, # Skip verification loop on login
             marketing_consent=False
         )
         db.add(new_user)
