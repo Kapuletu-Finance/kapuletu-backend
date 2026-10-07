@@ -250,6 +250,15 @@ def get_audit_logs(
 class UpdatePermissionsIn(BaseModel):
     permissions: List[str]
 
+class ActivityTrendItem(BaseModel):
+    date: str
+    actions: int
+
+class EmployeeMetricsResponse(BaseModel):
+    total_hours_logged: float
+    total_actions_performed: int
+    activity_trend: List[ActivityTrendItem]
+
 @router.put('/{user_id}/permissions')
 def update_employee_permissions(
     user_id: str,
@@ -263,3 +272,60 @@ def update_employee_permissions(
     employee.permissions = payload.permissions
     db.commit()
     return {'message': 'Permissions updated'}
+
+@router.get('/{user_id}/metrics', response_model=EmployeeMetricsResponse)
+def get_employee_metrics(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN]))
+):
+    from models.hr import EmployeeReport
+    from models.audit_log import AuditLog
+    from sqlalchemy import func
+    import datetime
+
+    # 1. Total Hours Logged
+    reports = db.query(EmployeeReport).filter(
+        EmployeeReport.user_id == user_id,
+        EmployeeReport.status.in_(["confirmed", "approved"])
+    ).all()
+    
+    total_seconds = 0
+    for report in reports:
+        if report.clock_in_time and report.clock_out_time:
+            diff = report.clock_out_time - report.clock_in_time
+            total_seconds += diff.total_seconds()
+            
+    total_hours_logged = round(total_seconds / 3600, 2)
+    
+    # 2. Total Actions Performed
+    total_actions = db.query(func.count(AuditLog.log_id)).filter(
+        AuditLog.actor_id == user_id
+    ).scalar() or 0
+    
+    # 3. Activity Trend (Last 7 Days)
+    today = datetime.date.today()
+    start_date = today - datetime.timedelta(days=6)
+    
+    # Get all logs for the last 7 days
+    logs = db.query(func.date(AuditLog.created_at).label("log_date"), func.count(AuditLog.log_id)).filter(
+        AuditLog.actor_id == user_id,
+        func.date(AuditLog.created_at) >= start_date
+    ).group_by(func.date(AuditLog.created_at)).all()
+    
+    log_map = {str(date): count for date, count in logs}
+    
+    trend = []
+    for i in range(7):
+        current_date = start_date + datetime.timedelta(days=i)
+        date_str = str(current_date)
+        trend.append(ActivityTrendItem(
+            date=current_date.strftime("%b %d"),
+            actions=log_map.get(date_str, 0)
+        ))
+        
+    return EmployeeMetricsResponse(
+        total_hours_logged=total_hours_logged,
+        total_actions_performed=total_actions,
+        activity_trend=trend
+    )
