@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from common.database import get_db
-from common.auth_dependencies import get_optional_user, require_role
+from common.auth_dependencies import get_optional_user, require_role, require_permissions
 from common.enums import UserRole
 from repositories.blog_repo import BlogRepository
 from services.blog.schemas import (
@@ -99,7 +99,7 @@ def create_blog_comment(
 @router.get("/admin", response_model=List[BlogPostResponse])
 def get_all_blogs_admin(
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.CONTENT_MANAGER]))
+    admin: dict = Depends(require_permissions(["manage_blogs"]))
 ):
     """Get all blogs including drafts (Admin only)."""
     repo = BlogRepository(db)
@@ -110,7 +110,7 @@ def get_all_blogs_admin(
 def create_blog_admin(
     data: BlogPostCreate,
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.CONTENT_MANAGER]))
+    admin: dict = Depends(require_permissions(["manage_blogs"]))
 ):
     """Create a new blog post (Admin only)."""
     repo = BlogRepository(db)
@@ -127,7 +127,7 @@ def update_blog_admin(
     post_id: UUID,
     data: BlogPostUpdate,
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.CONTENT_MANAGER]))
+    admin: dict = Depends(require_permissions(["manage_blogs"]))
 ):
     """Update a blog post (Admin only)."""
     repo = BlogRepository(db)
@@ -147,7 +147,7 @@ def update_blog_admin(
 def delete_blog_admin(
     post_id: UUID,
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.CONTENT_MANAGER]))
+    admin: dict = Depends(require_permissions(["manage_blogs"]))
 ):
     """Delete a blog post (Admin only)."""
     repo = BlogRepository(db)
@@ -163,7 +163,7 @@ def delete_blog_admin(
 def get_all_comments_admin(
     status_filter: Optional[str] = None,
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.CONTENT_MANAGER]))
+    admin: dict = Depends(require_permissions(["manage_blogs"]))
 ):
     """Get all comments, optionally filtered by status (Admin only)."""
     repo = BlogRepository(db)
@@ -175,7 +175,7 @@ def update_comment_status_admin(
     comment_id: UUID,
     status: str, # "pending", "approved", "rejected"
     db: Session = Depends(get_db),
-    admin: dict = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.CONTENT_MANAGER]))
+    admin: dict = Depends(require_permissions(["manage_blogs"]))
 ):
     """Approve or reject a comment (Admin only)."""
     if status not in ["pending", "approved", "rejected"]:

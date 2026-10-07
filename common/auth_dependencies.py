@@ -152,7 +152,7 @@ def require_permissions(required_permissions: list):
     def permission_checker(current_user: Dict[str, Any] = Depends(get_verified_user)) -> Dict[str, Any]:
         user_permissions = current_user.get('permissions', [])
         from common.enums import UserRole
-        if current_user.get('role') == UserRole.SUPER_ADMIN.value:
+        if current_user.get('role') in [UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value, UserRole.CEO.value]:
             return current_user
         missing = [p for p in required_permissions if p not in user_permissions]
         if missing:
