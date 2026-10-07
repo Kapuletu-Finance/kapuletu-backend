@@ -68,8 +68,11 @@ def clock_out(payload: EmployeeReportCreate, current_user: dict = Depends(get_cu
     return report
 
 @router.get("/reports/{user_id}", response_model=list[EmployeeReportResponse])
-def get_employee_reports(user_id: str, current_user: dict = Depends(require_role(["super_admin", "admin", "ceo"])), db: Session = Depends(get_db)):
-    """Fetch reports for a specific employee (Admin only)."""
+def get_employee_reports(user_id: str, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Fetch reports for a specific employee (Admin or self)."""
+    if current_user["user_id"] != user_id and current_user["role"] not in ["super_admin", "admin", "ceo"]:
+        raise HTTPException(status_code=403, detail="Not authorized to view these reports")
+        
     reports = db.query(EmployeeReport).filter(EmployeeReport.user_id == user_id).order_by(EmployeeReport.report_date.desc()).all()
     return reports
 

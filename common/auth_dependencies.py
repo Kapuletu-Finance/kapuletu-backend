@@ -114,13 +114,14 @@ def get_verified_user(request: Request, token: str = Depends(oauth2_scheme), db:
 
 def get_admin_user(current_user: Dict[str, Any] = Depends(get_verified_user)) -> Dict[str, Any]:
     """
-    For endpoints restricted to admin and super_admin roles.
+    For endpoints restricted to internal employees (admins, super admins, content managers, etc).
     """
     from common.enums import UserRole
-    if current_user.get('role') not in [UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value]:
+    # Allow any internal role (i.e. anyone who is not just a standard treasurer)
+    if current_user.get('role') == UserRole.TREASURER.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient privileges. Admin access required."
+            detail="Insufficient privileges. Admin or internal employee access required."
         )
     return current_user
 
