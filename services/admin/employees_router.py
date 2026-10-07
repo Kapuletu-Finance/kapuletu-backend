@@ -37,7 +37,7 @@ class EmployeeInviteCreate(BaseModel):
     email: EmailStr
     first_name: str
     last_name: str
-    role: UserRole
+    role: str
     permissions: List[str] = []
 
 class EmployeeResponse(BaseModel):
@@ -103,7 +103,7 @@ def invite_employee(
         email=payload.email,
         first_name=payload.first_name,
         last_name=payload.last_name,
-        role=payload.role.value,
+        role=payload.role,
         permissions=payload.permissions,
         token=token,
         expires_at=datetime.utcnow() + timedelta(hours=24),
@@ -114,11 +114,11 @@ def invite_employee(
     db.refresh(new_invite)
     
     # Audit log
-    record_audit_log(db, current_user["sub"], "INVITED_EMPLOYEE", {"email": payload.email, "role": payload.role.value})
+    record_audit_log(db, current_user["sub"], "INVITED_EMPLOYEE", {"email": payload.email, "role": payload.role})
     
     # Send Email
     setup_url = f"{os.environ.get('FRONTEND_URL', 'http://localhost:3000')}/employee-setup?token={token}"
-    html_body = get_employee_invite_template(payload.first_name, payload.role.value, setup_url)
+    html_body = get_employee_invite_template(payload.first_name, payload.role, setup_url)
     
     log = CommunicationLog(
         user_id=current_user["sub"],  # Associate with super admin sending it for now
@@ -142,7 +142,7 @@ def get_employees(
 ):
     """List all active employees"""
     employees = db.execute(select(User).where(
-        User.role.in_([UserRole.SUPER_ADMIN.value, UserRole.CONTENT_MANAGER.value, UserRole.SUPPORT_AGENT.value, UserRole.FINANCE_MANAGER.value, UserRole.ADMIN.value, UserRole.CEO.value])
+        User.role != UserRole.TREASURER.value
     )).scalars().all()
     
     return employees
