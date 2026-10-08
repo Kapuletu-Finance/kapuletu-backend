@@ -33,4 +33,7 @@ from .system_metric import SystemMetric
 from .waitlist_whitelist import WaitlistWhitelist
 from .contact_message import ContactMessage
 from .blog import BlogPost
-from .hr import EmployeeReport, Meeting, MeetingAttendee
+from .hr import (
+    AttendanceAdjustment, EmployeeReport, Meeting, MeetingAttendee, WorkLocation, WorkScheduleDay,
+    WorkScheduleOverride,
+)

@@ -3,19 +3,25 @@ import secrets
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from common.database import get_db
 from common.enums import UserRole
-from common.auth_dependencies import get_current_user, require_role
+from common.auth_dependencies import get_current_user, require_permissions, require_role
 from common.auth import get_password_hash
 from models.users import User
 from models.employees import EmployeeInvite, EmployeeAuditLog
 from services.notifications.tasks import send_email_task
 from services.notifications.email_templates import get_employee_invite_template
 from models.communication_logs import CommunicationLog
+from common.permissions import EMPLOYEE_PERMISSIONS
+from services.admin import employee_profile_service
+from services.admin.employee_profile_schemas import (
+    ActivityPageOut, ActivityView, EmployeeProfileOut, EmployeeUpdateIn, PermissionOut,
+)
+from services.hr.directory import HR_ADMIN_PERMISSION
 
 router = APIRouter(prefix="/employees", tags=["Admin Employees"])
 
@@ -138,7 +144,8 @@ def invite_employee(
 @router.get("/", response_model=List[EmployeeResponse])
 def get_employees(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
+    # HR admins need the directory to pick meeting attendees and set per-employee schedules.
+    current_user: dict = Depends(require_permissions([HR_ADMIN_PERMISSION]))
 ):
     """List all active employees"""
     employees = db.execute(select(User).where(
@@ -206,19 +213,8 @@ def revoke_employee_access(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
 ):
-    """Revoke an employee's access by suspending their account"""
-    if str(current_user["sub"]) == user_id:
-        raise HTTPException(status_code=400, detail="Cannot revoke your own access.")
-        
-    employee = db.query(User).get(user_id)
-    if not employee:
-        raise HTTPException(status_code=404, detail="Employee not found")
-        
-    employee.is_active = False
-    employee.deleted_at = datetime.utcnow()
-    db.commit()
-    
-    record_audit_log(db, current_user["sub"], "REVOKED_EMPLOYEE", {}, resource_id=str(employee.user_id))
+    """Revoke an employee's access: suspends the account and ends their sessions (reversible via /restore)."""
+    employee_profile_service.set_suspended(db, user_id, True, current_user["user_id"])
     return {"message": "Employee access revoked."}
 
 @router.get("/audit-logs")
@@ -247,9 +243,6 @@ def get_audit_logs(
 
 
 
-class UpdatePermissionsIn(BaseModel):
-    permissions: List[str]
-
 class ActivityTrendItem(BaseModel):
     date: str
     actions: int
@@ -258,20 +251,6 @@ class EmployeeMetricsResponse(BaseModel):
     total_hours_logged: float
     total_actions_performed: int
     activity_trend: List[ActivityTrendItem]
-
-@router.put('/{user_id}/permissions')
-def update_employee_permissions(
-    user_id: str,
-    payload: UpdatePermissionsIn,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
-):
-    employee = db.query(User).filter(User.user_id == user_id).first()
-    if not employee:
-        raise HTTPException(status_code=404, detail='Employee not found')
-    employee.permissions = payload.permissions
-    db.commit()
-    return {'message': 'Permissions updated'}
 
 @router.get('/{user_id}/metrics', response_model=EmployeeMetricsResponse)
 def get_employee_metrics(
@@ -329,3 +308,61 @@ def get_employee_metrics(
         total_actions_performed=total_actions,
         activity_trend=trend
     )
+
+
+# --- Employee profile (HR admins view; super admins change access) ---
+
+hr_admin = require_permissions([HR_ADMIN_PERMISSION])
+super_admin = require_role([UserRole.SUPER_ADMIN])
+
+
+@router.get("/permissions", response_model=List[PermissionOut], summary="Permission catalogue")
+def list_permissions(current_user: dict = Depends(hr_admin)):
+    return EMPLOYEE_PERMISSIONS
+
+
+@router.get("/{user_id}", response_model=EmployeeProfileOut, summary="Employee profile")
+def get_employee_profile(user_id: str, db: Session = Depends(get_db), current_user: dict = Depends(hr_admin)):
+    return employee_profile_service.get_profile(db, user_id)
+
+
+@router.patch("/{user_id}", response_model=EmployeeProfileOut, summary="Edit profile, role or permissions")
+def update_employee(
+    user_id: str, payload: EmployeeUpdateIn, db: Session = Depends(get_db), current_user: dict = Depends(super_admin)
+):
+    return employee_profile_service.update_employee(db, user_id, payload, current_user["user_id"])
+
+
+@router.post("/{user_id}/suspend", response_model=EmployeeProfileOut, summary="Suspend and sign out")
+def suspend_employee(user_id: str, db: Session = Depends(get_db), current_user: dict = Depends(super_admin)):
+    return employee_profile_service.set_suspended(db, user_id, True, current_user["user_id"])
+
+
+@router.post("/{user_id}/restore", response_model=EmployeeProfileOut, summary="Restore a suspended employee")
+def restore_employee(user_id: str, db: Session = Depends(get_db), current_user: dict = Depends(super_admin)):
+    return employee_profile_service.set_suspended(db, user_id, False, current_user["user_id"])
+
+
+@router.post("/{user_id}/sign-out", response_model=EmployeeProfileOut, summary="Sign out of all sessions")
+def sign_out_employee(user_id: str, db: Session = Depends(get_db), current_user: dict = Depends(super_admin)):
+    return employee_profile_service.sign_out_everywhere(db, user_id, current_user["user_id"])
+
+
+@router.post("/{user_id}/reset-password", summary="Send a password reset code")
+def reset_employee_password(user_id: str, db: Session = Depends(get_db), current_user: dict = Depends(super_admin)):
+    employee_profile_service.send_password_reset(db, user_id, current_user["user_id"])
+    return {"message": "Password reset code sent."}
+
+
+@router.get("/{user_id}/activity", response_model=ActivityPageOut, summary="Employee activity feed")
+def get_employee_activity(
+    user_id: str,
+    view: ActivityView = "performed",
+    q: Optional[str] = Query(None, max_length=100),
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(hr_admin),
+):
+    return employee_profile_service.get_activity(db, user_id, view, q, page, limit)
+

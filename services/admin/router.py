@@ -399,9 +399,11 @@ async def export_financial_data(
     parsed_end = datetime.datetime.fromisoformat(end_date) if end_date else None
     
     file_data, mime_type = engine.generate_export(
-        start_date=parsed_start, 
-        end_date=parsed_end, 
-        format=format
+        start_date=parsed_start,
+        end_date=parsed_end,
+        format=format,
+        prepared_by=f"{current_user.get('given_name') or ''} {current_user.get('family_name') or ''}".strip(),
+        actor_id=current_user.get("user_id"),
     )
     
     extension = "csv"

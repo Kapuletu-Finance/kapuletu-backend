@@ -28,3 +28,17 @@ def get_system_config(db: Session, key: str, default: Any = None) -> Any:
     _CONFIG_CACHE[key] = (value, current_time)
     
     return value
+
+
+def set_system_config(db: Session, key: str, value: Any, commit: bool = True) -> None:
+    """Creates or updates a configuration value and drops its cached copy so readers see it immediately."""
+    config = db.query(SystemConfig).filter(SystemConfig.config_key == key).first()
+    if config:
+        config.config_value = value
+    else:
+        db.add(SystemConfig(config_key=key, config_value=value))
+    if commit:
+        db.commit()
+    else:
+        db.flush()  # sessions don't autoflush; make the row visible to later lookups in this transaction
+    _CONFIG_CACHE.pop(key, None)

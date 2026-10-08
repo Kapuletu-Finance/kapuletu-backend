@@ -42,17 +42,33 @@ def get_password_hash(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
-def create_access_token(data: dict, expires_delta: datetime.timedelta = None):
+def _encode_token(data: dict, lifetime: datetime.timedelta) -> str:
     to_encode = data.copy()
-    expire = datetime.datetime.utcnow() + (expires_delta if expires_delta else datetime.timedelta(minutes=15))
-    to_encode.update({"exp": expire})
+    # "iat" (sub-second precision) lets us reject tokens issued before a user's session cut-off.
+    to_encode.update({"exp": datetime.datetime.utcnow() + lifetime, "iat": time.time()})
     return jwt.encode(to_encode, config.JWT_SECRET_KEY, algorithm="HS256")
 
+def create_access_token(data: dict, expires_delta: datetime.timedelta = None):
+    return _encode_token(data, expires_delta or datetime.timedelta(minutes=15))
+
 def create_refresh_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.datetime.utcnow() + datetime.timedelta(days=1)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, config.JWT_SECRET_KEY, algorithm="HS256")
+    return _encode_token(data, datetime.timedelta(days=1))
+
+def is_account_suspended(user: User) -> bool:
+    # NULL is_active (legacy rows) counts as active.
+    return user.is_active is False or user.deleted_at is not None
+
+def assert_session_active(user: User, payload: dict) -> None:
+    """
+    Rejects suspended/deleted accounts and tokens issued before the user's session cut-off
+    (set by "sign out everywhere" and by suspension). Tokens without "iat" predate the cut-off.
+    """
+    if is_account_suspended(user):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="This account has been suspended. Please contact your administrator.")
+    if user.sessions_revoked_at is not None:
+        cutoff = user.sessions_revoked_at.replace(tzinfo=datetime.timezone.utc).timestamp()
+        if float(payload.get("iat") or 0) < cutoff:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Your session has ended. Please sign in again.")
 
 def decode_token(token: str):
     try:
@@ -329,6 +345,8 @@ class AuthService:
         
         if not user.hashed_password or not verify_password(password, user.hashed_password):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password.")
+        if is_account_suspended(user):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been suspended. Please contact your administrator.")
             
         from common.system_config_service import get_system_config
         force_2fa = get_system_config(db, "force_2fa", default="none")
@@ -426,6 +444,7 @@ class AuthService:
         user = db.query(User).filter(User.user_id == parse_uuid(user_id)).first()
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        assert_session_active(user, payload)
             
         otp = db.query(OTP).filter(
             OTP.user_id == parse_uuid(user.user_id), 
@@ -686,6 +705,7 @@ class AuthService:
         user = db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(user_id))).first()
         if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        assert_session_active(user, payload)
             
         new_access = create_access_token({"sub": str(user.user_id)})
         return {

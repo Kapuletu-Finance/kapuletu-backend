@@ -19,7 +19,7 @@ def parse_user_uuid(user_id: Any) -> uuid.UUID:
         )
 
 from common.database import get_db
-from services.auth.auth_service import decode_token
+from services.auth.auth_service import assert_session_active, decode_token
 from models.users import User
 from models.token_blacklist import TokenBlacklist
 
@@ -65,6 +65,8 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: 
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    # Suspended accounts and tokens issued before a forced sign-out are rejected on every request.
+    assert_session_active(user, payload)
     
     import datetime
     
@@ -148,13 +150,17 @@ def require_role(roles: list):
         return current_user
     return role_checker
 
+def missing_permissions(current_user: Dict[str, Any], required_permissions: list) -> list:
+    """Returns the required permissions the user lacks; super admins, admins and the CEO hold all of them."""
+    from common.enums import UserRole
+    if current_user.get('role') in [UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value, UserRole.CEO.value]:
+        return []
+    user_permissions = current_user.get('permissions') or []
+    return [p for p in required_permissions if p not in user_permissions]
+
 def require_permissions(required_permissions: list):
     def permission_checker(current_user: Dict[str, Any] = Depends(get_verified_user)) -> Dict[str, Any]:
-        user_permissions = current_user.get('permissions', [])
-        from common.enums import UserRole
-        if current_user.get('role') in [UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value, UserRole.CEO.value]:
-            return current_user
-        missing = [p for p in required_permissions if p not in user_permissions]
+        missing = missing_permissions(current_user, required_permissions)
         if missing:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

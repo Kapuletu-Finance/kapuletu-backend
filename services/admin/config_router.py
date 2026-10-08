@@ -4,8 +4,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from common.database import get_db
-from common.auth_dependencies import get_verified_user, get_admin_user
+from common.auth_dependencies import get_admin_user, get_verified_user, require_role
+from common.enums import UserRole
+from common.system_config_service import set_system_config
 from models.system_config import SystemConfig
+from services.documents.organization import (
+    OrganizationProfile, get_organization_profile, update_organization_profile,
+)
 
 router = APIRouter(prefix="/admin", tags=["14. Admin Governance Suite"])
 
@@ -35,12 +40,25 @@ async def update_system_config(
     _: Dict[str, Any] = Depends(get_admin_user)
 ):
     for item in payload.configs:
-        config = db.query(SystemConfig).filter(SystemConfig.config_key == item.key).first()
-        if config:
-            config.config_value = item.value
-        else:
-            new_config = SystemConfig(config_key=item.key, config_value=item.value)
-            db.add(new_config)
-    
+        set_system_config(db, item.key, item.value, commit=False)
     db.commit()
     return {"message": "Configuration updated successfully"}
+
+
+# --- Organisation profile (letterhead on official documents) ---
+
+_letterhead_editor = require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.CEO])
+
+
+@router.get("/organization-profile", response_model=OrganizationProfile, summary="Get Letterhead Details")
+async def get_org_profile(db: Session = Depends(get_db), _: Dict[str, Any] = Depends(get_admin_user)):
+    return get_organization_profile(db)
+
+
+@router.put("/organization-profile", response_model=OrganizationProfile, summary="Update Letterhead Details")
+async def put_org_profile(
+    payload: OrganizationProfile,
+    db: Session = Depends(get_db),
+    _: Dict[str, Any] = Depends(_letterhead_editor),
+):
+    return update_organization_profile(db, payload)

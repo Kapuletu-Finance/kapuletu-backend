@@ -1,0 +1,39 @@
+<div style="margin-bottom: 24px;">
+    <h2 style="color: #1B4580; margin-top: 0;">{{ heading }}</h2>
+</div>
+<p style="font-size: 16px; color: #334155; line-height: 1.6;">Hello {{ name }},</p>
+<p style="font-size: 16px; color: #334155; line-height: 1.6;">{{ intro }}</p>
+<table role="presentation" style="width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 15px; color: #334155;">
+    <tr>
+        <td style="padding: 8px 0; color: #64748b; width: 120px;">Meeting</td>
+        <td style="padding: 8px 0; font-weight: 600;">{{ title }}</td>
+    </tr>
+    <tr>
+        <td style="padding: 8px 0; color: #64748b;">When</td>
+        <td style="padding: 8px 0;">{{ when }}</td>
+    </tr>
+    <tr>
+        <td style="padding: 8px 0; color: #64748b;">Mode</td>
+        <td style="padding: 8px 0;">{{ mode_label }}</td>
+    </tr>
+    {% if location %}
+    <tr>
+        <td style="padding: 8px 0; color: #64748b;">{{ 'Link' if is_online else 'Location' }}</td>
+        <td style="padding: 8px 0;">{% if is_online %}<a href="{{ location }}" style="color: #097255;">{{ location }}</a>{% else %}{{ location }}{% endif %}</td>
+    </tr>
+    {% endif %}
+    {% if description %}
+    <tr>
+        <td style="padding: 8px 0; color: #64748b; vertical-align: top;">Agenda</td>
+        <td style="padding: 8px 0; white-space: pre-line;">{{ description }}</td>
+    </tr>
+    {% endif %}
+</table>
+{% if show_cta %}
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ cta_url }}" style="background-color: #097255; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; display: inline-block;">Open My Workspace</a>
+</div>
+{% if not is_online %}
+<p style="font-size: 14px; color: #64748b; line-height: 1.6;">This is an in-person meeting. Check in from your workspace when you arrive; your location must be within the office radius.</p>
+{% endif %}
+{% endif %}

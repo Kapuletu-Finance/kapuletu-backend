@@ -59,6 +59,8 @@ class User(Base):
     last_active_at = Column(DateTime, nullable=True)
     deleted_at = Column(DateTime, nullable=True)
     current_action = Column(String, nullable=True)
+    # Tokens issued before this moment are rejected ("sign out everywhere", suspension)
+    sessions_revoked_at = Column(DateTime, nullable=True)
     
     preferences = Column(JSON, default=dict)
     permissions = Column(JSON, default=list)

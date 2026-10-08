@@ -5,10 +5,6 @@ from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract, and_, desc
 import openpyxl
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
-from reportlab.lib.styles import getSampleStyleSheet
 
 from models.subscription import Subscription, SubscriptionPayment, Plan
 from models.users import User
@@ -120,7 +116,61 @@ class FinancialAnalyticsEngine:
             
         return list(flow_data.values())
 
-    def generate_export(self, start_date: datetime.datetime = None, end_date: datetime.datetime = None, format: str = "csv") -> tuple[Any, str]:
+    def _export_pdf(self, records, start_date, end_date, prepared_by, actor_id) -> bytes:
+        """Financial export as an official Kapuletu document."""
+        from services.documents.official import OfficialDocument
+
+        period = " – ".join(
+            d.strftime("%d %b %Y") for d in (start_date, end_date) if d
+        ) or "All time"
+        successful = [r for r in records if r.status == "success"]
+        doc = OfficialDocument(
+            self.db,
+            title="Financial Transactions Export",
+            subtitle=f"Subscription payments · {period}",
+            department="FIN",
+            doc_type="EXP",
+            prepared_by=prepared_by,
+            orientation="landscape",
+        )
+        doc.section("Summary")
+        doc.key_figures([
+            ("Payments", str(len(records)), "All statuses"),
+            ("Successful", str(len(successful)), f"{len(records) - len(successful)} other"),
+            ("Revenue collected", f"KES {sum(float(r.amount or 0) for r in successful):,.2f}", "Successful payments"),
+            ("Period", period, None),
+        ])
+        doc.section("Payments")
+        doc.table(
+            ["Date", "Customer", "Email", "Plan", "Amount", "Currency", "Method", "Status", "Payment ID"],
+            [
+                [
+                    r.created_at.strftime("%Y-%m-%d %H:%M"),
+                    f"{r.first_name} {r.last_name}",
+                    r.email,
+                    r.plan_name,
+                    f"{float(r.amount or 0):,.2f}",
+                    r.currency,
+                    r.payment_method or "—",
+                    r.status,
+                    str(r.payment_id)[:8],
+                ]
+                for r in records
+            ],
+            col_widths=[0.11, 0.14, 0.2, 0.1, 0.09, 0.07, 0.08, 0.09, 0.12],
+            numeric_cols={4},
+        )
+        doc.signature_block()
+        return doc.build(actor_id=actor_id, audit_details={"export": "subscription_payments", "period": period})
+
+    def generate_export(
+        self,
+        start_date: datetime.datetime = None,
+        end_date: datetime.datetime = None,
+        format: str = "csv",
+        prepared_by: str = None,
+        actor_id: str = None,
+    ) -> tuple[Any, str]:
         """
         Generates a robust financial export format ready for Excel/Pandas consumption.
         Returns a tuple of (file_data_bytes_or_string, mime_type)
@@ -201,44 +251,7 @@ class FinancialAnalyticsEngine:
             return output.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             
         elif format == "pdf":
-            import io
-            output = io.BytesIO()
-            doc = SimpleDocTemplate(output, pagesize=letter)
-            elements = []
-            
-            styles = getSampleStyleSheet()
-            elements.append(Paragraph("Financial Export Report", styles['Title']))
-            elements.append(Paragraph(f"Generated at: {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
-            
-            # Prepare data for table
-            data = [headers]
-            for r in records:
-                full_name = f"{r.first_name} {r.last_name}"
-                data.append([
-                    str(r.payment_id)[:8] + "...", # truncate UUID for PDF space
-                    r.created_at.strftime("%Y-%m-%d"),
-                    r.email[:15] + "..." if len(r.email) > 15 else r.email,
-                    full_name[:15] + "..." if full_name else "",
-                    r.plan_name,
-                    str(r.amount),
-                    r.currency,
-                    r.payment_method,
-                    r.status,
-                ])
-                
-            t = Table(data, style=[
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-                ('GRID', (0,0), (-1,-1), 1, colors.black)
-            ])
-            elements.append(t)
-            doc.build(elements)
-            return output.getvalue(), "application/pdf"
+            return self._export_pdf(records, start_date, end_date, prepared_by, actor_id), "application/pdf"
             
         return "", "text/plain"
 

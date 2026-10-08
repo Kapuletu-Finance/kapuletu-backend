@@ -270,15 +270,11 @@ async def download_receipt(
     plan = db.execute(select(Plan).where(Plan.plan_id == sub.plan_id)).scalars().first()
     user = db.execute(select(User).where(User.user_id == user_id)).scalars().first()
     
-    name = f"{user.first_name} {user.last_name}" if user else "KapuLetu User"
-    
-    from services.reporting.pdf_gen import generate_receipt_pdf
-    date_str = payment.created_at.strftime('%B %d, %Y') if payment.created_at else ""
-    
-    pdf_bytes = generate_receipt_pdf(str(payment.payment_id), plan.name, payment.amount, payment.provider_reference or "-", date_str, name)
-    
+    from services.finance.receipt_document import render_subscription_receipt
+    pdf_bytes, filename = render_subscription_receipt(db, payment, plan, user)
+
     from fastapi.responses import Response
-    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=receipt_{payment.provider_reference}.pdf"})
+    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 @router.get("/billing-history", response_model=List[BillingHistoryOut], summary="View Billing History")
 async def get_billing_history(
