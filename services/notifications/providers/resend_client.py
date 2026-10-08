@@ -14,7 +14,8 @@ class ResendClient:
         self.default_from = os.environ.get("DEFAULT_FROM_EMAIL", "KapuLetu <noreply@kapuletu.co.ke>")
         self.base_url = "https://api.resend.com/emails"
 
-    def send_email(self, to_email: str, subject: str, html_body: str) -> bool:
+    def send_email(self, to_email: str, subject: str, html_body: str, attachments: list = None) -> bool:
+        """`attachments`: [{"filename": str, "content": base64 str}], as the Resend API takes them."""
         if not self.api_key:
             logger.warning(f"\n{'='*50}\n[MOCK EMAIL SENT to {to_email}]\nSubject: {subject}\n{'='*50}")
             # Extract and print link if it's an employee invite for easy local testing
@@ -35,6 +36,8 @@ class ResendClient:
             "subject": subject,
             "html": html_body
         }
+        if attachments:
+            payload["attachments"] = attachments
 
         try:
             with httpx.Client() as client:

@@ -5,21 +5,28 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Background
 from sqlalchemy.orm import Session
 
 from common.database import get_db
-from common.auth_dependencies import get_verified_user, get_admin_user, require_role
+from common.auth_dependencies import get_verified_user, get_admin_user, require_role, require_permissions
 from common.enums import UserRole
 from services.admin.analytics_service import AnalyticsService
 from services.admin.user_service import UserService
 from services.admin.ai_governance_service import AIGovernanceService
-from services.admin.finance_service import FinanceService
+from services.admin.finance import FinanceError, SubscriptionService
+from services.admin.finance_schemas import SubscriptionOverrideIn
 from services.admin.crm_service import CRMService
 from services.admin.audit_service import AuditService as AdminAuditService
-from services.admin.analytics_engine import FinancialAnalyticsEngine
 from services.admin.performance_service import PerformanceService
 from fastapi.responses import StreamingResponse
 import io
 import datetime
 
 router = APIRouter(prefix="/admin", tags=["11. Admin & Governance"])
+
+# Everything that reads revenue or moves money/entitlements requires the finance permission.
+finance_officer = require_permissions(["manage_finance"])
+
+
+def _finance_http_error(e: FinanceError) -> HTTPException:
+    return HTTPException(status_code=e.status_code, detail=str(e))
 
 # --- Module A: Platform Intelligence ---
 @router.get("/overview", summary="Global Platform Intelligence")
@@ -265,18 +272,17 @@ async def set_admin_pin(
 @router.post("/users/treasurers/{identifier}/plan", summary="Upgrade User Plan")
 async def upgrade_user_plan(
     identifier: str,
-    payload: Dict[str, Any],
+    payload: SubscriptionOverrideIn,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
+    current_user: Dict[str, Any] = Depends(finance_officer)
 ):
-    service = FinanceService(db)
-    plan_id = payload.get("plan_id")
-    if not plan_id:
-        raise HTTPException(status_code=400, detail="Missing plan_id in payload")
-        
-    success = service.manual_override_subscription(identifier, plan_id, payload.get("duration", 30), payload.get("is_trial", False))
-    if not success:
-        raise HTTPException(status_code=400, detail="Override failed")
+    try:
+        SubscriptionService(db).grant(
+            identifier, payload.plan_id, payload.duration, payload.is_trial,
+            actor_id=current_user.get("user_id"), reason=payload.reason,
+        )
+    except FinanceError as e:
+        raise _finance_http_error(e)
     return {"message": "User plan upgraded successfully"}
 
 @router.get("/users/treasurers/{identifier}/activity", summary="Get User Activity Log")
@@ -360,146 +366,7 @@ async def update_config(
     return {"message": "AI configuration updated"}
 
 # --- Module D: Subscription Revenue & Plans ---
-@router.get("/finance/analytics/health-metrics", summary="Get Financial Health Metrics")
-async def get_health_metrics(
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    engine = FinancialAnalyticsEngine(db)
-    return engine.get_health_metrics()
-
-@router.get("/finance/analytics/revenue-flow", summary="Get Revenue Flow Time-Series")
-async def get_revenue_flow(
-    interval: str = Query("month", description="week or month"),
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    engine = FinancialAnalyticsEngine(db)
-    return engine.get_revenue_flow(interval=interval)
-
-@router.get("/finance/analytics/cohorts", summary="Get Cohort Retention")
-async def get_cohort_retention(
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    engine = FinancialAnalyticsEngine(db)
-    return engine.get_cohort_retention()
-
-@router.get("/finance/analytics/export", summary="Export Financial Data")
-async def export_financial_data(
-    format: str = Query("csv", description="Export format (csv, excel, pdf)"),
-    start_date: str = Query(None, description="Start date in ISO format"),
-    end_date: str = Query(None, description="End date in ISO format"),
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    engine = FinancialAnalyticsEngine(db)
-    
-    parsed_start = datetime.datetime.fromisoformat(start_date) if start_date else None
-    parsed_end = datetime.datetime.fromisoformat(end_date) if end_date else None
-    
-    file_data, mime_type = engine.generate_export(
-        start_date=parsed_start,
-        end_date=parsed_end,
-        format=format,
-        prepared_by=f"{current_user.get('given_name') or ''} {current_user.get('family_name') or ''}".strip(),
-        actor_id=current_user.get("user_id"),
-    )
-    
-    extension = "csv"
-    if format == "excel":
-        extension = "xlsx"
-    elif format == "pdf":
-        extension = "pdf"
-        
-    filename = f"financial_export_{datetime.datetime.utcnow().strftime('%Y%m%d')}.{extension}"
-    
-    # Return as downloadable file
-    response = StreamingResponse(iter([file_data]), media_type=mime_type)
-    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
-    return response
-
-@router.get("/finance/plans", summary="List Subscription Plans")
-async def list_plans(
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    service = FinanceService(db)
-    return service.list_plans()
-
-@router.get("/finance/plans/{plan_id}", summary="Get Subscription Plan Details")
-async def get_plan(
-    plan_id: str,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    service = FinanceService(db)
-    plan = service.get_plan(plan_id)
-    if not plan:
-        raise HTTPException(status_code=404, detail="Plan not found")
-    return plan
-
-@router.patch("/finance/plans/{plan_id}", summary="Update Subscription Plan")
-async def update_plan(
-    plan_id: str,
-    payload: Dict[str, Any],
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    service = FinanceService(db)
-    success = service.update_plan(plan_id, payload)
-    if not success:
-        raise HTTPException(status_code=404, detail="Plan not found or update failed")
-    return {"message": "Plan updated successfully"}
-
-@router.post("/finance/plans", summary="Create Subscription Plan")
-async def create_plan(
-    payload: Dict[str, Any],
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    service = FinanceService(db)
-    plan_id = service.create_plan(payload)
-    return {"message": "Plan created", "id": plan_id}
-
-@router.post("/finance/payments/{payment_id}/refund", summary="Process Refund")
-async def process_refund(
-    payment_id: str,
-    payload: Dict[str, Any],
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    service = FinanceService(db)
-    reason = payload.get("reason", "")
-    success = service.process_refund(payment_id, reason)
-    if not success:
-        raise HTTPException(status_code=400, detail="Could not process refund (invalid payment or already refunded)")
-    return {"message": "Refund processed"}
-
-@router.get("/finance/payments", summary="List All Payments")
-async def list_payments(
-    page: int = Query(1, ge=1),
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    service = FinanceService(db)
-    return service.list_all_payments(page=page)
-
-@router.post("/finance/payments/override", summary="Manual Override Subscription")
-async def override_subscription(
-    payload: Dict[str, Any],
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    service = FinanceService(db)
-    if "user_id" not in payload or "plan_id" not in payload:
-        raise HTTPException(status_code=400, detail="Missing user_id or plan_id")
-    success = service.manual_override_subscription(
-        payload["user_id"], payload["plan_id"], payload.get("duration", 30), payload.get("is_trial", False)
-    )
-    if not success:
-        raise HTTPException(status_code=400, detail="Override failed")
-    return {"message": "Override applied"}
+# Moved to services/admin/finance/router.py (/admin/finance/*).
 
 # --- Module E: CRM & System Communications ---
 @router.post("/crm/broadcast", summary="Send Broadcast Message")

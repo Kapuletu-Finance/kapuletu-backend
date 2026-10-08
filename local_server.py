@@ -524,6 +524,10 @@ app.include_router(health)
 from services.admin.router import router as admin_router
 app.include_router(admin_router)
 app.include_router(admin_config_router)
+from services.admin.finance.router import router as admin_finance_router
+app.include_router(admin_finance_router)  # /admin/finance/*
+from services.admin.approvals_router import router as approvals_router
+app.include_router(approvals_router, prefix="/admin")  # /admin/approvals
 
 from services.admin.employees_router import router as employees_router
 app.include_router(employees_router, prefix="/admin")
@@ -535,6 +539,13 @@ from services.feedback.router import router as feedback_router
 app.include_router(feedback_router)  # 16. User Feedback
 
 app.include_router(checkout_router, tags=["6. Finance & Subscriptions"], prefix="/finance")
+
+# Daily subscription expiry sweep (reminders, grace period, downgrade to the free tier)
+from services.subscriptions.expiry_worker import start_expiry_scheduler
+start_expiry_scheduler()
+# Daily finance jobs (scheduled report emails, Flutterwave reconciliation)
+from services.admin.finance.jobs import start_finance_scheduler
+start_finance_scheduler()
 
 from services.workspace.router import router as workspace_router
 app.include_router(workspace_router, dependencies=[Depends(get_verified_user)])

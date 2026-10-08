@@ -3,7 +3,7 @@ The catalogue of granular permissions that can be granted to internal employees.
 
 Single source of truth: the admin UI reads it from GET /admin/employees/permissions and
 employee updates are validated against it. "areas" lists what each permission unlocks in the UI.
-Only manage_blogs, manage_support and manage_employees are also enforced by the API today.
+Only manage_blogs, manage_support, manage_employees and manage_finance are also enforced by the API today.
 
 Super admins, admins and the CEO implicitly hold every permission
 (see common.auth_dependencies.missing_permissions).

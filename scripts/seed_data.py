@@ -16,6 +16,7 @@ def seed():
         basic_plan = db.query(Plan).filter(Plan.name == "Basic").first()
         if not basic_plan:
             basic_plan = Plan(
+                code="basic",
                 name="Basic",
                 max_groups=1,
                 max_campaigns=5,
@@ -28,6 +29,7 @@ def seed():
         pro_plan = db.query(Plan).filter(Plan.name == "Pro").first()
         if not pro_plan:
             pro_plan = Plan(
+                code="pro",
                 name="Pro",
                 max_groups=5,
                 max_campaigns=20,

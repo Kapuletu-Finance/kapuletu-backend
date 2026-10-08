@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Any, Dict, Optional
 
 class PaymentProvider(ABC):
     """
@@ -16,9 +16,9 @@ class PaymentProvider(ABC):
         pass
 
     @abstractmethod
-    def verify_webhook(self, payload: Dict[str, Any], headers: Dict[str, Any]) -> bool:
+    def verify_webhook(self, payload: Dict[str, Any], headers: Dict[str, Any], query_params: Optional[Dict[str, Any]] = None) -> bool:
         """
-        Verifies the cryptographic signature of an incoming webhook.
+        Verifies that an incoming webhook really came from the gateway (signature, shared secret, etc.).
         """
         pass
 

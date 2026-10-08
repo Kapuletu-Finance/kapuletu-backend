@@ -1,7 +1,8 @@
+import hmac
 import requests
 import os
 import uuid
-from typing import Dict, Any
+from typing import Any, Dict, Optional
 from .interface import PaymentProvider
 
 class FlutterwaveProvider(PaymentProvider):
@@ -65,7 +66,7 @@ class FlutterwaveProvider(PaymentProvider):
         except Exception as e:
             raise Exception(f"Failed to initiate Flutterwave checkout: {str(e)}")
 
-    def verify_webhook(self, payload: str, headers: Dict[str, Any]) -> bool:
+    def verify_webhook(self, payload: str, headers: Dict[str, Any], query_params: Optional[Dict[str, Any]] = None) -> bool:
         """
         Verifies the Flutterwave signature using the secret hash.
         """
@@ -73,8 +74,8 @@ class FlutterwaveProvider(PaymentProvider):
         signature = headers.get('verif-hash') or headers.get('Verif-Hash')
         if not signature or not self.secret_hash:
             return False
-        
-        return signature == self.secret_hash
+
+        return hmac.compare_digest(signature, self.secret_hash)
 
     def parse_webhook_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -91,5 +92,6 @@ class FlutterwaveProvider(PaymentProvider):
             "correlation_id": data.get("tx_ref"),
             "amount": float(data.get("amount", 0)),
             "provider_ref": str(data.get("id")),
+            "currency": data.get("currency"),
             "raw_status": status
         }

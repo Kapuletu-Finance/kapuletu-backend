@@ -1,10 +1,15 @@
 import base64
+import hmac
+import logging
 import requests
 import datetime
 import os
 import json
-from typing import Dict, Any
+from typing import Any, Dict, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from .interface import PaymentProvider
+
+logger = logging.getLogger(__name__)
 
 class MpesaProvider(PaymentProvider):
     """
@@ -17,6 +22,16 @@ class MpesaProvider(PaymentProvider):
         self.passkey = os.environ.get('MPESA_PASSKEY')
         self.base_url = os.environ.get('MPESA_BASE_URL', "https://sandbox.safaricom.co.ke").rstrip('/')
         self.callback_url = os.environ.get('MPESA_CALLBACK_URL')
+        # Shared secret appended to the callback URL as ?token=...; Daraja echoes the URL back unchanged,
+        # so only callbacks to the URL we registered for this STK push carry it.
+        self.callback_token = os.environ.get('MPESA_CALLBACK_TOKEN', '').strip()
+
+    def _callback_url_with_token(self) -> str:
+        if not self.callback_url or not self.callback_token:
+            return self.callback_url
+        parts = urlsplit(self.callback_url)
+        query = [(k, v) for k, v in parse_qsl(parts.query) if k != "token"] + [("token", self.callback_token)]
+        return urlunsplit(parts._replace(query=urlencode(query)))
 
     def _get_access_token(self):
         """Fetches the OAuth2 token from Daraja"""
@@ -66,7 +81,7 @@ class MpesaProvider(PaymentProvider):
             "PartyA": metadata.get("phone_number"), # Treasurer phone
             "PartyB": self.shortcode,
             "PhoneNumber": metadata.get("phone_number"),
-            "CallBackURL": self.callback_url,
+            "CallBackURL": self._callback_url_with_token(),
             "AccountReference": f"SUB-{user_id[:8]}",
             "TransactionDesc": f"KapuLetu {plan_id} Subscription"
         }
@@ -95,10 +110,16 @@ class MpesaProvider(PaymentProvider):
             "provider_response": res_data
         }
 
-    def verify_webhook(self, payload: Dict[str, Any], headers: Dict[str, Any]) -> bool:
-        # M-Pesa callbacks are trusted via IP whitelisting and internal validation in Safaricom 
-        # Typically we check the ResultCode
-        return True
+    def verify_webhook(self, payload: Dict[str, Any], headers: Dict[str, Any], query_params: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Daraja callbacks are unsigned. We accept one only when it carries our callback token, and the
+        checkout router still confirms every reported success with an STK query before fulfilling it.
+        """
+        if not self.callback_token:
+            logger.warning("MPESA_CALLBACK_TOKEN is not set; M-Pesa callbacks are relying on STK query confirmation alone.")
+            return True
+        received = str((query_params or {}).get("token", ""))
+        return hmac.compare_digest(received, self.callback_token)
 
     def parse_webhook_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         stk_callback = payload.get("Body", {}).get("stkCallback", {})
@@ -121,6 +142,7 @@ class MpesaProvider(PaymentProvider):
             "correlation_id": correlation_id,
             "amount": amount,
             "provider_ref": provider_ref,
+            "currency": "KES",
             "raw_status": stk_callback.get("ResultDesc")
         }
 

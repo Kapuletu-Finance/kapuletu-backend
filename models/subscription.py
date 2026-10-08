@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import UUID, Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, UUID, Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -17,17 +17,22 @@ class Plan(Base):
     __tablename__ = "plans"
 
     plan_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Stable identifier the code relies on ('basic', 'professional', ...); the display name can change freely
+    code = Column(String, unique=True, nullable=False)
     # Tier name (e.g. 'Basic', 'Professional', 'Enterprise')
-    name = Column(String, unique=True, nullable=False) 
+    name = Column(String, unique=True, nullable=False)
     # Resource limits
     max_groups = Column(Integer, default=1)
     max_campaigns = Column(Integer, default=5)
     max_transactions_per_month = Column(Integer, default=100)
     # Monthly cost in local currency units
-    price = Column(Integer, default=0) 
+    # Kept in sync with the open 'month' row in plan_prices, which is the versioned source
+    price = Column(Numeric(12, 2), default=0)
     # JSON containing allowed features e.g. {"excel_exports": true}
-    from sqlalchemy import JSON
     allowed_features = Column(JSON, default=dict)
+    # Hidden plans stay valid for existing subscribers but are not offered at checkout
+    is_public = Column(Boolean, nullable=False, default=True)
+    archived_at = Column(DateTime, nullable=True)
 class Subscription(Base):
     """
     Subscription Model: Maps a User to a specific Plan with timing constraints.
@@ -47,6 +52,10 @@ class Subscription(Base):
     start_date = Column(DateTime, default=datetime.datetime.utcnow)
     end_date = Column(DateTime)
     is_auto_renew = Column(Boolean, default=True)
+    # True while the current period is a free trial rather than a paid or granted one
+    is_trial = Column(Boolean, nullable=False, default=False)
+    # The plan price the current period was bought at (NULL for trials, grants and the free tier)
+    price_id = Column(UUID(as_uuid=True), ForeignKey("plan_prices.price_id"), nullable=True)
 
     user = relationship("User", back_populates="subscriptions")
 
@@ -78,12 +87,13 @@ class SubscriptionPayment(Base):
     payment_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
     subscription_id = Column(UUID(as_uuid=True), ForeignKey("subscriptions.subscription_id"), nullable=False)
-    amount = Column(Integer, nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
     currency = Column(String, default="KES")
     status = Column(String, default="success") # success, failed, pending
     payment_method = Column(String) # mpesa, card, override
     transaction_type = Column(String, default="payment") # payment, refund, pay_in
     provider_reference = Column(String) # External ID from Safaricom/Payment Provider
-    from sqlalchemy import JSON
     payment_metadata = Column(JSON, default=dict) # To store plan_id for webhooks
+    # The invoice this payment settles (NULL for refunds and legacy rows not yet backfilled)
+    invoice_id = Column(UUID(as_uuid=True), ForeignKey("invoices.invoice_id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

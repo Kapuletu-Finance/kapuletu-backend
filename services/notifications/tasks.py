@@ -14,7 +14,7 @@ import os
 import datetime
 from jinja2 import Environment, FileSystemLoader
 
-def send_email_task(log_id: str, to_email: str, subject: str, html_body: str):
+def send_email_task(log_id: str, to_email: str, subject: str, html_body: str, attachments: list = None):
     # Setup Jinja2 Environment
     template_dir = os.path.join(os.path.dirname(__file__), '../../templates')
     env = Environment(loader=FileSystemLoader(template_dir))
@@ -42,7 +42,8 @@ def send_email_task(log_id: str, to_email: str, subject: str, html_body: str):
             success = resend_client.send_email(
                 to_email=to_email,
                 subject=subject,
-                html_body=final_html_body
+                html_body=final_html_body,
+                attachments=attachments,
             )
             
             if success:

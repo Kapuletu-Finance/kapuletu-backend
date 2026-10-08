@@ -137,6 +137,8 @@ def get_super_admin_user(current_user: Dict[str, Any] = Depends(get_verified_use
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient privileges. Super Admin access required."
         )
+    return current_user
+
 def require_role(roles: list):
     def role_checker(current_user: Dict[str, Any] = Depends(get_verified_user)) -> Dict[str, Any]:
         user_role = current_user.get('role')
