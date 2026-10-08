@@ -126,7 +126,7 @@ class UserOut(BaseModel):
     profile_picture_url: Optional[str] = Field(None, json_schema_extra={"example": "/uploads/avatar.jpg"})
     email_verified: bool = Field(..., json_schema_extra={"example": True})
     phone_number_verified: bool = Field(..., json_schema_extra={"example": False})
-    role: UserRole = Field(..., json_schema_extra={"example": UserRole.TREASURER})
+    role: str = Field(..., json_schema_extra={"example": UserRole.TREASURER.value})
     permissions: list[str] = Field(default_factory=list, json_schema_extra={"example": ["manage_blogs"]})
     two_factor_enabled: bool = Field(False, json_schema_extra={"example": False})
     two_factor_channel: Optional[str] = Field(None, json_schema_extra={"example": "whatsapp"})
