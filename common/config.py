@@ -26,6 +26,8 @@ class Config:
     # Meta WhatsApp Cloud API credentials for sending messages
     META_ACCESS_TOKEN: str = os.getenv("META_ACCESS_TOKEN", "")
     META_PHONE_NUMBER_ID: str = os.getenv("META_PHONE_NUMBER_ID", "")
+    # Meta app secret: when set, every webhook POST must carry a valid X-Hub-Signature-256
+    META_APP_SECRET: str = os.getenv("META_APP_SECRET", "")
     
     # Africa's Talking Credentials
     AT_USERNAME: str = os.getenv("AT_USERNAME", "sandbox")

@@ -11,6 +11,7 @@ from .base import EmailEnvelope, SendResult, http_error, mock_sending_allowed
 logger = logging.getLogger(__name__)
 
 BATCH_URL = "https://api.resend.com/emails/batch"
+SEND_URL = "https://api.resend.com/emails"
 MAX_BATCH = 100
 
 
@@ -35,15 +36,7 @@ class ResendEmailProvider:
                 return [SendResult(ok=True, provider="mock", provider_message_id=f"mock-{e.message_id}") for e in envelopes]
             return [SendResult(ok=False, provider=self.name, error="RESEND_API_KEY is not configured")] * len(envelopes)
 
-        payload = [{
-            "from": self.sender,
-            "to": [e.to],
-            "reply_to": self.reply_to,
-            "subject": e.subject,
-            "html": e.html,
-            **({"text": e.text} if e.text else {}),
-            **({"headers": e.headers} if e.headers else {}),
-        } for e in envelopes]
+        payload = [self._payload(e) for e in envelopes]
         # Same messages -> same key, so a retry after a timeout cannot send the batch twice
         key = hashlib.sha256(",".join(e.message_id for e in envelopes).encode()).hexdigest()
         headers = {"Authorization": f"Bearer {self.api_key}", "Idempotency-Key": key}
@@ -59,3 +52,29 @@ class ResendEmailProvider:
         ids = [item.get("id") for item in (response.json().get("data") or [])]
         return [SendResult(ok=True, provider=self.name, provider_message_id=ids[i] if i < len(ids) else None)
                 for i in range(len(envelopes))]
+
+    def _payload(self, e: EmailEnvelope) -> dict:
+        return {
+            "from": self.sender,
+            "to": [e.to],
+            "reply_to": self.reply_to,
+            "subject": e.subject,
+            "html": e.html,
+            **({"text": e.text} if e.text else {}),
+            **({"headers": e.headers} if e.headers else {}),
+            **({"attachments": e.attachments} if e.attachments else {}),
+        }
+
+    def send_one(self, envelope: EmailEnvelope) -> SendResult:
+        """A single email; needed for attachments, which the batch endpoint doesn't accept."""
+        if not self.api_key:
+            return self.send_batch([envelope])[0]  # mock locally, or the not-configured failure
+        headers = {"Authorization": f"Bearer {self.api_key}", "Idempotency-Key": envelope.message_id}
+        try:
+            response = httpx.post(SEND_URL, json=self._payload(envelope), headers=headers, timeout=60.0)
+        except httpx.HTTPError as e:
+            return SendResult(ok=False, provider=self.name, error=f"Network error: {e}", retryable=True)
+        if response.status_code not in (200, 201):
+            logger.error(f"Resend send failed: {response.status_code} {response.text[:300]}")
+            return http_error(self.name, response.status_code, response.text)
+        return SendResult(ok=True, provider=self.name, provider_message_id=response.json().get("id"))

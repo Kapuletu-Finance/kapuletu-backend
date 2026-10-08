@@ -483,9 +483,8 @@ async def activate_trial(
     # Send Trial Activation Email
     if user.email:
         try:
+            from services.communications.outbox import queue_email
             from services.notifications.templates.render import render_email_template
-            from services.notifications.tasks import send_email_task
-            from models.communication_logs import CommunicationLog
             
             subject = f"Welcome to KapuLetu {pro_plan.name}!"
             html_body = render_email_template(
@@ -495,17 +494,8 @@ async def activate_trial(
                 expiry_date=sub.end_date.strftime('%B %d, %Y')
             )
             
-            log = CommunicationLog(
-                user_id=user.user_id,
-                channel="EMAIL",
-                destination=user.email,
-                subject=subject,
-                status="QUEUED"
-            )
-            db.add(log)
+            queue_email(db, user.email, subject, html_body, kind="trial_started", user_id=user.user_id, layout=False)
             db.commit()
-            
-            send_email_task(str(log.log_id), user.email, subject, html_body)
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Failed to queue trial activation email: {e}")

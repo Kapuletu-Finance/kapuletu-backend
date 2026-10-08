@@ -131,3 +131,40 @@ Configuration:
 | `COMM_MOCK_PROVIDERS` | Allow mock sending outside `IS_LOCAL` (staging). Never set in production. |
 
 Not in Phase 1: delivery/open webhooks (sent means "accepted by the provider"), test sends, drafts, and moving the ~22 transactional call sites onto the outbox. The old `broadcast_campaigns` table and the broadcast rows in `communication_logs` are kept for one release.
+
+## 7. Phase 2 status: built
+
+- **Drafts**: save with only a title, edit, delete; everything is validated on submit. Whoever submits is the author the approval rule is checked against.
+- **Return to draft**: a broadcast that hasn't started sending (awaiting approval, scheduled, or rejected) can be pulled back to edit; any approval is cleared, so edits are approved again.
+- **Duplicate**: copies any broadcast into a new draft (pre-revamp audiences become "all customers").
+- **Test send**: sends the current content, personalised for the tester and marked [Test], to their own email, WhatsApp and in-app inbox right away. Nothing is queued.
+- **WhatsApp template picker**: approved templates are read from Meta (cached 5 minutes). Templates that need inputs broadcasts don't collect (media or variable headers, dynamic button links, named variables) are listed but can't be chosen. On submit, the template must be approved and every body variable filled.
+
+New configuration: `META_WABA_ID`, the WhatsApp Business Account ID. Without it the composer falls back to typing the template name, and Meta rejects unknown names at send time.
+
+Tests: `tests/test_communications_phase2.py`.
+
+## 8. Phase 3 status: built
+
+- **Webhooks**: `POST /communications/webhooks/resend` (Svix signature with `RESEND_WEBHOOK_SECRET`, 5-minute replay window). WhatsApp statuses arrive on the existing `/ingestion/webhook`; with `META_APP_SECRET` set every Meta POST must carry a valid `X-Hub-Signature-256` (inbound messages included), and status updates are only recorded when it is set.
+- **Events** (`comm_message_events`, migration `7b3e9d1f4a22`): stored once per provider event; message status only moves forward (sent → delivered → bounced / complained / failed). First open (WhatsApp: read) and first click are kept on the message.
+- **Automatic suppression**: hard bounce → all broadcast email; spam complaint → marketing email; WhatsApp error 131050 (user stopped marketing) → marketing WhatsApp. Applied by address, so bounces of transactional mail count too.
+- **Reporting**: deliverability per channel with bounce (2%) and complaint (0.1%) guardrails, a daily outcome chart with a table view, a per-broadcast funnel (sent → delivered → opened/read → clicked), a per-message event timeline, and CSV export of the delivery log (formula-safe, up to 100,000 rows, audited).
+
+Setup: in Resend, add a webhook to `<PUBLIC_API_URL>/communications/webhooks/resend` for all email events and put its signing secret in `RESEND_WEBHOOK_SECRET`; turn on open and click tracking for the sending domain. In Meta, subscribe the app's webhook to `messages` (it already is for inbound) and set `META_APP_SECRET` from the app's basic settings.
+
+Tests: `tests/test_communications_phase3.py`.
+
+## 9. Phase 4 status: built
+
+- **One way to send.** `services/communications/outbox.queue_email(db, to, subject, html, kind=...)` replaces `send_email_task`, `queue_email`/`EmailJob`, raw `ResendClient()` calls and the thread-based admin alerts. Converted: payment receipts, trial started, renewal reminders, platform and staff invites, scheduled finance reports (with attachments), meeting notices and reminders, password-change alerts, support ticket emails, staff replies, contact-form acknowledgements and every `notify_admins_async` staff alert. Transactional mail is priority 0 (ahead of broadcasts), retried, tracked by the webhooks, and wakes the dispatcher on commit, so it leaves in well under a second. `services/notifications/tasks.py` and the old Resend/WhatsApp clients are deleted.
+- **Categories.** `service` mail skips addresses that hard-bounced or were blocked; `security` mail (password changes, staff invites) always goes out.
+- **Sign-in codes** stay synchronous (WhatsApp with SMS fallback) and are recorded in the delivery log without the code. Codes are no longer written to production logs (only with `IS_LOCAL`). The WhatsApp code request now uses `META_API_VERSION` instead of the expired `v19.0`.
+- **Fixed on the way:** receipts, reminders, the trial email and platform invites were wrapped in the branded layout twice; support emails put ticket text and names into HTML unescaped and linked to `app.kapuletu.com`; the public contact form emailed visitor-supplied HTML, unescaped, to any address typed in.
+- **Unified delivery log.** Migration `9c4d2e7a1b55` copies the transactional history from `communication_logs` into `comm_messages` (nothing is re-sent); the log has Broadcasts and Transactional views, both exportable.
+- **Website inquiries** move to `/admin/communications/inquiries` (communications or support staff): status filters, search, and email replies with the original message quoted, recorded on a thread with their delivery status (`contact_message_replies`).
+- **Preference centre** in Settings → Communications: marketing email and WhatsApp switch independently (consent plus per-channel suppression); turning a channel back on is the only thing that lifts the person's own unsubscribe or spam complaint; a bounced address can't be switched on. Every change is audited with its source as the consent record.
+
+Left for a later release: drop `communication_logs` and `broadcast_campaigns` once production has run on the new tables for a while.
+
+Tests: `tests/test_communications_phase4.py`.

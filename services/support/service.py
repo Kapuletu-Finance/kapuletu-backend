@@ -35,7 +35,7 @@ class SupportService:
 
     def create_ticket(self, user_id, subject: str, message: str, category: str, priority: str):
         from models.users import User
-        from services.notifications.providers.resend_client import ResendClient
+        from services.communications.outbox import queue_email
         from services.notifications.email_templates import get_ticket_created_template, get_admin_new_ticket_alert
         
         sla_deadline = self.calculate_sla_deadline(user_id, priority)
@@ -66,19 +66,18 @@ class SupportService:
             creator = self.db.query(User).filter_by(user_id=parse_uuid(user_id)).first()
             if creator:
                 creator_name = f"{creator.first_name} {creator.last_name}"
-                resend = ResendClient()
                 if creator.email:
-                    resend.send_email(
-                        creator.email, 
-                        "Ticket Received - Kapuletu Support", 
-                        get_ticket_created_template(creator_name, subject, str(ticket.ticket_id))
-                    )
-                
+                    queue_email(self.db, creator.email, "Ticket Received - Kapuletu Support",
+                                get_ticket_created_template(creator_name, subject, str(ticket.ticket_id)),
+                                kind="support_ticket_received", user_id=creator.user_id, layout=False)
+
                 admins = self.db.query(User).filter_by(role="admin").all()
                 admin_html = get_admin_new_ticket_alert(creator_name, subject, priority)
                 for adm in admins:
                     if adm.email:
-                        resend.send_email(adm.email, f"New Ticket: {subject}", admin_html)
+                        queue_email(self.db, adm.email, f"New Ticket: {subject}", admin_html,
+                                    kind="staff_alert_support", user_id=adm.user_id, layout=False)
+                self.db.commit()
         except Exception as e:
             from common.logger import get_logger
             get_logger(__name__).error(f"Failed to send support email: {e}", exc_info=True)
@@ -115,7 +114,7 @@ class SupportService:
         
     def reply_to_ticket(self, user_id, ticket_id, message: str):
         from models.users import User
-        from services.notifications.providers.resend_client import ResendClient
+        from services.communications.outbox import queue_email
         from services.notifications.email_templates import get_ticket_reply_template
         
         ticket = self.db.query(SupportTicket).filter_by(user_id=parse_uuid(user_id), ticket_id=parse_uuid(ticket_id)).first()
@@ -143,13 +142,14 @@ class SupportService:
                     admins = self.db.query(User).filter_by(role="admin").all()
                     admin_ids = [adm.user_id for adm in admins]
                 
-                resend = ResendClient()
                 reply_html = get_ticket_reply_template(ticket.subject, message, creator_name, is_admin=False)
-                
+
                 for aid in admin_ids:
                     adm = self.db.query(User).filter_by(user_id=aid).first()
                     if adm and adm.email:
-                        resend.send_email(adm.email, f"New Reply: {ticket.subject}", reply_html)
+                        queue_email(self.db, adm.email, f"New Reply: {ticket.subject}", reply_html,
+                                    kind="staff_alert_support", user_id=adm.user_id, layout=False)
+                self.db.commit()
         except Exception as e:
             from common.logger import get_logger
             get_logger(__name__).error(f"Failed to send support reply email: {e}", exc_info=True)

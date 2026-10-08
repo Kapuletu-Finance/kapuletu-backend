@@ -1,4 +1,4 @@
-from services.notifications.tasks import send_email_task
+from services.communications.outbox import queue_email
 import uuid
 import datetime
 import secrets
@@ -80,17 +80,8 @@ class InvitesService:
                 current_year=datetime.datetime.utcnow().year
             )
             
-            log = CommunicationLog(
-                channel="EMAIL",
-                destination=email,
-                subject=subject,
-                status="QUEUED"
-            )
-            self.db.add(log)
+            queue_email(self.db, email, subject, html_body, kind="platform_invite", layout=False)
             self.db.commit()
-
-            # Synchronous Execution (Bulletproof for Serverless/Migration)
-            send_email_task(str(log.log_id), email, subject, html_body)
             
         return token
     

@@ -131,18 +131,16 @@ class CRMService:
         admin_name = f"{admin.first_name} {admin.last_name}" if admin else "Kapuletu Support"
         
         if user and user.email:
-            from services.notifications.providers.resend_client import ResendClient
+            from services.communications.outbox import queue_email
             from services.notifications.email_templates import get_ticket_reply_template
-            
+
             reply_html = get_ticket_reply_template(ticket.subject, message, admin_name, is_admin=True)
             try:
-                ResendClient().send_email(
-                    to_email=user.email,
-                    subject=f"Re: {ticket.subject}",
-                    html_body=reply_html
-                )
+                queue_email(self.db, user.email, f"Re: {ticket.subject}", reply_html, kind="support_reply",
+                            user_id=user.user_id, layout=False)
+                self.db.commit()
             except Exception:
-                pass # Fail gracefully
+                self.db.rollback()  # the reply is saved; only the email notification is lost
             
         return True
 

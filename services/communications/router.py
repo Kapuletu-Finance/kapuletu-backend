@@ -4,19 +4,24 @@ Every route requires the manage_communications permission.
 
 /communications/unsubscribe: the public, token-authenticated unsubscribe endpoint linked from marketing email.
 """
+import csv
+import datetime
+import io
+import itertools
+import json
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from common.auth_dependencies import require_permissions
+from common.auth_dependencies import get_verified_user, missing_permissions, require_permissions
 from common.database import get_db
 from models.users import User as UserModel
 
 from .broadcasts import BroadcastService
-from .common import CommError, as_uuid, audit, iso, page_bounds, paged
+from .common import CommError, as_uuid, audit
 from .consent import (
     add_suppression,
     list_suppressions,
@@ -25,13 +30,22 @@ from .consent import (
     remove_suppression,
     unsubscribe,
 )
+from .events import apply_events, resend_event, verify_resend_signature
+from .inquiries import InquiryService
+from .preferences import get_preferences, update_preferences
+from .providers.whatsapp import approved_templates
 from .schemas import (
     BroadcastCreateIn,
     BroadcastEstimateIn,
     DecisionIn,
+    DraftIn,
+    InquiryReplyIn,
+    InquiryStatusIn,
+    PreferencesIn,
     SuppressionIn,
     TemplatePreviewIn,
     TemplateSaveIn,
+    TestSendIn,
 )
 from .templates import TemplateService
 
@@ -85,6 +99,52 @@ async def create_broadcast(payload: BroadcastCreateIn, db: Session = Depends(get
     return _call(BroadcastService(db).create, payload.model_dump(), _actor(user))
 
 
+@router.post("/broadcasts/drafts", status_code=201, summary="Save a new draft")
+async def create_draft(payload: DraftIn, db: Session = Depends(get_db), user: User = Depends(communicator)):
+    return _call(BroadcastService(db).save_draft, payload.model_dump(exclude_none=True), _actor(user))
+
+
+@router.post("/broadcasts/test", summary="Send the content to yourself on the chosen channels")
+async def test_broadcast(payload: TestSendIn, db: Session = Depends(get_db), user: User = Depends(communicator)):
+    return _call(BroadcastService(db).test_send, payload.model_dump(exclude_none=True), _actor(user))
+
+
+@router.put("/broadcasts/{broadcast_id}", summary="Update a draft")
+async def update_draft(broadcast_id: str, payload: DraftIn, db: Session = Depends(get_db),
+                       user: User = Depends(communicator)):
+    return _call(BroadcastService(db).save_draft, payload.model_dump(exclude_none=True), _actor(user), broadcast_id)
+
+
+@router.delete("/broadcasts/{broadcast_id}", summary="Delete a draft")
+async def delete_draft(broadcast_id: str, db: Session = Depends(get_db), user: User = Depends(communicator)):
+    _call(BroadcastService(db).delete_draft, broadcast_id, _actor(user))
+    return {"status": "deleted"}
+
+
+@router.post("/broadcasts/{broadcast_id}/submit", summary="Validate a draft and queue it (or send it for approval)")
+async def submit_draft(broadcast_id: str, db: Session = Depends(get_db), user: User = Depends(communicator)):
+    return _call(BroadcastService(db).submit, broadcast_id, _actor(user))
+
+
+@router.post("/broadcasts/{broadcast_id}/duplicate", status_code=201, summary="Copy a broadcast into a new draft")
+async def duplicate_broadcast(broadcast_id: str, db: Session = Depends(get_db), user: User = Depends(communicator)):
+    return _call(BroadcastService(db).duplicate, broadcast_id, _actor(user))
+
+
+@router.post("/broadcasts/{broadcast_id}/return-to-draft", summary="Pull back a broadcast that hasn't started")
+async def return_to_draft(broadcast_id: str, db: Session = Depends(get_db), user: User = Depends(communicator)):
+    return _call(BroadcastService(db).return_to_draft, broadcast_id, _actor(user))
+
+
+@router.get("/whatsapp/templates", summary="Approved WhatsApp templates from Meta Business Manager")
+async def whatsapp_templates(refresh: bool = False, _: User = Depends(communicator)):
+    try:
+        templates = approved_templates(force=refresh)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Couldn't load templates from Meta. Try again in a minute.")
+    return {"configured": templates is not None, "templates": templates or []}
+
+
 @router.get("/broadcasts/{broadcast_id}", summary="Broadcast detail with live delivery counts")
 async def get_broadcast(broadcast_id: str, db: Session = Depends(get_db), _: User = Depends(communicator)):
     return _call(BroadcastService(db).get, broadcast_id)
@@ -133,46 +193,61 @@ async def search_recipients(q: str = Query(..., min_length=2), limit: int = Quer
 
 # --- delivery log ---
 
-@router.get("/messages", summary="Delivery log across all broadcasts")
+@router.get("/messages", summary="Delivery log: broadcasts and transactional messages")
 async def list_messages(
     page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200),
     channel: Optional[str] = None, status: Optional[str] = None, q: Optional[str] = None,
+    kind: Optional[str] = Query(None, description="broadcast or transactional"),
     db: Session = Depends(get_db), _: User = Depends(communicator),
 ):
-    return _call(BroadcastService(db).messages, None, page, limit, channel, status, q)
+    return _call(BroadcastService(db).messages, None, page, limit, channel, status, q, kind)
 
 
-@router.get("/transactional-log", summary="Transactional emails and WhatsApp (OTPs, receipts, invites)")
-async def transactional_log(
-    page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200),
+EXPORT_COLUMNS = ["created_at", "recipient", "destination", "channel", "category", "broadcast_title", "subject",
+                  "status", "error", "sent_at", "delivered_at", "opened_at", "clicked_at", "attempts"]
+
+
+def _csv_cell(value) -> str:
+    """Spreadsheets run cells starting with = + - @ as formulas; names and subjects come from users."""
+    text = "" if value is None else str(value)
+    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+
+@router.get("/messages/export", summary="Download the delivery log as CSV (same filters, up to 100,000 rows)")
+async def export_messages(
     channel: Optional[str] = None, status: Optional[str] = None, q: Optional[str] = None,
-    db: Session = Depends(get_db), _: User = Depends(communicator),
+    broadcast_id: Optional[str] = None, kind: Optional[str] = None,
+    date_from: Optional[datetime.datetime] = Query(None, alias="from"),
+    date_to: Optional[datetime.datetime] = Query(None, alias="to"),
+    db: Session = Depends(get_db), user: User = Depends(communicator),
 ):
-    """Sends that don't go through the outbox yet still write communication_logs; they move over in Phase 4."""
-    from models.communication_logs import CommunicationLog
-    page, limit, offset = page_bounds(page, limit)
-    query = (db.query(CommunicationLog, UserModel).outerjoin(UserModel, CommunicationLog.user_id == UserModel.user_id)
-             .filter(CommunicationLog.campaign_id.is_(None)))  # old broadcast rows were copied to comm_messages
-    if channel:
-        query = query.filter(CommunicationLog.channel == channel.upper())
-    if status:
-        query = query.filter(CommunicationLog.status == status.upper())
-    if q:
-        like = f"%{q.strip()}%"
-        query = query.filter(or_(CommunicationLog.destination.ilike(like), CommunicationLog.subject.ilike(like)))
-    total = query.count()
-    rows = query.order_by(CommunicationLog.created_at.desc()).offset(offset).limit(limit).all()
-    return paged([{
-        "id": str(log.log_id),
-        "recipient": f"{u.first_name} {u.last_name}".strip() if u else "Not a user",
-        "channel": log.channel.lower(),
-        "destination": log.destination,
-        "subject": log.subject,
-        "status": log.status.lower(),
-        # Tracebacks stay in the server logs; the hub shows the first line only
-        "error": (log.error_message or "").strip().splitlines()[-1][:300] if log.error_message else None,
-        "created_at": iso(log.created_at),
-    } for log, u in rows], total, page, limit)
+    service = BroadcastService(db)
+    rows = _call(lambda: service.export_messages(broadcast_id, channel, status, q, date_from, date_to, kind))
+    first = _call(next, rows, None)  # surfaces filter errors as 400 before the download starts
+    audit(db, _actor(user), "DELIVERY_LOG_EXPORTED", "COMM_MESSAGES", broadcast_id,
+          {"channel": channel, "status": status, "q": q, "kind": kind})
+    db.commit()
+
+    def stream():
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(EXPORT_COLUMNS)
+        for row in itertools.chain([first] if first else [], rows):
+            writer.writerow([_csv_cell(row.get(c)) for c in EXPORT_COLUMNS])
+            if buffer.tell() > 64_000:
+                yield buffer.getvalue()
+                buffer.seek(0)
+                buffer.truncate()
+        yield buffer.getvalue()
+
+    filename = f"delivery-log-{datetime.date.today().isoformat()}.csv"
+    return StreamingResponse(stream(), media_type="text/csv",
+                             headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/messages/{message_id}/events", summary="Everything providers reported about one message")
+async def message_events(message_id: str, db: Session = Depends(get_db), _: User = Depends(communicator)):
+    return _call(BroadcastService(db).message_events, message_id)
 
 
 # --- suppressions ---
@@ -248,3 +323,73 @@ async def check_unsubscribe(token: str, db: Session = Depends(get_db)):
 @public_router.post("/unsubscribe", summary="Unsubscribe from marketing (RFC 8058 one-click compatible)")
 async def do_unsubscribe(token: str = Query(...), db: Session = Depends(get_db)):
     return _call(unsubscribe, db, token)
+
+
+@public_router.post("/webhooks/resend", include_in_schema=False)
+async def resend_webhook(request: Request, db: Session = Depends(get_db)):
+    """Delivery, bounce, complaint, open and click events from Resend, signed with RESEND_WEBHOOK_SECRET."""
+    body = await request.body()
+    _call(verify_resend_signature, body, dict(request.headers))
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    event = resend_event(payload, request.headers["svix-id"])
+    if event:
+        _call(apply_events, db, [event])
+    return {"status": "ok"}
+
+
+# --- website inquiries (communications or support staff) ---
+
+def inquiry_handler(user: User = Depends(get_verified_user)) -> User:
+    if missing_permissions(user, ["manage_communications"]) and missing_permissions(user, ["manage_support"]) \
+            and user.get("role") != "support_agent":
+        raise HTTPException(status_code=403, detail="Needs the Manage Communications or Manage Support permission")
+    return user
+
+
+@router.get("/inquiries", summary="Website contact-form messages")
+async def list_inquiries(
+    page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=200),
+    status: Optional[str] = None, q: Optional[str] = None,
+    db: Session = Depends(get_db), _: User = Depends(inquiry_handler),
+):
+    return _call(InquiryService(db).list, page, limit, status, q)
+
+
+@router.get("/inquiries/{inquiry_id}", summary="An inquiry and its reply thread")
+async def get_inquiry(inquiry_id: str, db: Session = Depends(get_db), _: User = Depends(inquiry_handler)):
+    return _call(InquiryService(db).get, inquiry_id)
+
+
+@router.patch("/inquiries/{inquiry_id}", summary="Change an inquiry's status")
+async def update_inquiry(inquiry_id: str, payload: InquiryStatusIn, db: Session = Depends(get_db),
+                         user: User = Depends(inquiry_handler)):
+    return _call(InquiryService(db).set_status, inquiry_id, payload.status, _actor(user))
+
+
+@router.post("/inquiries/{inquiry_id}/reply", summary="Email a reply to the person who wrote in")
+async def reply_inquiry(inquiry_id: str, payload: InquiryReplyIn, db: Session = Depends(get_db),
+                        user: User = Depends(inquiry_handler)):
+    return _call(InquiryService(db).reply, inquiry_id, payload.body, _actor(user), payload.resolve)
+
+
+# --- the signed-in person's own preferences ---
+
+@public_router.get("/preferences", summary="My marketing preferences")
+async def my_preferences(db: Session = Depends(get_db), user: User = Depends(get_verified_user)):
+    return get_preferences(db, _me(db, user))
+
+
+@public_router.put("/preferences", summary="Change my marketing preferences")
+async def change_my_preferences(payload: PreferencesIn, db: Session = Depends(get_db),
+                                user: User = Depends(get_verified_user)):
+    return _call(update_preferences, db, _me(db, user), payload.marketing_email, payload.marketing_whatsapp)
+
+
+def _me(db: Session, user: User) -> UserModel:
+    me = db.get(UserModel, as_uuid(_actor(user)))
+    if not me:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return me

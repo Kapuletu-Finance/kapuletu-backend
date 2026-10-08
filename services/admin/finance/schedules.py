@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from models.communication_logs import CommunicationLog
+from services.communications.outbox import queue_email
 from models.finance_ops import ReportSchedule
 
 from .common import FinanceError, as_uuid, audit, iso
@@ -90,8 +90,6 @@ class ScheduleService:
 
     def send(self, s: ReportSchedule, now: Optional[datetime.datetime] = None, actor_id=None) -> int:
         """Emails the last complete period's report to every recipient. Returns how many were queued."""
-        from services.notifications.tasks import send_email_task
-
         now = now or datetime.datetime.utcnow()
         start, end = last_complete_period(s.frequency, now)
         reports = ReportService(self.db)
@@ -106,10 +104,7 @@ class ScheduleService:
 
         sent = 0
         for recipient in s.recipients or []:
-            log = CommunicationLog(channel="EMAIL", destination=recipient, subject=subject, status="QUEUED")
-            self.db.add(log)
-            self.db.commit()
-            send_email_task(str(log.log_id), recipient, subject, body, attachments=attachment)
+            queue_email(self.db, recipient, subject, body, kind="finance_report", attachments=attachment)
             sent += 1
         s.last_period_end, s.last_sent_at, s.last_error = end, now, None
         self.db.commit()

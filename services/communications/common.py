@@ -13,10 +13,11 @@ CHANNELS = ("email", "in_app", "whatsapp")
 CATEGORIES = ("service", "marketing")
 AUDIENCE_TYPES = ("all_users", "customers", "staff", "subscription", "selected_users")
 
-BROADCAST_STATUSES = ("awaiting_approval", "queued", "sending", "completed", "cancelled", "rejected")
-MESSAGE_STATUSES = ("queued", "sending", "sent", "delivered", "failed", "suppressed", "cancelled")
+BROADCAST_STATUSES = ("draft", "awaiting_approval", "queued", "sending", "completed", "cancelled", "rejected")
+MESSAGE_STATUSES = ("queued", "sending", "sent", "delivered", "failed", "bounced", "complained", "suppressed",
+                    "cancelled")
 # Statuses after which a message will never be attempted again
-FINAL_MESSAGE_STATUSES = ("sent", "delivered", "failed", "suppressed", "cancelled")
+FINAL_MESSAGE_STATUSES = ("sent", "delivered", "failed", "bounced", "complained", "suppressed", "cancelled")
 
 PRIORITY_TRANSACTIONAL = 0
 PRIORITY_BULK = 5

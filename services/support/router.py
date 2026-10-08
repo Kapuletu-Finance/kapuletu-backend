@@ -1,3 +1,4 @@
+import html
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import Dict, Any
@@ -74,7 +75,7 @@ def rate_ticket(ticket_id: str, payload: TicketRatingCreate, db: Session = Depen
 @router.post("/public/contact", response_model=dict, status_code=201)
 def submit_contact_form(payload: ContactMessageCreate, db: Session = Depends(get_db)):
     from models.contact_message import ContactMessage
-    from services.notifications.providers.resend_client import ResendClient
+    from services.communications.outbox import queue_email
     from services.notifications.admin_dispatcher import notify_admins_async
     import logging
 
@@ -90,24 +91,25 @@ def submit_contact_form(payload: ContactMessageCreate, db: Session = Depends(get
     db.commit()
     db.refresh(new_message)
 
-    # 2. Send emails
-    email_client = ResendClient()
+    # 2. Acknowledge the visitor and alert the team. Everything the visitor typed is escaped: this form is
+    # public, and the acknowledgement goes to whatever address they entered.
+    name, topic, body = (html.escape(v or "") for v in (payload.first_name, payload.topic, payload.message))
     try:
-        # Acknowledge user
-        email_client.send_email(
-            to_email=payload.email,
-            subject="KapuLetu Support: We received your message",
-            html_body=f"Hello {payload.first_name},<br><br>Thank you for reaching out to KapuLetu Support regarding '{payload.topic}'. We have received your message and our team will get back to you shortly.<br><br>Your message:<br>{payload.message}<br><br>Best,<br>KapuLetu Team"
+        queue_email(
+            db, payload.email, "KapuLetu Support: We received your message", kind="contact_acknowledgement",
+            body_html=(f"<p>Hello {name},</p><p>Thank you for reaching out to KapuLetu Support regarding "
+                       f"'{topic}'. We have received your message and our team will get back to you shortly.</p>"
+                       f"<p>Your message:</p><blockquote>{body.replace(chr(10), '<br>')}</blockquote>"
+                       f"<p>Best,<br>KapuLetu Team</p>"),
         )
-        
-        # Notify admins
-        notify_admins_async(
-            subject=f"New Contact Message: {payload.topic}",
-            html_content=f"New message from {payload.first_name} {payload.last_name} ({payload.email}).<br><br>Topic: {payload.topic}<br><br>Message:<br>{payload.message}"
-        )
+        db.commit()
     except Exception as e:
-        logging.error(f"Failed to send contact emails: {e}")
-        # We don't fail the request if emails fail
-        pass
+        db.rollback()
+        logging.error(f"Failed to queue contact acknowledgement: {e}")
+    notify_admins_async(
+        subject=f"New Contact Message: {payload.topic[:100]}",
+        html_content=(f"<p>New message from {html.escape(payload.first_name)} {html.escape(payload.last_name)} "
+                      f"({html.escape(payload.email)}).</p><p>Topic: {topic}</p><p>{body.replace(chr(10), '<br>')}</p>"),
+    )
 
     return {"message": "Your message has been sent successfully."}

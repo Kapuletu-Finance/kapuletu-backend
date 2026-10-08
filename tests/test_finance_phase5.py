@@ -151,24 +151,22 @@ def test_payment_method_and_receivables_reports(db):
     assert [row[4] for row in aged.tables[0].rows] == ["8–30 days"]
 
 
-def test_schedule_periods_and_sending_once(db, monkeypatch):
-    import services.notifications.tasks as tasks
+def test_schedule_periods_and_sending_once(db):
+    from models.communications import CommMessage
     from services.admin.finance.schedules import ScheduleService, last_complete_period
 
     # Thursday 1 Oct 2026, 12:00 UTC → last full week Mon 21 – Sun 27 Sep, last full month September (Nairobi days).
     assert last_complete_period("weekly", NOW) == (datetime.datetime(2026, 9, 20, 21), datetime.datetime(2026, 9, 27, 21))
     assert last_complete_period("monthly", NOW) == (datetime.datetime(2026, 8, 31, 21), datetime.datetime(2026, 9, 30, 21))
 
-    sent = []
-    monkeypatch.setattr(tasks, "send_email_task", lambda log_id, to, subject, body, attachments=None:
-                        sent.append((to, subject, attachments[0]["filename"])))
     service = ScheduleService(db)
     service.create({"report_type": "revenue", "frequency": "monthly", "format": "csv",
                     "recipients": ["CFO@kapuletu.co.ke", "ops@kapuletu.co.ke"]}, actor_id=str(uuid.uuid4()))
 
     assert service.send_due(NOW) == 1
-    assert [s[0] for s in sent] == ["cfo@kapuletu.co.ke", "ops@kapuletu.co.ke"]
-    assert sent[0][2].endswith(".csv") and "Sep 2026" in sent[0][1]
+    queued = db.query(CommMessage).order_by(CommMessage.destination).all()  # sent by the outbox dispatcher
+    assert [m.destination for m in queued] == ["cfo@kapuletu.co.ke", "ops@kapuletu.co.ke"]
+    assert queued[0].context["attachments"][0]["filename"].endswith(".csv") and "Sep 2026" in queued[0].subject
     assert service.send_due(NOW + datetime.timedelta(days=3)) == 0  # September already went out
     assert db.query(ReportSchedule).one().last_period_end == datetime.datetime(2026, 9, 30, 21)
 

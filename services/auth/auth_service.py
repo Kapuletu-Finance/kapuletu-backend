@@ -23,7 +23,7 @@ from common.config import get_config
 from common.utils import parse_uuid
 from services.audit.service import AuditService
 from services.notifications.service import create_notification
-from services.notifications.providers.resend_client import ResendClient
+from common.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 config = get_config()
@@ -105,14 +105,34 @@ class AuthService:
         db.add(otp_entry)
         db.commit()
         
-        # DEV REQUIREMENT: Log OTP to terminal
-        logger.info(f"====== OTP GENERATED ======")
-        logger.info(f"Identifier: {identifier}")
-        logger.info(f"Code: {code}")
-        logger.info(f"Purpose: {purpose}")
-        logger.info(f"===========================")
+        # Local development only: codes in production logs would let anyone with log access sign in
+        if config.IS_LOCAL:
+            logger.info(f"====== OTP GENERATED ======")
+            logger.info(f"Identifier: {identifier}")
+            logger.info(f"Code: {code}")
+            logger.info(f"Purpose: {purpose}")
+            logger.info(f"===========================")
         
         return code
+
+    @staticmethod
+    def _log_code_send(channel: str, destination: str, ok: bool, provider: str, provider_message_id: str = None,
+                       error: str = None, subject: str = "Verification code"):
+        """Puts a sign-in code send in the communications delivery log. Runs in its own session (sends may be
+        on a background thread) and never raises: logging must not break sign-in."""
+        from services.communications.outbox import record_sent
+        from services.communications.providers.base import SendResult
+        db = SessionLocal()
+        try:
+            record_sent(db, channel=channel, destination=destination, kind="verification_code", subject=subject,
+                        result=SendResult(ok=ok, provider=provider, provider_message_id=provider_message_id,
+                                          error=error))
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"Could not log verification code send: {e}")
+        finally:
+            db.close()
 
     def _send_whatsapp_with_fallback(self, phone_number: str, code: str):
         """Attempts Meta API first. If it fails, falls back to Africa's Talking SMS."""
@@ -129,7 +149,8 @@ class AuthService:
         if config.META_ACCESS_TOKEN and config.META_ACCESS_TOKEN.strip() and config.META_PHONE_NUMBER_ID and config.META_PHONE_NUMBER_ID.strip():
             try:
                 logger.info(f"Attempting WhatsApp send to {phone_number}...")
-                url = f"https://graph.facebook.com/v19.0/{config.META_PHONE_NUMBER_ID}/messages"
+                api_version = os.environ.get("META_API_VERSION", "v23.0")
+                url = f"https://graph.facebook.com/{api_version}/{config.META_PHONE_NUMBER_ID}/messages"
                 payload = {
                     "messaging_product": "whatsapp",
                     "recipient_type": "individual",
@@ -160,6 +181,11 @@ class AuthService:
                 
                 with urllib.request.urlopen(req) as response:
                     logger.info(f"SUCCESS: WhatsApp code sent to {phone_number}")
+                    try:
+                        wamid = (json.loads(response.read() or b"{}").get("messages") or [{}])[0].get("id")
+                    except ValueError:
+                        wamid = None
+                    self._log_code_send("whatsapp", phone_number, True, "meta_whatsapp", wamid)
                     return # Exit function on success
             except Exception as e:
                 error_body = ""
@@ -169,6 +195,8 @@ class AuthService:
                     except Exception:
                         pass
                 logger.error(f"WhatsApp delivery failed: {str(e)} | Response: {error_body}")
+                self._log_code_send("whatsapp", phone_number, False, "meta_whatsapp",
+                                    error=f"{e} {error_body}"[:500] + " (fell back to SMS)")
                 logger.error(f"Traceback: {traceback.format_exc()}")
                 logger.error("Triggering SMS Fallback...")
         else:
@@ -186,8 +214,10 @@ class AuthService:
                 response = sms.send(message, [phone_number])
                 
             logger.info(f"SMS Fallback successful: {response}")
+            self._log_code_send("sms", phone_number, True, "africastalking")
         except Exception as e:
             logger.error(f"CRITICAL: Both WhatsApp and SMS failed for {phone_number}: {str(e)}")
+            self._log_code_send("sms", phone_number, False, "africastalking", error=str(e)[:500])
             logger.error(f"AT SMS Traceback: {traceback.format_exc()}")
 
     def _send_resend_email(self, to_email: str, subject: str, code: str, action_text: str, name: str):
@@ -236,8 +266,13 @@ class AuthService:
             req.add_header('Authorization', f"Bearer {resend_api_key}")
             req.add_header('Content-Type', 'application/json')
             req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) KapuLetuApp/1.0')
-            urllib.request.urlopen(req)
+            with urllib.request.urlopen(req) as response:
+                try:
+                    email_id = json.loads(response.read() or b"{}").get("id")
+                except ValueError:
+                    email_id = None
             logger.info(f"SUCCESS: Email sent to {to_email}")
+            self._log_code_send("email", to_email, True, "resend", email_id, subject=subject)
         except Exception as e:
             error_body = ""
             if isinstance(e, urllib.error.HTTPError):
@@ -246,6 +281,7 @@ class AuthService:
                 except Exception:
                     pass
             logger.error(f"ERROR: Email delivery failed: {str(e)} | Response: {error_body}")
+            self._log_code_send("email", to_email, False, "resend", error=f"{e} {error_body}"[:500], subject=subject)
             logger.error(f"Email Traceback: {traceback.format_exc()}")
 
     # ------------------
@@ -784,19 +820,21 @@ class AuthService:
         
         if user.email:
             try:
-                resend_client = ResendClient()
-                resend_client.send_email(
-                    to_email=user.email,
-                    subject="Kapuletu Security: Password Changed",
-                    html_body=(
+                from services.communications.outbox import queue_email
+                queue_email(
+                    db, user.email, "Kapuletu Security: Password Changed",
+                    kind="password_changed", category="security", user_id=user.user_id,
+                    body_html=(
                         "<h3>Security Alert</h3>"
                         "<p>Your Kapuletu account password was recently changed.</p>"
                         "<p>If you made this change, no further action is required.</p>"
                         "<p><strong>If you did not make this change, please contact support immediately.</strong></p>"
                     )
                 )
+                db.commit()
             except Exception as e:
-                logger.error(f"Failed to send password change email to {user.email}: {e}")
+                db.rollback()
+                logger.error(f"Failed to queue password change email to {user.email}: {e}")
 
     def update_profile(self, db: Session, user_id: str, updates: dict):
         user = db.query(User).filter(User.user_id ==parse_uuid(parse_uuid(user_id))).first()

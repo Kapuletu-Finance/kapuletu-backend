@@ -2,7 +2,8 @@
 Meetings: audience resolution, lifecycle (create / update / cancel), RSVP, self check-in,
 admin attendance marking, reminders and participant notifications (in-app + email).
 
-Functions that notify people return EmailJobs; callers dispatch them off the request path.
+Functions that notify people queue their emails in the communications outbox (sent once the caller's
+transaction commits) and return the queued messages.
 """
 import datetime
 from collections import defaultdict
@@ -23,7 +24,9 @@ from services.hr.schemas import (
     AdminMeetingOut, MeetingAttendanceRecordIn, MeetingAttendeeOut, MeetingCheckInIn, MeetingCounts,
     MeetingCreate, MeetingDetailOut, MeetingResponse, MeetingUpdate, MyMeetingOut, WorkLocationOut,
 )
-from services.notifications.service import EmailJob, create_notification, queue_email
+from models.communications import CommMessage
+from services.communications.outbox import queue_email
+from services.notifications.service import create_notification
 from services.notifications.templates.render import render_email_template
 
 CHECK_IN_OPENS_BEFORE = datetime.timedelta(minutes=15)
@@ -167,7 +170,7 @@ def _format_when(meeting: Meeting) -> str:
     return f"{start.strftime('%a %d %b %Y, %H:%M')} – {end.strftime(end_fmt)} EAT"
 
 
-def _notify(db: Session, meeting: Meeting, users: list[User], notice: str) -> list[EmailJob]:
+def _notify(db: Session, meeting: Meeting, users: list[User], notice: str) -> list[CommMessage]:
     """Sends an in-app notification to each user and queues the matching email."""
     if not users:
         return []
@@ -207,7 +210,7 @@ def _notify(db: Session, meeting: Meeting, users: list[User], notice: str) -> li
         )
         if user.email:
             html = render_email_template("meeting_notice.html", name=escape(user.first_name or "there"), **email_context)
-            jobs.append(queue_email(db, user.user_id, user.email, subject, html))
+            jobs.append(queue_email(db, user.email, subject, html, kind="meeting_notice", user_id=user.user_id))
     db.commit()
     return jobs
 
@@ -294,7 +297,7 @@ def list_my_meetings(db: Session, user_id) -> list[MyMeetingOut]:
 
 # --- Admin lifecycle ---
 
-def create_meeting(db: Session, payload: MeetingCreate, organizer_id) -> tuple[MeetingResponse, list[EmailJob]]:
+def create_meeting(db: Session, payload: MeetingCreate, organizer_id) -> tuple[MeetingResponse, list[CommMessage]]:
     meeting = Meeting(
         title=payload.title.strip(),
         description=payload.description,
@@ -320,7 +323,7 @@ def create_meeting(db: Session, payload: MeetingCreate, organizer_id) -> tuple[M
     return meeting_out(meeting, get_default_location(db)), jobs
 
 
-def update_meeting(db: Session, meeting_id, payload: MeetingUpdate) -> tuple[MeetingResponse, list[EmailJob]]:
+def update_meeting(db: Session, meeting_id, payload: MeetingUpdate) -> tuple[MeetingResponse, list[CommMessage]]:
     """
     Applies detail changes and, when an audience is supplied, re-resolves the attendee list.
     Newly added people are invited, removed people are told, and everyone else is told about
@@ -372,7 +375,7 @@ def update_meeting(db: Session, meeting_id, payload: MeetingUpdate) -> tuple[Mee
     return meeting_out(meeting, get_default_location(db)), jobs
 
 
-def cancel_meeting(db: Session, meeting_id) -> tuple[MeetingResponse, list[EmailJob]]:
+def cancel_meeting(db: Session, meeting_id) -> tuple[MeetingResponse, list[CommMessage]]:
     meeting = _get_meeting(db, meeting_id)
     _ensure_open(meeting)
     meeting.status = "cancelled"
@@ -446,9 +449,9 @@ def check_in(db: Session, meeting_id, user_id, payload: MeetingCheckInIn) -> Mee
 
 # --- Background worker ---
 
-def send_due_reminders(db: Session, now: Optional[datetime.datetime] = None) -> list[EmailJob]:
+def send_due_reminders(db: Session, now: Optional[datetime.datetime] = None) -> list[CommMessage]:
     now = now or _utcnow()
-    jobs: list[EmailJob] = []
+    jobs: list[CommMessage] = []
     for column_name, lower, upper, notice in REMINDER_WINDOWS:
         column = getattr(MeetingAttendee, column_name)
         due = db.query(MeetingAttendee).join(Meeting).options(

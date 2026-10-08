@@ -18,6 +18,7 @@ from models.billing import (
 )
 from models.campaign import Campaign
 from models.communication_logs import CommunicationLog
+from models.communications import CommBroadcast, CommMessage, CommSuppression
 from models.employees import ApprovalRequest, EmployeeAuditLog
 from models.finance_ops import ReconciliationItem, ReconciliationRun, ReportSchedule
 from models.group import Group
@@ -31,7 +32,7 @@ FINANCE_MODELS = (
     User, Plan, PlanPrice, BillingSettings, Subscription, Invoice, InvoiceLine, SubscriptionPayment, Refund,
     CreditNote, LedgerEntry, SubscriptionEvent, ProviderEvent, AuditLog, SystemConfig, CommunicationLog,
     Group, Campaign, Transaction, ApprovalRequest, EmployeeAuditLog, ReconciliationRun, ReconciliationItem,
-    ReportSchedule,
+    ReportSchedule, CommBroadcast, CommMessage, CommSuppression,
 )
 
 

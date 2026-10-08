@@ -22,8 +22,7 @@ from services.finance.plans import get_free_plan
 logger = logging.getLogger(__name__)
 
 from services.notifications.templates.render import render_email_template
-from services.notifications.tasks import send_email_task
-from models.communication_logs import CommunicationLog
+from services.communications.outbox import queue_email
 
 EAT = zoneinfo.ZoneInfo("Africa/Nairobi")
 LAST_RUN_KEY = "subscription_sweep_last_run"
@@ -61,17 +60,9 @@ def send_real_reminder(user: User, plan_name: str, days_left: int):
             dashboard_url=dashboard_url
         )
 
-        log = CommunicationLog(
-            user_id=user.user_id,
-            channel="EMAIL",
-            destination=user.email,
-            subject=subject,
-            status="QUEUED"
-        )
-        db.add(log)
+        queue_email(db, user.email, subject, html_body, kind="subscription_reminder", user_id=user.user_id,
+                    layout=False)
         db.commit()
-
-        send_email_task(str(log.log_id), user.email, subject, html_body)
         logger.info(f"Successfully sent {days_left}-day reminder email to {user.email}")
     except Exception as e:
         db.rollback()

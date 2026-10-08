@@ -35,3 +35,10 @@ def no_side_effects(monkeypatch):
     monkeypatch.setattr(fulfillment, "create_notification", lambda **kwargs: None)
     monkeypatch.setattr(fulfillment.FulfillmentService, "_notify_admins", staticmethod(lambda *a, **k: None))
     monkeypatch.setattr(dispatcher, "notify_admins_async", lambda *a, **k: None)
+
+
+@pytest.fixture(autouse=True)
+def no_whatsapp_catalogue(monkeypatch):
+    """Tests never call Meta for the template list; those that need one patch it in."""
+    import services.communications.broadcasts as broadcasts
+    monkeypatch.setattr(broadcasts, "approved_templates", lambda force=False: None)

@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -69,3 +69,34 @@ class TemplateSaveIn(BaseModel):
 class TemplatePreviewIn(BaseModel):
     content: Optional[str] = Field(None, description="Unsaved editor content; omit to preview the saved template")
     message: Optional[str] = Field(None, max_length=5000)
+
+
+class DraftIn(BaseModel):
+    """Work in progress: only the title is required; everything is validated when the draft is submitted."""
+    title: str = Field(..., min_length=1, max_length=255)
+    category: Category = "service"
+    audience: Optional[AudienceIn] = None
+    channels: List[Channel] = Field(default_factory=list)
+    content: Dict[str, Any] = Field(default_factory=dict)
+    scheduled_for: Optional[datetime.datetime] = None
+
+
+class TestSendIn(BaseModel):
+    category: Category = "service"
+    channels: List[Channel] = Field(..., min_length=1)
+    content: ContentIn
+    broadcast_id: Optional[str] = Field(None, description="Draft being tested, for the audit trail")
+
+
+class InquiryStatusIn(BaseModel):
+    status: Literal["unread", "read", "replied", "resolved"]
+
+
+class InquiryReplyIn(BaseModel):
+    body: str = Field(..., min_length=1, max_length=10_000)
+    resolve: bool = Field(False, description="Also mark the inquiry resolved")
+
+
+class PreferencesIn(BaseModel):
+    marketing_email: Optional[bool] = None
+    marketing_whatsapp: Optional[bool] = None

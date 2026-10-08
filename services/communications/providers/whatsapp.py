@@ -6,7 +6,9 @@ broadcast is accepted by the API and then silently not delivered. Broadcasts the
 """
 import logging
 import os
-from typing import List
+import re
+import time
+from typing import List, Optional
 
 import httpx
 
@@ -57,3 +59,77 @@ class WhatsAppProvider:
         except ValueError:
             pass
         return result
+
+
+# --- approved template catalogue ---
+
+_POSITIONAL = re.compile(r"\{\{\s*(\d+)\s*\}\}")
+_ANY_VARIABLE = re.compile(r"\{\{\s*[^}]+\s*\}\}")
+_CACHE_SECONDS = 300
+_cache: dict = {"at": 0.0, "templates": None}
+
+
+def describe_template(raw: dict) -> dict:
+    """
+    Name, language, body text and how many body variables a Meta template takes, and whether broadcasts can
+    send it. Broadcasts only fill body variables, so templates that also need header media, header variables,
+    dynamic button URLs or named parameters are listed but marked unsendable.
+    """
+    body, problems = "", []
+    for component in raw.get("components") or []:
+        kind = (component.get("type") or "").upper()
+        text = component.get("text") or ""
+        if kind == "BODY":
+            body = text
+        elif kind == "HEADER":
+            if (component.get("format") or "TEXT").upper() != "TEXT":
+                problems.append("has a media header")
+            elif _ANY_VARIABLE.search(text):
+                problems.append("has a header variable")
+        elif kind == "BUTTONS":
+            for button in component.get("buttons") or []:
+                if _ANY_VARIABLE.search(button.get("url") or ""):
+                    problems.append("has a dynamic button link")
+    positions = [int(n) for n in _POSITIONAL.findall(body)]
+    if _ANY_VARIABLE.search(_POSITIONAL.sub("", body)):
+        problems.append("uses named variables")
+    return {
+        "name": raw.get("name"),
+        "language": raw.get("language"),
+        "category": (raw.get("category") or "").lower(),
+        "body": body,
+        "variables": max(positions, default=0),
+        "sendable": not problems,
+        "unsupported_reason": ", ".join(dict.fromkeys(problems)) or None,
+    }
+
+
+def approved_templates(force: bool = False) -> Optional[List[dict]]:
+    """
+    Approved templates from Meta Business Manager, cached for five minutes. None when META_WABA_ID or the
+    access token isn't configured, so callers can fall back to trusting the typed template name.
+    """
+    waba_id, token = os.environ.get("META_WABA_ID"), os.environ.get("META_ACCESS_TOKEN")
+    if not waba_id or not token:
+        return None
+    if not force and _cache["templates"] is not None and time.time() - _cache["at"] < _CACHE_SECONDS:
+        return _cache["templates"]
+    version = os.environ.get("META_API_VERSION", "v23.0")
+    url = f"https://graph.facebook.com/{version}/{waba_id}/message_templates"
+    params = {"fields": "name,language,status,category,components", "limit": 200}
+    templates = []
+    try:
+        while url:
+            response = httpx.get(url, params=params, headers={"Authorization": f"Bearer {token}"}, timeout=15.0)
+            response.raise_for_status()
+            page = response.json()
+            templates += [describe_template(t) for t in page.get("data") or [] if t.get("status") == "APPROVED"]
+            url, params = (page.get("paging") or {}).get("next"), None  # "next" already carries the query
+    except (httpx.HTTPError, ValueError) as e:
+        logger.error(f"Could not load WhatsApp templates from Meta: {e}")
+        if _cache["templates"] is not None:
+            return _cache["templates"]  # stale beats nothing
+        raise
+    templates.sort(key=lambda t: (t["name"], t["language"]))
+    _cache.update(at=time.time(), templates=templates)
+    return templates

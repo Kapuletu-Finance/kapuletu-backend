@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 import uuid
 from typing import List, Optional
 from common.utils import parse_uuid
@@ -69,33 +68,6 @@ def clear_all_notifications(db: Session, user_id: str) -> int:
     result = db.execute(stmt)
     db.commit()
     return result.rowcount
-
-@dataclass(frozen=True)
-class EmailJob:
-    """A queued email: hand its fields to send_email_task (inline, in a thread, or via BackgroundTasks)."""
-    log_id: str
-    to_email: str
-    subject: str
-    html_body: str
-
-
-def queue_email(db: Session, user_id, to_email: str, subject: str, html_body: str) -> EmailJob:
-    """
-    Records a QUEUED CommunicationLog for an outgoing email and returns the job to dispatch.
-    The caller commits and decides how to run send_email_task, keeping slow sends off the request path.
-    """
-    from models.communication_logs import CommunicationLog
-    log = CommunicationLog(
-        user_id=_uid(user_id) if user_id else None,
-        channel="EMAIL",
-        destination=to_email,
-        subject=subject,
-        status="QUEUED",
-    )
-    db.add(log)
-    db.flush()
-    return EmailJob(log_id=str(log.log_id), to_email=to_email, subject=subject, html_body=html_body)
-
 
 def create_notification(db: Session, user_id: str, title: str, message: str, type: str, related_entity_id: Optional[str] = None):
     try:

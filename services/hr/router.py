@@ -1,7 +1,7 @@
 import datetime
 from typing import Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from common.auth_dependencies import get_admin_user, missing_permissions, require_permissions
@@ -17,8 +17,6 @@ from services.hr.schemas import (
     ScheduleDayOut, ScheduleOverrideCreate, ScheduleOverrideOut, SummaryPeriod, TodayStatusOut, WorkLocationIn,
     WorkLocationOut,
 )
-from services.notifications.service import EmailJob
-from services.notifications.tasks import send_email_task
 
 router = APIRouter(prefix="/hr", tags=["HR & Meetings"])
 
@@ -27,10 +25,6 @@ employee_user = get_admin_user
 # HR administration: super admins, admins, the CEO, or anyone holding the manage_employees permission.
 hr_admin_user = require_permissions([HR_ADMIN_PERMISSION])
 
-
-def _dispatch_emails(background_tasks: BackgroundTasks, jobs: list[EmailJob]) -> None:
-    for job in jobs:
-        background_tasks.add_task(send_email_task, job.log_id, job.to_email, job.subject, job.html_body)
 
 
 def _month_bounds(start: Optional[datetime.date], end: Optional[datetime.date]) -> tuple[datetime.date, datetime.date]:
@@ -216,12 +210,10 @@ def get_all_meetings(current_user: dict = Depends(hr_admin_user), db: Session = 
 @router.post("/meetings", response_model=MeetingResponse, status_code=201, summary="Schedule a meeting")
 def schedule_meeting(
     payload: MeetingCreate,
-    background_tasks: BackgroundTasks,
     current_user: dict = Depends(hr_admin_user),
     db: Session = Depends(get_db),
 ):
-    meeting, jobs = meeting_service.create_meeting(db, payload, current_user["user_id"])
-    _dispatch_emails(background_tasks, jobs)
+    meeting, _emails = meeting_service.create_meeting(db, payload, current_user["user_id"])
     return meeting
 
 
@@ -234,24 +226,20 @@ def get_meeting(meeting_id: str, current_user: dict = Depends(hr_admin_user), db
 def update_meeting(
     meeting_id: str,
     payload: MeetingUpdate,
-    background_tasks: BackgroundTasks,
     current_user: dict = Depends(hr_admin_user),
     db: Session = Depends(get_db),
 ):
-    meeting, jobs = meeting_service.update_meeting(db, meeting_id, payload)
-    _dispatch_emails(background_tasks, jobs)
+    meeting, _emails = meeting_service.update_meeting(db, meeting_id, payload)
     return meeting
 
 
 @router.post("/meetings/{meeting_id}/cancel", response_model=MeetingResponse, summary="Cancel a meeting")
 def cancel_meeting(
     meeting_id: str,
-    background_tasks: BackgroundTasks,
     current_user: dict = Depends(hr_admin_user),
     db: Session = Depends(get_db),
 ):
-    meeting, jobs = meeting_service.cancel_meeting(db, meeting_id)
-    _dispatch_emails(background_tasks, jobs)
+    meeting, _emails = meeting_service.cancel_meeting(db, meeting_id)
     return meeting
 
 

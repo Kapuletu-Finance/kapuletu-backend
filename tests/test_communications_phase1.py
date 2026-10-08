@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from models.base import Base
-from models.communications import CommBroadcast, CommMessage, CommSuppression, CommTemplateVersion
+from models.communications import CommBroadcast, CommMessage, CommMessageEvent, CommSuppression, CommTemplateVersion
 from models.notification import Notification
 from models.subscription import Plan, Subscription
 from models.system_config import SystemConfig
@@ -27,8 +27,9 @@ from services.communications.dispatcher import Dispatcher
 from services.communications.providers import SendResult
 
 NOW = datetime.datetime(2026, 10, 8, 9, 0)
-COMM_MODELS = FINANCE_MODELS + (Notification, WhatsAppBlocklist, CommBroadcast, CommMessage, CommSuppression,
-                                CommTemplateVersion)
+COMM_MODELS = tuple(dict.fromkeys(FINANCE_MODELS + (
+    Notification, WhatsAppBlocklist, CommBroadcast, CommMessage, CommMessageEvent, CommSuppression, CommTemplateVersion,
+)))
 
 
 @pytest.fixture
@@ -370,10 +371,12 @@ def test_template_sandbox_blocks_code_execution(db, monkeypatch):
 # --- wiring ---
 
 def test_every_admin_route_requires_manage_communications():
-    from services.communications.router import communicator, router
+    """Inquiries also admit support staff (inquiry_handler); everything else needs manage_communications."""
+    from services.communications.router import communicator, inquiry_handler, router
     for route in router.routes:
         deps = [d.call for d in route.dependant.dependencies]
-        assert communicator in deps, f"{route.path} is not gated"
+        gate = inquiry_handler if "/inquiries" in route.path else communicator
+        assert gate in deps, f"{route.path} is not gated"
 
 
 def test_clear_all_notifications_is_reachable():

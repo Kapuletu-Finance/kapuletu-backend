@@ -13,7 +13,7 @@ from common.auth_dependencies import get_current_user, require_permissions, requ
 from common.auth import get_password_hash
 from models.users import User
 from models.employees import EmployeeInvite, EmployeeAuditLog
-from services.notifications.tasks import send_email_task
+from services.communications.outbox import queue_email
 from services.notifications.email_templates import get_employee_invite_template
 from models.communication_logs import CommunicationLog
 from common.permissions import EMPLOYEE_PERMISSIONS
@@ -155,18 +155,8 @@ def invite_employee(
     setup_url = f"{os.environ.get('FRONTEND_URL', 'http://localhost:3000')}/employee-setup?token={token}"
     html_body = get_employee_invite_template(payload.first_name, payload.role, setup_url)
     
-    log = CommunicationLog(
-        user_id=current_user["sub"],  # Associate with super admin sending it for now
-        channel="EMAIL",
-        destination=payload.email,
-        subject="You're Invited to KapuLetu!",
-        status="QUEUED"
-    )
-    db.add(log)
+    queue_email(db, payload.email, "You're Invited to KapuLetu!", html_body, kind="employee_invite", category="security", layout=False)
     db.commit()
-    db.refresh(log)
-    
-    send_email_task(str(log.log_id), payload.email, "You're Invited to KapuLetu!", html_body)
     
     return {"message": "Invitation sent successfully"}
 
@@ -221,18 +211,8 @@ def resend_invite(
     setup_url = f"{os.environ.get('FRONTEND_URL', 'http://localhost:3000')}/employee-setup?token={new_token}"
     html_body = get_employee_invite_template(invite.first_name, invite.role, setup_url)
     
-    log = CommunicationLog(
-        user_id=current_user["sub"],
-        channel="EMAIL",
-        destination=invite.email,
-        subject="Reminder: You're Invited to KapuLetu!",
-        status="QUEUED"
-    )
-    db.add(log)
+    queue_email(db, invite.email, "Reminder: You're Invited to KapuLetu!", html_body, kind="employee_invite", category="security", layout=False)
     db.commit()
-    db.refresh(log)
-    
-    send_email_task(str(log.log_id), invite.email, "Reminder: You're Invited to KapuLetu!", html_body)
     
     return {"message": "Invitation resent successfully"}
 

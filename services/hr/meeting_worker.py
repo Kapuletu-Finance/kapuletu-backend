@@ -15,7 +15,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from common.database import SessionLocal
 from services.hr.meeting_service import finalize_ended_meetings, send_due_reminders
-from services.notifications.tasks import send_email_task
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,9 +28,8 @@ def run() -> None:
     finally:
         db.close()
 
-    for job in jobs:
-        send_email_task(job.log_id, job.to_email, job.subject, job.html_body)
-    logger.info(f"Meeting worker: {len(jobs)} reminder email(s) sent, {finalized} meeting(s) finalized.")
+    # Reminder emails were queued in the outbox; the API's dispatcher sends them
+    logger.info(f"Meeting worker: {len(jobs)} reminder email(s) queued, {finalized} meeting(s) finalized.")
 
 
 if __name__ == "__main__":

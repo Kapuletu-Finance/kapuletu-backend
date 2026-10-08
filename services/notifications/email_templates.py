@@ -1,4 +1,11 @@
 import datetime
+from html import escape
+
+from common.config import get_config
+
+
+def _app_url(path: str) -> str:
+    return get_config().FRONTEND_URL.rstrip("/") + path
 
 def get_base_template(content_html: str, title: str) -> str:
     """Wraps content in a highly professional, sleek Kapuletu layout."""
@@ -117,6 +124,7 @@ def get_base_template(content_html: str, title: str) -> str:
     """
 
 def get_ticket_created_template(user_name: str, ticket_subject: str, ticket_id: str) -> str:
+    user_name, ticket_subject = escape(user_name), escape(ticket_subject)
     content = f"""
     <h2>Support Request Received</h2>
     <p>Hi {user_name},</p>
@@ -126,12 +134,13 @@ def get_ticket_created_template(user_name: str, ticket_subject: str, ticket_id: 
     </div>
     <p>Our support engineers are reviewing your ticket and will follow up shortly. You can track the status in your dashboard.</p>
     <center>
-        <a href="https://app.kapuletu.com/treasurer/support" class="button">View Ticket Status</a>
+        <a href="{_app_url("/treasurer/support")}" class="button">View Ticket Status</a>
     </center>
     """
     return get_base_template(content, "Ticket Received - KapuLetu Support")
 
 def get_admin_new_ticket_alert(user_name: str, ticket_subject: str, priority: str) -> str:
+    user_name, ticket_subject, priority = escape(user_name), escape(ticket_subject), escape(priority)
     priority_color = "#ef4444" if priority in ["urgent", "high"] else "#3b82f6"
     content = f"""
     <h2>New Support Ticket Alert</h2>
@@ -142,12 +151,13 @@ def get_admin_new_ticket_alert(user_name: str, ticket_subject: str, priority: st
     </div>
     <p>Please review and assign this ticket in the support queue.</p>
     <center>
-        <a href="https://app.kapuletu.com/admin/support" class="button">Go to Support Queue</a>
+        <a href="{_app_url("/admin/support")}" class="button">Go to Support Queue</a>
     </center>
     """
     return get_base_template(content, f"New Ticket: {ticket_subject}")
 
 def get_ticket_reply_template(ticket_subject: str, message_body: str, sender_name: str, is_admin: bool = True) -> str:
+    ticket_subject, message_body, sender_name = escape(ticket_subject), escape(message_body), escape(sender_name)
     title = f"New Reply: {ticket_subject}"
     role_text = "Kapuletu Support" if is_admin else "Treasurer"
     
@@ -158,12 +168,13 @@ def get_ticket_reply_template(ticket_subject: str, message_body: str, sender_nam
         {message_body.replace(chr(10), '<br>')}
     </div>
     <center>
-        <a href="https://app.kapuletu.com/support" class="button">View Complete Thread</a>
+        <a href="{_app_url("/treasurer/support")}" class="button">View Complete Thread</a>
     </center>
     """
     return get_base_template(content, title)
 
 def get_employee_invite_template(first_name: str, role: str, setup_url: str) -> str:
+    first_name, setup_url = escape(first_name), escape(setup_url)
     role_display = role.replace("_", " ").title()
     content = f"""
     <h2>Welcome to KapuLetu, {first_name}</h2>

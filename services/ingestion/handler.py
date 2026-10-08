@@ -52,6 +52,14 @@ def handler(event, context):
             logger.error(f"Failed to decode base64 body: {e}")
             return {"statusCode": 400, "body": json.dumps({"error": "invalid_encoding"})}
             
+    # Authenticity: with META_APP_SECRET set, only payloads signed by Meta are accepted
+    if config.META_APP_SECRET:
+        from services.communications.events import verify_meta_signature
+        headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+        if not verify_meta_signature(body_str.encode("utf-8"), headers.get("x-hub-signature-256"), config.META_APP_SECRET):
+            logger.warning("Rejected webhook POST with a missing or invalid X-Hub-Signature-256")
+            return {"statusCode": 403, "body": json.dumps({"error": "invalid_signature"})}
+
     # 3. Asynchronous Thread Execution
     import threading
     
@@ -76,6 +84,23 @@ def process_sqs_record(record):
     config = get_config()
     return process_ingestion(body_str, config)
 
+def record_whatsapp_statuses(payload_data: dict, config):
+    """Delivery and read receipts for messages we sent; they update the communications delivery log."""
+    if not config.META_APP_SECRET:
+        # Without the app secret the request can't be authenticated, and statuses can suppress numbers
+        logger.info("Ignoring WhatsApp status updates: set META_APP_SECRET so they can be verified")
+        return
+    from services.communications.events import apply_events, whatsapp_events
+    db = SessionLocal()
+    try:
+        apply_events(db, whatsapp_events(payload_data))
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to record WhatsApp statuses: {e}")
+    finally:
+        db.close()
+
+
 def process_ingestion(body_str: str, config):
     """
     Core logic: parses payload, saves to database, and sends WhatsApp reply.
@@ -96,9 +121,7 @@ def process_ingestion(body_str: str, config):
 
     # Check if this is a status update (delivery/read receipt)
     if "statuses" in value:
-        status_info = value["statuses"][0]
-        logger.info(f"Received status update: {status_info.get('status')} for message ID {status_info.get('id')}")
-        # We don't process these with the AI, just acknowledge
+        record_whatsapp_statuses(payload_data, config)
         return {"statusCode": 200, "body": "OK"}
 
     # Check if this is a message

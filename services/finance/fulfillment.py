@@ -179,8 +179,7 @@ class FulfillmentService:
         # 6. Dispatch Email Receipt
         if email:
             try:
-                from models.communication_logs import CommunicationLog
-                from services.notifications.tasks import send_email_task
+                from services.communications.outbox import queue_email
                 from services.notifications.templates.render import render_email_template
 
                 subject = f"Your KapuLetu {plan.name} Receipt"
@@ -194,18 +193,8 @@ class FulfillmentService:
                     date=now.strftime('%B %d, %Y')
                 )
 
-                log = CommunicationLog(
-                    user_id=user_id,
-                    channel="EMAIL",
-                    destination=email,
-                    subject=subject,
-                    status="QUEUED"
-                )
-                self.db.add(log)
+                queue_email(self.db, email, subject, html_body, kind="payment_receipt", user_id=user_id, layout=False)
                 self.db.commit()
-
-                # Synchronous Execution
-                send_email_task(str(log.log_id), email, subject, html_body)
             except Exception as e:
                 logger.error(f"Failed to queue email receipt: {e}")
 

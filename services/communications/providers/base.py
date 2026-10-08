@@ -1,7 +1,7 @@
 """What every channel provider returns, and how unconfigured providers behave."""
 import os
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from common.config import get_config
 
@@ -24,6 +24,7 @@ class EmailEnvelope:
     html: str
     text: str = ""
     headers: Dict[str, str] = field(default_factory=dict)
+    attachments: List[dict] = field(default_factory=list)  # [{"filename", "content": base64}]
 
 
 def mock_sending_allowed() -> bool:

@@ -90,7 +90,7 @@ class CommMessage(Base):
     # Per-recipient values merged into the broadcast content at send time (first_name, unsubscribe_url, ...)
     context = Column(JSONType, nullable=False, default=dict)
 
-    # queued -> sending -> sent (-> delivered) | failed | suppressed | cancelled
+    # queued -> sending -> sent -> delivered, or failed / bounced / complained; suppressed and cancelled never sent
     status = Column(String(20), nullable=False, default="queued")
     attempts = Column(SmallInteger, nullable=False, default=0)
     next_attempt_at = Column(DateTime, nullable=True)
@@ -101,6 +101,9 @@ class CommMessage(Base):
 
     sent_at = Column(DateTime, nullable=True)
     delivered_at = Column(DateTime, nullable=True)
+    # First open (email) or read receipt (WhatsApp), and first link click; from provider webhooks
+    opened_at = Column(DateTime, nullable=True)
+    clicked_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
@@ -153,4 +156,31 @@ class CommTemplateVersion(Base):
 
     __table_args__ = (
         UniqueConstraint("template_name", "version", name="uq_comm_template_versions"),
+    )
+
+
+class CommMessageEvent(Base):
+    """
+    One delivery event reported by a provider webhook (delivered, bounced, opened, read...). Stored once per
+    provider event id, so redelivered webhooks are ignored. message_id is empty for mail sent outside the outbox.
+    """
+    __tablename__ = "comm_message_events"
+
+    event_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    message_id = Column(UUID(as_uuid=True), ForeignKey("comm_messages.message_id", ondelete="CASCADE"), nullable=True)
+    provider = Column(String(30), nullable=False)
+    provider_event_id = Column(String(255), nullable=False)
+    provider_message_id = Column(String(255), nullable=True)
+    # delivered | delayed | bounced | soft_bounced | complained | opened | clicked | failed | sent
+    event = Column(String(30), nullable=False)
+    destination = Column(String(255), nullable=True)
+    detail = Column(Text, nullable=True)  # bounce reason, clicked link, Meta error
+    payload = Column(JSONType, nullable=True)
+    occurred_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_event_id", name="uq_comm_message_events_provider_event"),
+        Index("ix_comm_message_events_message", "message_id", "occurred_at"),
+        Index("ix_comm_message_events_occurred", "occurred_at"),
     )

@@ -9,6 +9,7 @@ The outbox dispatcher. Each pass:
 Runs in a daemon thread in every API process (start_comm_dispatcher); passes are safe to run concurrently.
 """
 import datetime
+import html
 import logging
 import os
 import threading
@@ -30,6 +31,7 @@ from .common import PRIORITY_BULK, now
 from .consent import unsubscribe_token, unsubscribe_url
 from .providers import EmailEnvelope, ResendEmailProvider, SendResult, WhatsAppProvider
 from .providers.resend import MAX_BATCH
+from .templates import layout_env
 
 logger = logging.getLogger(__name__)
 
@@ -93,10 +95,7 @@ class Dispatcher:
         marketing = broadcast.category == "marketing"
         rows = []
         for r in resolution.recipients:
-            context = rendering.recipient_context(r.first_name, r.last_name, r.email)
-            if marketing and r.channel == "email":
-                context["unsubscribe_url"] = unsubscribe_url(r.user_id)
-                context["unsubscribe_token"] = unsubscribe_token(r.user_id)
+            context = message_context(r.user_id, r.first_name, r.last_name, r.email, r.channel, marketing)
             rows.append({
                 "broadcast_id": broadcast.broadcast_id, "user_id": r.user_id, "channel": r.channel,
                 "destination": r.destination, "category": broadcast.category, "priority": PRIORITY_BULK,
@@ -134,9 +133,12 @@ class Dispatcher:
             CommBroadcast.broadcast_id.in_(broadcast_ids))} if broadcast_ids else {}
 
         by_channel = defaultdict(list)
+        direct = []
         for m in messages:
             broadcast = broadcasts.get(m.broadcast_id)
-            if broadcast is None:
+            if broadcast is None and m.channel == "email" and (m.context or {}).get("html"):
+                direct.append(m)  # transactional email queued with its own content
+            elif broadcast is None:
                 self._finish(m, SendResult(ok=False, provider="none", error="Message has no content to send"))
             elif broadcast.status == "cancelled":
                 m.status, m.claimed_at = "cancelled", None
@@ -144,6 +146,7 @@ class Dispatcher:
                 by_channel[m.channel].append((m, broadcast))
         self.db.commit()
 
+        self._send_direct_email(direct)
         self._send_in_app(by_channel.pop("in_app", []))
         self._send_email(by_channel.pop("email", []))
         self._send_whatsapp(by_channel.pop("whatsapp", []))
@@ -175,29 +178,30 @@ class Dispatcher:
         self.db.commit()
 
     def _send_email(self, items: list):
-        api_url = get_config().PUBLIC_API_URL.rstrip("/")
         for start in range(0, len(items), MAX_BATCH):
             chunk = items[start:start + MAX_BATCH]
-            envelopes = []
-            for m, broadcast in chunk:
-                context = m.context or {}
-                subject, page = rendering.render_email(broadcast.content["email"], context)
-                headers = {}
-                if context.get("unsubscribe_token") and api_url:
-                    # RFC 8058 one-click: mail providers POST here directly
-                    headers = {
-                        "List-Unsubscribe": f"<{api_url}/communications/unsubscribe?token={context['unsubscribe_token']}>",
-                        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-                    }
-                text = rendering.html_to_text(rendering.personalize(broadcast.content["email"]["html"], context, False))
-                envelopes.append(EmailEnvelope(message_id=str(m.message_id), to=m.destination, subject=subject,
-                                               html=page, text=text, headers=headers))
+            envelopes = [email_envelope(str(m.message_id), m.destination, broadcast.content["email"], m.context or {})
+                         for m, broadcast in chunk]
             for (m, _), result in zip(chunk, self.email.send_batch(envelopes)):
                 self._finish(m, result)
             self._heartbeat(items[start + MAX_BATCH:])
             self.db.commit()
             if start + MAX_BATCH < len(items):
                 self.sleep(EMAIL_BATCH_INTERVAL)
+
+    def _send_direct_email(self, messages: list):
+        """Transactional email: batched like broadcasts, except attachments, which Resend only takes one at a time."""
+        plain, with_files = [], []
+        for m in messages:
+            (with_files if (m.context or {}).get("attachments") else plain).append(m)
+        for start in range(0, len(plain), MAX_BATCH):
+            chunk = plain[start:start + MAX_BATCH]
+            for m, result in zip(chunk, self.email.send_batch([direct_envelope(m) for m in chunk])):
+                self._finish(m, result)
+            self.db.commit()
+        for m in with_files:
+            self._finish(m, self.email.send_one(direct_envelope(m)))
+            self.db.commit()
 
     def _send_whatsapp(self, items: list):
         for i, (m, broadcast) in enumerate(items):
@@ -233,6 +237,46 @@ class Dispatcher:
         return completed
 
 
+def direct_envelope(m: CommMessage) -> EmailEnvelope:
+    """A transactional email: its stored body, in the branded layout unless queued with layout=False."""
+    context = m.context or {}
+    body = context["html"]
+    page = body
+    if context.get("layout", True):
+        page = layout_env.get_template("email_base.html").render(
+            subject=html.escape(m.subject or ""), body=body, frontend_url=get_config().FRONTEND_URL.rstrip("/"),
+            current_year=datetime.datetime.utcnow().year,
+        )
+    return EmailEnvelope(message_id=str(m.message_id), to=m.destination, subject=m.subject or "",
+                         html=page, text=rendering.html_to_text(body),
+                         attachments=context.get("attachments") or [])
+
+
+def message_context(user_id, first_name: str, last_name: str, email: str, channel: str, marketing: bool) -> dict:
+    """Personalisation values for one recipient, plus their unsubscribe link on marketing email."""
+    context = rendering.recipient_context(first_name, last_name, email)
+    if marketing and channel == "email":
+        context["unsubscribe_url"] = unsubscribe_url(user_id)
+        context["unsubscribe_token"] = unsubscribe_token(user_id)
+    return context
+
+
+def email_envelope(message_id: str, to: str, content: dict, context: dict, subject_prefix: str = "") -> EmailEnvelope:
+    """One personalised broadcast email, with RFC 8058 one-click unsubscribe headers for marketing."""
+    subject, page = rendering.render_email(content, context)
+    headers = {}
+    api_url = get_config().PUBLIC_API_URL.rstrip("/")
+    if context.get("unsubscribe_token") and api_url:
+        # Mail providers POST here directly, bypassing the frontend
+        headers = {
+            "List-Unsubscribe": f"<{api_url}/communications/unsubscribe?token={context['unsubscribe_token']}>",
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        }
+    text = rendering.html_to_text(rendering.personalize(content["html"], context, False))
+    return EmailEnvelope(message_id=message_id, to=to, subject=subject_prefix + subject, html=page, text=text,
+                         headers=headers)
+
+
 def message_counts(db: Session, broadcast_id) -> dict:
     """{channel: {status: count}} for one broadcast."""
     return message_counts_for(db, [broadcast_id]).get(broadcast_id, {})
@@ -255,6 +299,12 @@ def message_counts_for(db: Session, broadcast_ids: list) -> dict:
 # --- background worker ---
 
 _started = False
+_wake_event = threading.Event()
+
+
+def wake() -> None:
+    """Lets a sleeping dispatcher in this process start its next pass now (called when mail is queued)."""
+    _wake_event.set()
 
 
 def _loop(interval: float):
@@ -270,8 +320,9 @@ def _loop(interval: float):
             busy = False
         finally:
             db.close()
-        if not busy:  # keep draining while there is work, otherwise poll
-            time.sleep(interval)
+        if not busy:  # keep draining while there is work, otherwise poll (or wake as soon as mail is queued)
+            _wake_event.wait(interval)
+            _wake_event.clear()
 
 
 def start_comm_dispatcher(interval: Optional[float] = None):
@@ -282,3 +333,17 @@ def start_comm_dispatcher(interval: Optional[float] = None):
     interval = interval or float(os.getenv("COMM_DISPATCH_INTERVAL", "5"))
     threading.Thread(target=_loop, args=(interval,), daemon=True, name="comm-dispatcher").start()
     logger.info("Communications dispatcher started.")
+
+
+def engagement_for(db: Session, broadcast_ids: list) -> dict:
+    """{broadcast_id: {channel: {"delivered", "opened", "clicked"}}}: first delivery, open/read and click, per message."""
+    out: dict = {}
+    if not broadcast_ids:
+        return out
+    rows = (db.query(CommMessage.broadcast_id, CommMessage.channel, func.count(CommMessage.delivered_at),
+                     func.count(CommMessage.opened_at), func.count(CommMessage.clicked_at))
+            .filter(CommMessage.broadcast_id.in_(broadcast_ids), CommMessage.channel != "in_app")
+            .group_by(CommMessage.broadcast_id, CommMessage.channel))
+    for broadcast_id, channel, delivered, opened, clicked in rows:
+        out.setdefault(broadcast_id, {})[channel] = {"delivered": delivered, "opened": opened, "clicked": clicked}
+    return out
