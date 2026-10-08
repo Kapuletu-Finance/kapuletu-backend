@@ -89,6 +89,18 @@ class InvoiceService:
         } for c in self.db.query(CreditNote).filter(CreditNote.invoice_id == inv.invoice_id).all()]
         return out
 
+    def invoice_pdf(self, invoice_id: str) -> tuple[bytes, str]:
+        inv = self.db.get(Invoice, as_uuid(invoice_id))
+        if not inv:
+            raise FinanceError("Invoice not found", 404)
+        lines = self.db.query(InvoiceLine).filter(InvoiceLine.invoice_id == inv.invoice_id).all()
+        credit_notes = self.db.query(CreditNote).filter(CreditNote.invoice_id == inv.invoice_id).all()
+        user = self.db.get(User, inv.user_id)
+
+        from services.finance.receipt_document import render_invoice
+
+        return render_invoice(self.db, inv, lines, user, credit_notes)
+
     # --- payments ---
 
     @staticmethod

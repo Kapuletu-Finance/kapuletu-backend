@@ -242,3 +242,32 @@ def test_treasurer_sees_own_invoices_and_downloads_pdf(Session, db):
 
     app.dependency_overrides[get_verified_user] = lambda: {"sub": str(uuid.uuid4())}
     assert http.get(f"/finance/invoices/{invoice.invoice_id}/pdf").status_code == 404  # not theirs
+
+
+def test_finance_officer_can_download_treasurer_invoice_pdf(Session, db):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from common.database import get_db
+    from services.admin.finance import router as finance_router
+
+    user, basic, silver, sub = make_world(db)
+    invoice, _ = paid_invoice(db, user, sub, silver, NOW)
+
+    app = FastAPI()
+    app.include_router(finance_router.router)
+
+    def session_override():
+        s = Session()
+        try:
+            yield s
+        finally:
+            s.close()
+
+    app.dependency_overrides[get_db] = session_override
+    app.dependency_overrides[finance_router.finance_officer] = lambda: {"user_id": str(uuid.uuid4())}
+    response = TestClient(app).get(f"/admin/finance/invoices/{invoice.invoice_id}/pdf")
+
+    assert response.status_code == 200
+    assert response.content.startswith(b"%PDF")
+    assert invoice.number in response.headers["content-disposition"]

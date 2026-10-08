@@ -268,6 +268,23 @@ async def list_invoices(
         raise _http(e)
 
 
+@router.get("/invoices/{invoice_id}/pdf", summary="Download an official invoice PDF")
+async def download_invoice_pdf(
+    invoice_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(finance_officer),
+):
+    try:
+        content, filename = InvoiceService(db).invoice_pdf(invoice_id)
+    except (FinanceError, ValueError) as e:
+        raise _http(e if isinstance(e, FinanceError) else FinanceError("Invoice not found", 404))
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/invoices/{invoice_id}", summary="Invoice with lines, payments and credit notes")
 async def get_invoice(invoice_id: str, db: Session = Depends(get_db), _: User = Depends(finance_officer)):
     try:
