@@ -17,13 +17,17 @@ class ResendClient:
     def send_email(self, to_email: str, subject: str, html_body: str, attachments: list = None) -> bool:
         """`attachments`: [{"filename": str, "content": base64 str}], as the Resend API takes them."""
         if not self.api_key:
+            from services.communications.providers.base import mock_sending_allowed
+            if not mock_sending_allowed():
+                # Failing is the honest outcome: reporting success here would hide a misconfigured deploy
+                logger.error(f"RESEND_API_KEY is not set; email to {to_email} was NOT sent")
+                return False
             logger.warning(f"\n{'='*50}\n[MOCK EMAIL SENT to {to_email}]\nSubject: {subject}\n{'='*50}")
-            # Extract and print link if it's an employee invite for easy local testing
+            # Print links so invites and resets can be followed in local development
             import re
             links = re.findall(r'href=[\'"]?([^\'" >]+)', html_body)
             if links:
                 logger.warning(f"Found Links in Email: {links}")
-            logger.warning(f"{'='*50}\nRESEND_API_KEY is not set. Email mocked as sent.")
             return True
 
         headers = {

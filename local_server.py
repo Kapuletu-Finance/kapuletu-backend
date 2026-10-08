@@ -270,11 +270,6 @@ class SubscriptionPlanIn(BaseModel):
     billing_period: str = Field("monthly", json_schema_extra={"example": "annual"})
     features: List[str] = Field(..., json_schema_extra={"example": ["Unlimited Groups", "AI Parsing"]})
 
-class SystemBroadcastIn(BaseModel):
-    message: str = Field(..., json_schema_extra={"example": "Platform maintenance scheduled for 10:00 PM EAT."})
-    channel: str = Field("all", json_schema_extra={"example": "whatsapp"})
-    target_role: str = Field("treasurer")
-
 # --- Members & Notifications ---
 
 class MemberIn(BaseModel):
@@ -526,6 +521,10 @@ app.include_router(admin_router)
 app.include_router(admin_config_router)
 from services.admin.finance.router import router as admin_finance_router
 app.include_router(admin_finance_router)  # /admin/finance/*
+from services.communications.router import public_router as communications_public_router
+from services.communications.router import router as admin_communications_router
+app.include_router(admin_communications_router)  # /admin/communications/*
+app.include_router(communications_public_router)  # /communications/unsubscribe
 from services.admin.approvals_router import router as approvals_router
 app.include_router(approvals_router, prefix="/admin")  # /admin/approvals
 
@@ -546,6 +545,9 @@ start_expiry_scheduler()
 # Daily finance jobs (scheduled report emails, Flutterwave reconciliation)
 from services.admin.finance.jobs import start_finance_scheduler
 start_finance_scheduler()
+# Outbox dispatcher: expands broadcasts and sends queued messages, with retries
+from services.communications.dispatcher import start_comm_dispatcher
+start_comm_dispatcher()
 
 from services.workspace.router import router as workspace_router
 app.include_router(workspace_router, dependencies=[Depends(get_verified_user)])

@@ -38,6 +38,10 @@ class Config:
     # Frontend URL for generating public links
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://app.kapuletu.co.ke")
     
+    # Public base URL of this API (e.g. https://api.kapuletu.co.ke). Used for one-click unsubscribe headers,
+    # which mail providers POST to directly, bypassing the frontend proxy.
+    PUBLIC_API_URL: str = os.getenv("PUBLIC_API_URL", "")
+
     # Local development mode — set to True when running locally (disables secure cookies, etc.)
     IS_LOCAL: bool = os.getenv("IS_LOCAL", "false").lower() == "true"
 

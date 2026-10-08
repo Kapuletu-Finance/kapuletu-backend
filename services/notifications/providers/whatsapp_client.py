@@ -11,7 +11,7 @@ class WhatsAppClient:
     def __init__(self):
         self.access_token = os.environ.get("META_ACCESS_TOKEN")
         self.phone_number_id = os.environ.get("META_PHONE_NUMBER_ID")
-        self.api_version = os.environ.get("META_API_VERSION", "v17.0")
+        self.api_version = os.environ.get("META_API_VERSION", "v23.0")
 
     def send_text_message(self, to_phone: str, message: str) -> bool:
         if not self.access_token or not self.phone_number_id:

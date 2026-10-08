@@ -62,6 +62,7 @@
     </style>
 </head>
 <body>
+    {% if preheader %}<div style="display:none;max-height:0;overflow:hidden;opacity:0;">{{ preheader }}</div>{% endif %}
     <div class="container">
         <div class="header">
             <!-- Dynamically injected frontend URL for the logo -->
@@ -94,6 +95,9 @@
                 &copy; {{ current_year }} KapuLetu. All rights reserved.
                 <br>
                 This email was sent to you because of your association with KapuLetu. If you believe you received this in error, please contact support.
+                {% if unsubscribe_url %}
+                <br><a href="{{ unsubscribe_url }}">Unsubscribe from marketing emails</a>
+                {% endif %}
             </p>
         </div>
     </div>

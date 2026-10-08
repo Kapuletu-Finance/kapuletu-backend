@@ -33,6 +33,7 @@ from .app_feedback import AppFeedback
 from .support_session_rating import SupportSessionRating
 from .broadcast import BroadcastCampaign
 from .communication_logs import CommunicationLog
+from .communications import CommBroadcast, CommMessage, CommSuppression, CommTemplateVersion
 from .invite import Invite
 from .system_metric import SystemMetric
 from .waitlist_whitelist import WaitlistWhitelist

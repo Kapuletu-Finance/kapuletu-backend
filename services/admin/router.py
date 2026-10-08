@@ -369,112 +369,7 @@ async def update_config(
 # Moved to services/admin/finance/router.py (/admin/finance/*).
 
 # --- Module E: CRM & System Communications ---
-@router.post("/crm/broadcast", summary="Send Broadcast Message")
-async def send_broadcast(
-    payload: Dict[str, Any],
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    service = CRMService(db)
-    if "message" not in payload:
-        raise HTTPException(status_code=400, detail="Missing message")
-    if "title" not in payload:
-        raise HTTPException(status_code=400, detail="Missing title")
-        
-    result = service.send_broadcast(
-        title=payload["title"],
-        message=payload["message"],
-        target_audience=payload.get("target_type", "all_members"),
-        channels=payload.get("channels", ["in_app"]),
-        target_emails=payload.get("target_emails"),
-        background_tasks=background_tasks
-    )
-    return result
-
-@router.get("/crm/broadcasts", summary="List Broadcast Campaigns")
-async def list_broadcasts(
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    from models.broadcast import BroadcastCampaign
-    campaigns = db.query(BroadcastCampaign).order_by(BroadcastCampaign.created_at.desc()).all()
-    
-    return [
-        {
-            "id": str(c.campaign_id),
-            "title": c.title,
-            "target_audience": c.target_audience,
-            "channels": c.channels,
-            "status": c.status,
-            "recipients_count": c.recipients_count,
-            "created_at": c.created_at.isoformat()
-        } for c in campaigns
-    ]
-
-@router.get("/crm/broadcasts/{campaign_id}/recipients", summary="List Recipients for a Broadcast")
-async def get_broadcast_recipients(
-    campaign_id: str,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    from models.communication_logs import CommunicationLog
-    from models.users import User
-
-    try:
-        broadcast_campaign_id = parse_uuid(campaign_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Broadcast campaign not found")
-    
-    logs = db.query(CommunicationLog, User).outerjoin(
-        User, CommunicationLog.user_id == User.user_id
-    ).filter(
-        CommunicationLog.campaign_id == broadcast_campaign_id
-    ).order_by(CommunicationLog.created_at.desc()).all()
-    
-    return [
-        {
-            "log_id": str(log.CommunicationLog.log_id),
-            "user_name": f"{log.User.first_name} {log.User.last_name}" if log.User else "Unknown",
-            "channel": log.CommunicationLog.channel,
-            "destination": log.CommunicationLog.destination,
-            "status": log.CommunicationLog.status,
-            "error_message": log.CommunicationLog.error_message,
-            "created_at": log.CommunicationLog.created_at.isoformat()
-        } for log in logs
-    ]
-
-@router.get("/crm/communication-logs", summary="List All Communication Logs")
-async def list_communication_logs(
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    from models.communication_logs import CommunicationLog
-    
-    total = db.query(CommunicationLog).count()
-    logs = db.query(CommunicationLog, User).outerjoin(
-        User, CommunicationLog.user_id == User.user_id
-    ).order_by(CommunicationLog.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
-    
-    return {
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "logs": [
-            {
-                "log_id": str(log.CommunicationLog.log_id),
-                "user_name": f"{log.User.first_name} {log.User.last_name}" if log.User else "System / Non-User",
-                "channel": log.CommunicationLog.channel,
-                "destination": log.CommunicationLog.destination,
-                "subject": log.CommunicationLog.subject,
-                "status": log.CommunicationLog.status,
-                "error_message": log.CommunicationLog.error_message,
-                "created_at": log.CommunicationLog.created_at.isoformat()
-            } for log in logs
-        ]
-    }
+# Broadcasts, delivery logs and templates moved to services/communications (/admin/communications/*).
 
 # --- Module F: System & Audit Logs ---
 @router.get("/audit/logs", summary="List System & Audit Logs")
@@ -825,81 +720,6 @@ async def remove_from_whitelist(
     
     return {"message": "Removed from whitelist"}
 
-# --- Module: Email Templates Preview ---
-from fastapi.responses import HTMLResponse
-
-@router.get("/templates/preview/{name}", summary="Preview Email Template")
-async def preview_template(
-    name: str,
-    message: str = "This is a live preview of the message you just typed. It shows how it will appear within the KapuLetu email branding.",
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    from services.notifications.templates.render import render_email_template
-    
-    # Inject safe dummy variables
-    invite_url = "https://kapuletu.co.ke/sign-up?invite_token=preview-token-12345"
-    
-    try:
-        html_body = render_email_template(
-            name,
-            message=message.replace('\n', '<br>'),
-            invite_url=invite_url
-        )
-        return HTMLResponse(content=html_body)
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Template error: {str(e)}")
-
-import os
-
-@router.get("/templates", summary="List Email Templates")
-async def list_templates(
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    from services.notifications.templates.render import TEMPLATE_DIR
-    try:
-        files = [f for f in os.listdir(TEMPLATE_DIR) if f.endswith(".html")]
-        return {"templates": [{"id": f, "name": f.replace(".html", "").replace("_", " ").title()} for f in files]}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Could not read templates: {str(e)}")
-
-@router.get("/templates/raw/{name}", summary="Get Raw Email Template")
-async def get_raw_template(
-    name: str,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    from services.notifications.templates.render import TEMPLATE_DIR
-    path = os.path.join(TEMPLATE_DIR, name)
-    if not os.path.exists(path) or not name.endswith(".html"):
-        raise HTTPException(status_code=404, detail="Template not found")
-        
-    with open(path, "r", encoding="utf-8") as f:
-        content = f.read()
-    return {"name": name, "content": content}
-
-@router.put("/templates/raw/{name}", summary="Save Raw Email Template")
-async def save_raw_template(
-    name: str,
-    payload: Dict[str, str],
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    from services.notifications.templates.render import TEMPLATE_DIR
-    path = os.path.join(TEMPLATE_DIR, name)
-    if not os.path.exists(path) or not name.endswith(".html"):
-        raise HTTPException(status_code=404, detail="Template not found")
-        
-    content = payload.get("content")
-    if content is None:
-        raise HTTPException(status_code=400, detail="Missing content")
-        
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
-    return {"message": "Template saved successfully"}
-
-
 # --- Contact Messages ---
 @router.get("/contact-messages", summary="List Contact Messages")
 async def list_contact_messages(
@@ -936,6 +756,8 @@ async def update_contact_message_status(
     if not message:
         raise HTTPException(status_code=404, detail="Contact message not found")
         
+    if status not in ("unread", "read", "resolved"):
+        raise HTTPException(status_code=400, detail="status must be unread, read or resolved")
     message.status = status
     db.commit()
     db.refresh(message)

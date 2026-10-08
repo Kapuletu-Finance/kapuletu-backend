@@ -1,6 +1,13 @@
+"""
+Transactional sends recorded in communication_logs (OTPs, receipts, invites). Each task tries up to three
+times and records the final outcome only; broadcasts use the outbox in services/communications instead.
+"""
+import datetime
 import logging
-import traceback
-from sqlalchemy.orm import Session
+import time
+from typing import Callable
+
+from common.config import get_config
 from common.database import SessionLocal
 from models.communication_logs import CommunicationLog
 from services.notifications.providers.resend_client import ResendClient
@@ -8,103 +15,59 @@ from services.notifications.providers.whatsapp_client import WhatsAppClient
 
 logger = logging.getLogger(__name__)
 
-import time
+ATTEMPTS = 3
+BACKOFF_SECONDS = (1, 3)  # waits after attempts 1 and 2
 
-import os
-import datetime
-from jinja2 import Environment, FileSystemLoader
+
+def _record(log_id: str, status: str, error: str = None):
+    db = SessionLocal()
+    try:
+        log = db.query(CommunicationLog).filter(CommunicationLog.log_id == log_id).first()
+        if not log:
+            logger.error(f"CommunicationLog {log_id} not found.")
+            return
+        log.status = status
+        log.error_message = error
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Could not record status {status} for CommunicationLog {log_id}: {e}")
+    finally:
+        db.close()
+
+
+def _send_with_retries(log_id: str, label: str, send: Callable[[], bool]):
+    error = None
+    for attempt in range(ATTEMPTS):
+        try:
+            if send():
+                _record(log_id, "SENT")
+                return
+            error = f"{label} provider rejected the message"
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            logger.warning(f"{label} attempt {attempt + 1} for log {log_id} raised: {error}")
+        if attempt < ATTEMPTS - 1:
+            time.sleep(BACKOFF_SECONDS[attempt])
+    logger.error(f"{label} for log {log_id} failed after {ATTEMPTS} attempts: {error}")
+    _record(log_id, "FAILED", error)
+
 
 def send_email_task(log_id: str, to_email: str, subject: str, html_body: str, attachments: list = None):
-    # Setup Jinja2 Environment
-    template_dir = os.path.join(os.path.dirname(__file__), '../../templates')
-    env = Environment(loader=FileSystemLoader(template_dir))
-    template = env.get_template('email_base.html')
-    
-    frontend_url = os.environ.get("FRONTEND_URL", "https://kapuletu.co.ke")
-    
-    # Wrap the provided html_body in the branded template
-    final_html_body = template.render(
+    from services.communications.templates import layout_env
+    # Wrap the provided html_body in the branded layout
+    final_html_body = layout_env.get_template("email_base.html").render(
         subject=subject,
         body=html_body,
-        frontend_url=frontend_url,
-        current_year=datetime.datetime.utcnow().year
+        frontend_url=get_config().FRONTEND_URL.rstrip("/"),
+        current_year=datetime.datetime.utcnow().year,
     )
-
-    for attempt in range(3):
-        db: Session = SessionLocal()
-        try:
-            log = db.query(CommunicationLog).filter(CommunicationLog.log_id == log_id).first()
-            if not log:
-                logger.error(f"CommunicationLog {log_id} not found.")
-                return
-
-            resend_client = ResendClient()
-            success = resend_client.send_email(
-                to_email=to_email,
-                subject=subject,
-                html_body=final_html_body,
-                attachments=attachments,
-            )
-            
-            if success:
-                log.status = "SENT"
-                db.commit()
-                return  # Success, exit the loop
-            else:
-                log.status = "FAILED"
-                log.error_message = "Resend Client returned False"
-                db.commit()
-                if attempt == 2:
-                    return # Give up
-                
-        except Exception as exc:
-            log.status = "FAILED"
-            log.error_message = traceback.format_exc()
-            db.commit()
-            if attempt == 2:
-                logger.error(f"Email task failed after 3 attempts: {exc}")
-                return
-        finally:
-            db.close()
-            
-        # Exponential backoff before retry
-        time.sleep(1)
+    client = ResendClient()
+    _send_with_retries(log_id, "Email", lambda: client.send_email(
+        to_email=to_email, subject=subject, html_body=final_html_body, attachments=attachments,
+    ))
 
 
 def send_whatsapp_task(log_id: str, to_phone: str, message: str):
-    for attempt in range(3):
-        db: Session = SessionLocal()
-        try:
-            log = db.query(CommunicationLog).filter(CommunicationLog.log_id == log_id).first()
-            if not log:
-                logger.error(f"CommunicationLog {log_id} not found.")
-                return
-
-            whatsapp_client = WhatsAppClient()
-            success = whatsapp_client.send_text_message(
-                to_phone=to_phone,
-                message=message
-            )
-            
-            if success:
-                log.status = "SENT"
-                db.commit()
-                return
-            else:
-                log.status = "FAILED"
-                log.error_message = "WhatsApp Client returned False"
-                db.commit()
-                if attempt == 2:
-                    return
-                
-        except Exception as exc:
-            log.status = "FAILED"
-            log.error_message = traceback.format_exc()
-            db.commit()
-            if attempt == 2:
-                logger.error(f"WhatsApp task failed after 3 attempts: {exc}")
-                return
-        finally:
-            db.close()
-            
-        time.sleep(1)
+    client = WhatsAppClient()
+    _send_with_retries(log_id, "WhatsApp", lambda: client.send_text_message(to_phone=to_phone, message=message))
