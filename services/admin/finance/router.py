@@ -268,6 +268,28 @@ async def list_invoices(
         raise _http(e)
 
 
+@router.get("/invoices/export", summary="Download filtered invoice records as CSV, Excel or PDF")
+async def export_invoices(
+    format: str = Query(..., description="csv, excel or pdf"),
+    status: Optional[str] = None,
+    q: Optional[str] = Query(None, description="Invoice number, or customer name, email, phone"),
+    date_from: Optional[datetime.datetime] = Query(None, alias="from"),
+    date_to: Optional[datetime.datetime] = Query(None, alias="to"),
+    user_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(finance_officer),
+):
+    prepared_by = f"{current_user.get('given_name') or ''} {current_user.get('family_name') or ''}".strip()
+    try:
+        content, mime, filename = InvoiceService(db).export_invoices(
+            format, status, q, date_from, date_to, user_id, prepared_by or None, _actor(current_user)
+        )
+    except FinanceError as e:
+        raise _http(e)
+    return Response(content=content, media_type=mime,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @router.get("/invoices/{invoice_id}/pdf", summary="Download an official invoice PDF")
 async def download_invoice_pdf(
     invoice_id: str,
@@ -311,6 +333,31 @@ async def list_payments(
         return InvoiceService(db).list_payments(status, provider, type, q, date_from, date_to, user_id, page, limit)
     except FinanceError as e:
         raise _http(e)
+
+
+@router.get("/payments/export", summary="Download filtered payment records as CSV, Excel or PDF")
+async def export_payments(
+    format: str = Query(..., description="csv, excel or pdf"),
+    status: Optional[str] = None,
+    provider: Optional[str] = Query(None, description="mpesa, flutterwave, admin_override, admin_refund"),
+    type: Optional[str] = Query(None, description="payment, refund or comp"),
+    q: Optional[str] = Query(None, description="Receipt / checkout reference, invoice number, or customer"),
+    date_from: Optional[datetime.datetime] = Query(None, alias="from"),
+    date_to: Optional[datetime.datetime] = Query(None, alias="to"),
+    user_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(finance_officer),
+):
+    prepared_by = f"{current_user.get('given_name') or ''} {current_user.get('family_name') or ''}".strip()
+    try:
+        content, mime, filename = InvoiceService(db).export_payments(
+            format, status, provider, type, q, date_from, date_to, user_id,
+            prepared_by or None, _actor(current_user),
+        )
+    except FinanceError as e:
+        raise _http(e)
+    return Response(content=content, media_type=mime,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.get("/payments/{payment_id}", summary="Payment with its invoice, refund and raw provider callbacks")

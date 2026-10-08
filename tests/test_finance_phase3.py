@@ -10,7 +10,7 @@ from decimal import Decimal
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from finance_support import make_world, paid_invoice
+from finance_support import make_world, paid_invoice, pending_checkout
 
 from models.billing import LedgerEntry, Refund, SubscriptionEvent
 from models.employees import ApprovalRequest
@@ -101,6 +101,44 @@ def api(Session, db):
         current["user_id"] = user_id
 
     return TestClient(app), as_user
+
+
+def test_filtered_payment_and_invoice_register_exports(api, db):
+    from services.admin.finance.invoices import InvoiceService
+
+    http, _ = api
+    user, basic, silver, sub = make_world(db)
+    user.first_name = "=HYPERLINK(\"https://example.invalid\")"
+    invoice, _ = paid_invoice(db, user, sub, silver, NOW)
+    pending_checkout(db, user, sub, silver, ref="pending-checkout")
+    service = InvoiceService(db)
+
+    payments_csv = http.get(
+        "/admin/finance/payments/export",
+        params={"format": "csv", "status": "success", "type": "payment"},
+    )
+    assert payments_csv.status_code == 200, payments_csv.text
+    assert "Kapuletu Payments Register" in payments_csv.text
+    assert "'=HYPERLINK" in payments_csv.text
+    assert "pending-checkout" not in payments_csv.text
+    assert "attachment; filename=" in payments_csv.headers["content-disposition"]
+
+    invoices_csv = http.get(
+        "/admin/finance/invoices/export",
+        params={"format": "csv", "status": "paid", "q": invoice.number},
+    )
+    assert invoices_csv.status_code == 200, invoices_csv.text
+    assert invoice.number in invoices_csv.text
+    assert "'=HYPERLINK" in invoices_csv.text
+
+    for export in (
+        service.export_payments,
+        service.export_invoices,
+    ):
+        for fmt, magic in (("excel", b"PK"), ("pdf", b"%PDF")):
+            content, _, filename = export(fmt)
+            assert content.startswith(magic), fmt
+            assert filename
 
 
 def test_refund_approved_from_the_approvals_queue(api, db):
