@@ -4,23 +4,34 @@ Contribution volume and ledger integrity, platform-wide and read-only.
 This is the treasurers' money (group contributions), not Kapuletu revenue. Finance sees how much flows through
 the platform and whether the sealed records are intact; it never edits them.
 """
+import csv
 import datetime
+import io
 from collections import defaultdict
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from models.campaign import Campaign
 from models.group import Group
 from models.transaction import Transaction
 from models.users import User
 from services.finance.ledger_service import LedgerService
 
-from .common import audit, iso, user_name
+from .common import FinanceError, audit, iso, page_params, paged, user_name
 
 ZERO = Decimal("0")
 INTEGRITY_LIMIT = 20000  # records checked per run; narrow the dates for more
+EXPORT_LIMIT = 20000
+PDF_EXPORT_LIMIT = 2000
+
+
+def _spreadsheet_safe(value):
+    if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return f"'{value}"
+    return value
 
 
 class VolumeService:
@@ -76,6 +87,198 @@ class VolumeService:
                 "treasurer_id": str(owner), "contributions": n, "amount": float(total or 0),
             } for gid, name, owner, n, total in top],
         }
+
+    def _contribution_query(
+        self,
+        start: datetime.datetime,
+        end: datetime.datetime,
+        search: Optional[str] = None,
+        group: Optional[str] = None,
+        treasurer: Optional[str] = None,
+        contributor: Optional[str] = None,
+        method: Optional[str] = None,
+    ):
+        query = self.db.query(Transaction, Group, User, Campaign).join(
+            Group, Transaction.group_id == Group.group_id
+        ).join(User, Transaction.owner_id == User.user_id).outerjoin(
+            Campaign, Transaction.campaign_id == Campaign.campaign_id
+        ).filter(
+            Transaction.status == "approved",
+            Transaction.created_at >= start,
+            Transaction.created_at < end,
+        )
+        if search:
+            like = f"%{search.strip()}%"
+            query = query.filter(or_(
+                Transaction.sender_name.ilike(like),
+                Transaction.sender_phone.ilike(like),
+                Transaction.transaction_code.ilike(like),
+                Group.group_name.ilike(like),
+                User.first_name.ilike(like),
+                User.last_name.ilike(like),
+                User.email.ilike(like),
+                Campaign.title.ilike(like),
+            ))
+        if group:
+            query = query.filter(Group.group_name.ilike(f"%{group.strip()}%"))
+        if treasurer:
+            like = f"%{treasurer.strip()}%"
+            query = query.filter(or_(User.first_name.ilike(like), User.last_name.ilike(like),
+                                     User.email.ilike(like)))
+        if contributor:
+            like = f"%{contributor.strip()}%"
+            query = query.filter(or_(Transaction.sender_name.ilike(like), Transaction.sender_phone.ilike(like)))
+        if method:
+            query = query.filter(Transaction.payment_method.ilike(f"%{method.strip()}%"))
+        return query
+
+    @staticmethod
+    def _contribution_row(transaction: Transaction, group: Group, treasurer: User,
+                          campaign: Optional[Campaign]) -> dict:
+        return {
+            "transaction_id": str(transaction.transaction_id),
+            "transaction_code": transaction.transaction_code,
+            "created_at": iso(transaction.created_at),
+            "contributor_name": transaction.sender_name,
+            "contributor_phone": transaction.sender_phone,
+            "group_id": str(group.group_id),
+            "group_name": group.group_name,
+            "treasurer_id": str(treasurer.user_id),
+            "treasurer_name": user_name(treasurer),
+            "campaign_id": str(campaign.campaign_id) if campaign else None,
+            "campaign_name": campaign.title if campaign else None,
+            "payment_method": transaction.payment_method or "Unknown",
+            "amount": float(transaction.amount or 0),
+        }
+
+    def list_contributions(
+        self,
+        start: datetime.datetime,
+        end: datetime.datetime,
+        search: Optional[str] = None,
+        group: Optional[str] = None,
+        treasurer: Optional[str] = None,
+        contributor: Optional[str] = None,
+        method: Optional[str] = None,
+        page: int = 1,
+        limit: int = 50,
+    ) -> dict:
+        query = self._contribution_query(start, end, search, group, treasurer, contributor, method)
+        total, amount = query.with_entities(
+            func.count(Transaction.transaction_id), func.coalesce(func.sum(Transaction.amount), 0)
+        ).one()
+        offset, limit = page_params(page, limit)
+        rows = query.order_by(Transaction.created_at.desc(), Transaction.transaction_id).offset(offset).limit(limit).all()
+        return {
+            **paged([self._contribution_row(*row) for row in rows], total, page, limit),
+            "total_amount": float(amount or 0),
+            "period": {"from": start.isoformat(), "to": end.isoformat()},
+        }
+
+    def export_statement(
+        self,
+        start: datetime.datetime,
+        end: datetime.datetime,
+        fmt: str,
+        search: Optional[str] = None,
+        group: Optional[str] = None,
+        treasurer: Optional[str] = None,
+        contributor: Optional[str] = None,
+        method: Optional[str] = None,
+        prepared_by: Optional[str] = None,
+        actor_id=None,
+    ) -> tuple[bytes, str, str]:
+        if fmt not in ("csv", "excel", "pdf"):
+            raise FinanceError("format must be csv, excel or pdf")
+        query = self._contribution_query(start, end, search, group, treasurer, contributor, method)
+        limit = PDF_EXPORT_LIMIT if fmt == "pdf" else EXPORT_LIMIT
+        rows = query.order_by(Transaction.created_at.asc(), Transaction.transaction_id).limit(limit + 1).all()
+        if len(rows) > limit:
+            raise FinanceError(
+                f"This statement exceeds the {limit:,}-record {fmt.upper()} export limit; narrow the filters"
+            )
+
+        records = [self._contribution_row(*row) for row in rows]
+        total = sum((Decimal(str(row["amount"])) for row in records), ZERO)
+        columns = ["Date", "Contributor", "Phone", "Group", "Treasurer", "Campaign", "Method", "Reference", "Amount (KES)"]
+        values = [[
+            row["created_at"] or "",
+            row["contributor_name"] or "—",
+            row["contributor_phone"] or "—",
+            row["group_name"],
+            row["treasurer_name"],
+            row["campaign_name"] or "—",
+            row["payment_method"],
+            row["transaction_code"],
+            row["amount"],
+        ] for row in records]
+        period_label = f"{start:%d %b %Y} – {(end - datetime.timedelta(seconds=1)):%d %b %Y}"
+        stem = f"kapuletu_contributions_{start:%Y%m%d}_{(end - datetime.timedelta(seconds=1)):%Y%m%d}"
+
+        if fmt == "csv":
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(["Kapuletu Contribution Cashflow Statement", period_label])
+            writer.writerow(["Approved contributions", len(records), "Total collected (KES)", f"{total:.2f}"])
+            writer.writerow([])
+            writer.writerow(columns)
+            writer.writerows([[_spreadsheet_safe(value) for value in row] for row in values])
+            return output.getvalue().encode("utf-8-sig"), "text/csv", f"{stem}.csv"
+
+        if fmt == "excel":
+            from openpyxl import Workbook
+            from openpyxl.styles import Font
+
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "Contributions"
+            sheet.append(["Kapuletu Contribution Cashflow Statement", period_label])
+            sheet["A1"].font = Font(bold=True, size=14)
+            sheet.append(["Approved contributions", len(records), "Total collected (KES)", float(total)])
+            sheet.append([])
+            sheet.append(columns)
+            for cell in sheet[4]:
+                cell.font = Font(bold=True)
+            for row in values:
+                sheet.append([_spreadsheet_safe(value) for value in row])
+            for index, column_cells in enumerate(sheet.columns, start=1):
+                width = max(len(str(cell.value or "")) for cell in column_cells)
+                sheet.column_dimensions[sheet.cell(1, index).column_letter].width = min(max(12, width + 2), 40)
+            sheet.freeze_panes = "A5"
+            sheet.auto_filter.ref = f"A4:I{sheet.max_row}"
+            output = io.BytesIO()
+            workbook.save(output)
+            return output.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", f"{stem}.xlsx"
+
+        from services.documents.official import OfficialDocument
+
+        document = OfficialDocument(
+            self.db,
+            title="Contribution Cashflow Statement",
+            subtitle=period_label,
+            department="FIN",
+            doc_type="CFS",
+            prepared_by=prepared_by,
+            orientation="landscape",
+        )
+        document.paragraph(
+            f"{len(records):,} approved contributions · KES {total:,.2f} collected. "
+            "These funds belong to treasurers' groups and are not Kapuletu revenue.",
+            muted=True,
+        )
+        document.table(
+            columns,
+            [[*row[:-1], f"{row[-1]:,.2f}"] for row in values],
+            col_widths=[0.11, 0.12, 0.10, 0.13, 0.12, 0.11, 0.09, 0.13, 0.09],
+            numeric_cols={8},
+        )
+        document.signature_block(note="Statement includes approved contribution records matching the selected filters.")
+        content = document.build(
+            actor_id=str(actor_id) if actor_id else None,
+            audit_details={"report": "contribution_cashflow", "period": period_label,
+                           "records": len(records), "total": str(total)},
+        )
+        return content, "application/pdf", f"{document.filename_stem}.pdf"
 
     def integrity(self, start: datetime.datetime, end: datetime.datetime, actor_id=None) -> dict:
         """Re-computes the SHA-256 seal of every approved contribution in the period."""

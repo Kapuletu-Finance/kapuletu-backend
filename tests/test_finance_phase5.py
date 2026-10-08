@@ -9,6 +9,7 @@ from decimal import Decimal
 import pytest
 from finance_support import make_world, paid_invoice
 
+from models.campaign import Campaign
 from models.finance_ops import ReconciliationItem, ReportSchedule
 from models.group import Group
 from models.subscription import SubscriptionPayment
@@ -203,6 +204,100 @@ def test_volume_and_integrity(db):
     check = VolumeService(db).integrity(datetime.datetime(2026, 9, 1), datetime.datetime(2026, 10, 1))
     assert (check["checked"], check["intact"], check["unsealed"]) == (3, 2, 0)
     assert [t["transaction_code"] for t in check["tampered"]] == ["T1"]
+
+
+def test_contribution_register_filters_paginates_and_exports(db):
+    from services.admin.finance.volume import VolumeService
+
+    user, basic, silver, sub = make_world(db)
+    group = Group(owner_id=user.user_id, group_name="Harambee Youth")
+    db.add(group)
+    db.flush()
+    campaign = Campaign(campaign_id=uuid.uuid4(), group_id=group.group_id, title="School Fees")
+    db.add(campaign)
+    db.flush()
+    first = Transaction(
+        owner_id=user.user_id, group_id=group.group_id, campaign_id=campaign.campaign_id,
+        transaction_code="RCP001", amount=500, sender_name="Mary Wanjiku", sender_phone="254700000001",
+        payment_method="M-Pesa", status="approved", created_at=datetime.datetime(2026, 9, 10),
+    )
+    second = Transaction(
+        owner_id=user.user_id, group_id=group.group_id, transaction_code="RCP002", amount=300,
+        sender_name='=HYPERLINK("https://example.invalid")', payment_method="Cash", status="approved",
+        created_at=datetime.datetime(2026, 9, 11),
+    )
+    pending = Transaction(
+        owner_id=user.user_id, group_id=group.group_id, transaction_code="RCP003", amount=200,
+        sender_name="Not Approved", payment_method="Cash", status="pending",
+        created_at=datetime.datetime(2026, 9, 12),
+    )
+    db.add_all([first, second, pending])
+    db.commit()
+
+    service = VolumeService(db)
+    start, end = datetime.datetime(2026, 9, 1), datetime.datetime(2026, 10, 1)
+    result = service.list_contributions(start, end, contributor="Mary", method="M-Pesa")
+    assert result["total"] == 1 and result["total_amount"] == 500
+    assert result["items"][0]["group_name"] == "Harambee Youth"
+    assert result["items"][0]["campaign_name"] == "School Fees"
+    assert result["items"][0]["treasurer_name"] == "Ann Treasurer"
+
+    all_rows = service.list_contributions(start, end, page=1, limit=1)
+    assert all_rows["total"] == 2 and len(all_rows["items"]) == 1
+    assert all_rows["total_amount"] == 800
+
+    csv_bytes, _, csv_name = service.export_statement(start, end, "csv", contributor="Mary")
+    assert b"Mary Wanjiku" in csv_bytes and csv_name.endswith(".csv")
+    all_csv, _, _ = service.export_statement(start, end, "csv")
+    assert b"'=HYPERLINK" in all_csv
+    excel_bytes, _, excel_name = service.export_statement(start, end, "excel", contributor="Mary")
+    assert excel_bytes.startswith(b"PK") and excel_name.endswith(".xlsx")
+    pdf_bytes, _, pdf_name = service.export_statement(start, end, "pdf", contributor="Mary")
+    assert pdf_bytes.startswith(b"%PDF") and pdf_name.endswith(".pdf")
+
+
+def test_admin_contribution_statement_routes(Session, db):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from common.database import get_db
+    from services.admin.finance import router as finance_router
+
+    user, basic, silver, sub = make_world(db)
+    group = Group(owner_id=user.user_id, group_name="Harambee Youth")
+    db.add(group)
+    db.flush()
+    db.add(Transaction(
+        owner_id=user.user_id, group_id=group.group_id, transaction_code="RCP100", amount=125,
+        sender_name="Mary Wanjiku", sender_phone="254700000001", payment_method="M-Pesa",
+        status="approved", created_at=datetime.datetime(2026, 9, 10),
+    ))
+    db.commit()
+
+    app = FastAPI()
+    app.include_router(finance_router.router)
+
+    def session_override():
+        s = Session()
+        try:
+            yield s
+        finally:
+            s.close()
+
+    app.dependency_overrides[get_db] = session_override
+    app.dependency_overrides[finance_router.finance_officer] = lambda: {"user_id": str(uuid.uuid4())}
+    http = TestClient(app)
+    params = {"from": "2026-09-01T00:00:00", "to": "2026-10-01T00:00:00", "contributor": "Mary"}
+
+    listing = http.get("/admin/finance/contributions", params=params)
+    assert listing.status_code == 200
+    assert listing.json()["total"] == 1
+    assert listing.json()["items"][0]["transaction_code"] == "RCP100"
+
+    statement = http.get("/admin/finance/contributions/export", params={**params, "format": "csv"})
+    assert statement.status_code == 200
+    assert b"Mary Wanjiku" in statement.content
+    assert statement.headers["content-disposition"].endswith(".csv\"")
 
 
 # --- treasurer invoices ---

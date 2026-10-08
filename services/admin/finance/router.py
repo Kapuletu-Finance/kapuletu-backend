@@ -548,6 +548,62 @@ async def contribution_volume(
     return VolumeService(db).summary(*_window(date_from, date_to, 30))
 
 
+@router.get("/contributions", summary="Search approved contributions across the platform")
+async def list_contributions(
+    date_from: Optional[datetime.datetime] = Query(None, alias="from"),
+    date_to: Optional[datetime.datetime] = Query(None, alias="to"),
+    q: Optional[str] = Query(None, description="Contributor, treasurer, group, campaign or reference"),
+    group: Optional[str] = Query(None, description="Group name"),
+    treasurer: Optional[str] = Query(None, description="Treasurer name or email"),
+    contributor: Optional[str] = Query(None, description="Contributor name or phone"),
+    method: Optional[str] = Query(None, description="Payment method"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _: User = Depends(finance_officer),
+):
+    start, end = _window(date_from, date_to, 365)
+    return VolumeService(db).list_contributions(
+        start, end, q, group, treasurer, contributor, method, page, limit
+    )
+
+
+@router.get("/contributions/export", summary="Download a filtered contribution cashflow statement")
+async def export_contributions(
+    format: str = Query("pdf", description="pdf, excel or csv"),
+    date_from: Optional[datetime.datetime] = Query(None, alias="from"),
+    date_to: Optional[datetime.datetime] = Query(None, alias="to"),
+    q: Optional[str] = Query(None, description="Contributor, treasurer, group, campaign or reference"),
+    group: Optional[str] = Query(None, description="Group name"),
+    treasurer: Optional[str] = Query(None, description="Treasurer name or email"),
+    contributor: Optional[str] = Query(None, description="Contributor name or phone"),
+    method: Optional[str] = Query(None, description="Payment method"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(finance_officer),
+):
+    start, end = _window(date_from, date_to, 365)
+    try:
+        content, mime, filename = VolumeService(db).export_statement(
+            start,
+            end,
+            format,
+            q,
+            group,
+            treasurer,
+            contributor,
+            method,
+            prepared_by=f"{current_user.get('given_name') or ''} {current_user.get('family_name') or ''}".strip() or None,
+            actor_id=_actor(current_user),
+        )
+    except FinanceError as e:
+        raise _http(e)
+    return Response(
+        content=content,
+        media_type=mime,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.post("/integrity", summary="Re-check the seals on approved contributions")
 async def ledger_integrity(
     date_from: Optional[datetime.datetime] = Query(None, alias="from"),
