@@ -9,7 +9,6 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '2ddcfebfca7f'
@@ -85,7 +84,6 @@ def upgrade() -> None:
     op.create_index(op.f('ix_work_schedule_overrides_date'), 'work_schedule_overrides', ['date'], unique=False)
     op.create_index(op.f('ix_work_schedule_overrides_user_id'), 'work_schedule_overrides', ['user_id'], unique=False)
     op.create_index('uq_work_schedule_override_company_date', 'work_schedule_overrides', ['date'], unique=True, postgresql_where=sa.text('user_id IS NULL'), sqlite_where=sa.text('user_id IS NULL'))
-    op.drop_table('office_settings')
     op.alter_column(
         'blog_posts',
         'tags',
@@ -197,15 +195,6 @@ def downgrade() -> None:
         'tags',
         existing_type=sa.TEXT(),
         server_default=sa.text("'[]'::text"),
-    )
-    op.create_table('office_settings',
-    sa.Column('id', sa.UUID(), autoincrement=False, nullable=False),
-    sa.Column('location_name', sa.VARCHAR(), autoincrement=False, nullable=False),
-    sa.Column('latitude', sa.VARCHAR(), autoincrement=False, nullable=False),
-    sa.Column('longitude', sa.VARCHAR(), autoincrement=False, nullable=False),
-    sa.Column('radius_meters', sa.VARCHAR(), autoincrement=False, nullable=False),
-    sa.Column('updated_at', postgresql.TIMESTAMP(timezone=True), autoincrement=False, nullable=True),
-    sa.PrimaryKeyConstraint('id', name=op.f('office_settings_pkey'))
     )
     op.drop_index('uq_work_schedule_override_company_date', table_name='work_schedule_overrides', postgresql_where=sa.text('user_id IS NULL'), sqlite_where=sa.text('user_id IS NULL'))
     op.drop_index(op.f('ix_work_schedule_overrides_user_id'), table_name='work_schedule_overrides')
