@@ -66,7 +66,11 @@ def get_profile(db: Session, user_id) -> EmployeeProfileOut:
         first_name=employee.first_name,
         last_name=employee.last_name,
         email=employee.email,
-        phone_number=employee.phone_number,
+        phone_number=(
+            None
+            if employee.phone_number and employee.phone_number.startswith("NO_PHONE_")
+            else employee.phone_number
+        ),
         role=employee.role,
         permissions=employee.permissions or [],
         is_active=employee.is_active is not False and employee.deleted_at is None,

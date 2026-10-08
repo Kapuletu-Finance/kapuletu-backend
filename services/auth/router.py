@@ -148,9 +148,21 @@ async def employee_setup(request: Request, payload: EmployeeSetupIn, db: Session
             status_code=status.HTTP_400_BAD_REQUEST, 
             detail="Invalid or expired invite token."
         )
+    if invite.role == UserRole.TREASURER.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This invitation has an invalid employee role. Ask an administrator to resend it.",
+        )
         
     # 2. Check if user exists
     existing = db.query(User).filter(User.email == invite.email).first()
+    if invite.phone_number:
+        phone_owner_query = db.query(User.user_id).filter(User.phone_number == invite.phone_number)
+        if existing:
+            phone_owner_query = phone_owner_query.filter(User.user_id != existing.user_id)
+        if phone_owner_query.first():
+            raise HTTPException(status_code=409, detail="That phone number belongs to another account.")
+
     if existing:
         if existing.role != UserRole.TREASURER.value:
             raise HTTPException(status_code=400, detail="User already registered as an employee.")
@@ -160,12 +172,14 @@ async def employee_setup(request: Request, payload: EmployeeSetupIn, db: Session
         existing.permissions = invite.permissions
         existing.hashed_password = get_password_hash(payload.password)
         existing.email_verified = True
-        existing.phone_number_verified = True
+        if invite.phone_number:
+            existing.phone_number = invite.phone_number
+            existing.phone_number_verified = False
     else:
         # 3. Create User Account
         new_user = User(
             email=invite.email,
-            phone_number=f"NO_PHONE_{uuid.uuid4().hex[:15]}",
+            phone_number=invite.phone_number or f"NO_PHONE_{uuid.uuid4().hex[:15]}",
             first_name=invite.first_name,
             last_name=invite.last_name,
             hashed_password=get_password_hash(payload.password),
@@ -173,7 +187,7 @@ async def employee_setup(request: Request, payload: EmployeeSetupIn, db: Session
             permissions=invite.permissions,
             is_active=True,
             email_verified=True, # Employees don't need phone verification for this flow
-            phone_number_verified=True, # Skip verification loop on login
+            phone_number_verified=False,
             marketing_consent=False
         )
         db.add(new_user)

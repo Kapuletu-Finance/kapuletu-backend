@@ -17,6 +17,7 @@ from services.notifications.tasks import send_email_task
 from services.notifications.email_templates import get_employee_invite_template
 from models.communication_logs import CommunicationLog
 from common.permissions import EMPLOYEE_PERMISSIONS
+from services.auth.schemas import format_phone
 from services.admin import employee_profile_service
 from services.admin.employee_profile_schemas import (
     ActivityPageOut, ActivityView, EmployeeProfileOut, EmployeeUpdateIn, PermissionOut,
@@ -43,14 +44,33 @@ class EmployeeInviteCreate(BaseModel):
     email: EmailStr
     first_name: str
     last_name: str
+    phone_number: Optional[str] = None
     role: str
     permissions: List[str] = []
+
+    @field_validator("phone_number", mode="before")
+    @classmethod
+    def normalize_phone_number(cls, value):
+        if value is None:
+            return None
+        normalized = format_phone(value)
+        if normalized is not None and not 7 <= len(normalized) <= 20:
+            raise ValueError("Phone number must be between 7 and 20 characters.")
+        return normalized
+
+    @field_validator("role")
+    @classmethod
+    def reject_treasurer_role(cls, role):
+        if role == UserRole.TREASURER.value:
+            raise ValueError("Employee invitations can't use the treasurer role.")
+        return role
 
 class EmployeeResponse(BaseModel):
     user_id: UUID
     email: str
     first_name: str
     last_name: str
+    phone_number: Optional[str] = None
     role: str
     permissions: List[str] = []
     is_active: bool
@@ -68,6 +88,7 @@ class InviteResponse(BaseModel):
     email: str
     first_name: str
     last_name: str
+    phone_number: Optional[str] = None
     role: str
     permissions: List[str] = []
     expires_at: datetime
@@ -91,6 +112,13 @@ def invite_employee(
     existing_user = db.execute(select(User).where(User.email == payload.email)).scalars().first()
     if existing_user:
         raise HTTPException(status_code=400, detail="A user with this email already exists.")
+
+    if payload.phone_number:
+        existing_phone = db.execute(
+            select(User.user_id).where(User.phone_number == payload.phone_number)
+        ).first()
+        if existing_phone:
+            raise HTTPException(status_code=409, detail="That phone number belongs to another account.")
         
     # Check if an active invite already exists
     existing_invite = db.execute(select(EmployeeInvite).where(
@@ -109,6 +137,7 @@ def invite_employee(
         email=payload.email,
         first_name=payload.first_name,
         last_name=payload.last_name,
+        phone_number=payload.phone_number,
         role=payload.role,
         permissions=payload.permissions,
         token=token,
@@ -365,4 +394,3 @@ def get_employee_activity(
     current_user: dict = Depends(hr_admin),
 ):
     return employee_profile_service.get_activity(db, user_id, view, q, page, limit)
-

@@ -17,6 +17,7 @@ class EmployeeInvite(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
+    phone_number = Column(String, nullable=True)
     role = Column(String, nullable=False)
     permissions = Column(JSON, default=list)
     
